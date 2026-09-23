@@ -11,6 +11,18 @@ the delegation call and the summary result, never the child's intermediate
 tool calls or reasoning.
 """
 
+"""
+Delegate Tool -- Subagent Architecture (委托工具 -- 子代理架构)
+
+核心功能：
+1. 生成独立的子 AIAgent 实例，拥有全新的对话历史、独立的 task_id（终端会话、文件操作缓存）。
+2. 继承父代理的工具集，但移除被禁止的子代理工具（如 delegate_task 自身，防止无限递归）。
+3. 根据目标（goal）和上下文（context）构建聚焦的系统提示词。
+4. 支持单任务和批量（并行）模式。
+5. 顶层模型调用在后台运行，编排器子代理等待其工作节点完成。
+6. 父代理仅看到委托调用和最终摘要结果，不可见子代理的中间工具调用或推理过程（黑盒执行）。
+"""
+
 import logging
 import time
 import weakref
@@ -23,6 +35,13 @@ logger = logging.getLogger(__name__)
 
 # The delegate_tool_* siblings hold the pieces split out of this module; every name callers or patching tests reach as
 # ``tools.delegate_tool.<name>`` is re-imported here. Mutable flag globals live only in their owning module.
+
+# ==============================================================================
+# 模块重组与导入
+# delegate_tool_* 兄弟模块持有从本模块拆分出的逻辑片段；
+# 调用者或补丁测试通过 ``tools.delegate_tool.<name>`` 访问的所有名称在此处重新导入。
+# 可变的全局标志仅存在于其所属模块中。
+# ==============================================================================
 from tools.delegate_tool_child_run import (  # noqa: F401
     _ChildRun, _attach_child, _build_child_goal_message, _build_result_entry, _dump_subagent_timeout_diagnostic, _fabricated_entry,
     _lease_child_credential, _merge_late_steer, _register_child, _start_heartbeat, _validate_child_output_schema,
@@ -56,11 +75,18 @@ from tools.delegate_tool_results import (  # noqa: F401
     _apply_summary_budget, _build_child_preserving_parent_tools, _run_child_lifecycle, _summarize_tool_arguments,
 )
 
+# 定义角色集合：叶子节点（leaf）或编排器（orchestrator）
 _ROLES = frozenset({"leaf", "orchestrator"})
 
 # Nested delegation is granted by depth/role in _build_child_agent, never by the
 # model naming toolsets (there is no model-facing toolsets argument).
+# 嵌套委托权限由 _build_child_agent 中的深度/角色决定，而非由面向模型的工具体系决定
+# （没有面向模型的 toolsets 参数）。
 def _normalize_role(r: Optional[str]) -> str:
+    """
+    规范化角色字符串。
+ 'leaf' | 'orchestrator'; None/空/未知 -> 'leaf' (未知角色会发出警告)。
+    """
     """'leaf' | 'orchestrator'; None/empty/unknown -> 'leaf' (unknown warns)."""
     r_norm = str(r).strip().lower() if r else "leaf"
     if r_norm not in _ROLES:
@@ -74,6 +100,11 @@ _HEARTBEAT_INTERVAL = 30  # seconds between parent activity heartbeats during de
 # last_activity_ts advancing; an in-flight model wait refreshes last_activity_ts, so slow models are not "idle". Idle
 # stays tight so a truly wedged child doesn't mask the gateway timeout; in-tool is much higher so legitimately long
 # tools can finish.
+#  stale-heartbeat 阈值（无进展的心跳周期数）。
+# 进展定义为：迭代次数、当前工具或 last_activity_ts 前进。
+# 等待模型响应时会刷新 last_activity_ts，因此慢速模型不会被判定为“空闲”。
+# 空闲阈值设得紧，以防真正卡住的子代理掩盖网关超时；
+# 工具内阈值设得高，以允许 legitimately long tools 完成。
 _HEARTBEAT_STALE_CYCLES_IDLE = 15  # 450s idle between turns → stale
 _HEARTBEAT_STALE_CYCLES_IN_TOOL = 40  # 1200s stuck on same tool → stale
 
@@ -87,6 +118,20 @@ def _open_child_session_db(parent_agent) -> Any:
     a background child still flushes (transcript silently dropped). It MUST open the same db FILE as the parent's
     handle (non-launch profiles), else lineage / session_search break; released by the child's close() via
     _owns_session_db."""
+    """
+    为子代理打开专用的 SessionDB 句柄，如果失败则返回 None。
+    
+    重要说明：
+    父代理的句可能在其生命周期结束时关闭（例如 cron run_job 的 finally 块、网关会话结束、/new），
+    而后台子代理仍在守护线程上刷新数据。如果共用句柄，后续刷新会命中已关闭的句柄，
+    导致子代理的转录记录静默丢失 (#81267)。
+    
+    它必须指向与父代理句柄相同的数据库文件：
+    父代理可能持有非默认的每配置文件句柄（tui_gateway 为非启动配置文件打开 SessionDB(db_path=<profile>/ state.db)），
+    如果使用 bare SessionDB()，子代理的转录记录将写入启动配置文件的 db，
+    从而破坏 parent_session_id 血缘关系和 session_search 功能。
+    AsyncSessionDB 包装器（gateway）通过 __getattr__ 转发 .db_path，因此这可以通过它们正常工作。
+    """
     # Each child gets a DEDICATED SessionDB connection instead of the parent's live object. The parent's
     # handle is owned by the parent's lifecycle (cron run_job's finally block, gateway session end, /new)
     # and can be closed while a fire-and-forget background child is still flushing on a daemon thread —
@@ -110,10 +155,18 @@ def _apply_child_cache_ttl(child) -> None:
     away between turns (2x write vs 1.25x for 5m, #14971); a subagent calls every few seconds for
     minutes and is gone, so it pays the 2x on every tool result and never collects the retention.
     Caching itself stays exactly as configured (disabled stays disabled)."""
+    """
+    委托的子代理从不使用 1h 缓存层级。
+    该层级定价针对的是在轮次间离开的人员（2x 写入 vs 1.25x 用于 5m，#14971）；
+    子代理每隔几秒调用一次持续几分钟然后消失，因此每次工具结果都支付 2x 费用且从未收集保留值。
+    缓存本身保持配置不变（禁用保持禁用）。 a
+    """
     if getattr(child, "_cache_ttl", None) == "1h":
         child._cache_ttl = "5m"
 
+# 低于此值子代理会在每次调用时压缩；视为配置错误
 _CHILD_CAP_MIN = 16_000  # below this a child compresses on every call; treat as a config error
+
 
 
 def _child_compression_cap_tokens(raw) -> "int | None":
@@ -123,6 +176,15 @@ def _child_compression_cap_tokens(raw) -> "int | None":
     same ratio trigger as everyone else (0.50 x window). A bool ``true`` (YAML) would coerce to 1
     and make every call compress; a string like ``"200k"`` would silently read as no cap. Both are
     config errors: warn and treat as unset so a typo never changes compaction behaviour."""
+    """
+    验证 ``delegation.compression_threshold_tokens``：一个 >= 16000 的整数，或 None 表示“无上限”。
+    
+    未设置 / ``0`` / ``false`` / ``null`` 意味着没有子代理特定的上限：
+    子代理与其他人一样以相同的比率触发压缩（0.50 x 窗口）。
+    布尔值 ``true`` (YAML) 会被强制为 1 并使每次调用都压缩；
+    像 ``"200k"`` 这样的字符串会被静默读取为无上限。两者都是配置错误：
+    发出警告并视为未设置，以便拼写错误永远不会改变压缩行为。
+    """
     if raw is None or raw is False or raw == 0:
         return None
     if isinstance(raw, bool) or not isinstance(raw, (int, float)) or int(raw) < _CHILD_CAP_MIN:
@@ -139,6 +201,13 @@ def _apply_child_compression_cap(child, delegation_cfg: dict) -> None:
     (lower of it and any global ``compression.threshold_tokens``). Off by default: a 1M-window child
     compacts at 500K like its parent. The compressor applies the cap on first window resolution, which
     happens after construction, so setting it here is exactly equivalent to config."""
+    """
+    可选的子代理压缩触发绝对上限，``delegation.compression_threshold_tokens``
+    （取它与任何全局 ``compression.threshold_tokens`` 中的较小值）。
+    默认关闭：1M 窗口的子代理像其父代理一样在 500K 时压缩。
+    压缩器在第一次窗口解析时应用上限，这发生在构造之后，
+    因此在这里设置它完全等同于配置。
+    """
     from agent.context_compressor import ContextCompressor
 
     cc = getattr(child, "context_compressor", None)
@@ -162,6 +231,7 @@ def _build_child_agent(
     max_iterations: int,
     task_count: int,
     parent_agent,
+    # 来自委托配置的凭证覆盖
     # Credential overrides from delegation config
     override_provider: Optional[str] = None,
     override_base_url: Optional[str] = None,
@@ -170,34 +240,48 @@ def _build_child_agent(
     override_request_overrides: Optional[Dict[str, Any]] = None,
 
     # ACP transport overrides from trusted delegation config.
+    # 来自受信任委托配置的 ACP 传输覆盖。
     override_acp_command: Optional[str] = None,
     override_acp_args: Optional[List[str]] = None,
     # Configuration block that owns the selected provider/model route. Internal
     # callers such as /review pass auxiliary.review here so fallback policy is
     # not accidentally read from the general delegation block.
+    # 拥有所选 provider:model 路由的配置块。
+    # 内部调用者如 /review 在此传递 auxiliary.review，以便回退策略不会意外地从一般委托块中读取。
     routing_cfg: Optional[Dict[str, Any]] = None,
     # Legacy; accepted for wire compat but ignored (capability is depth-derived).
+    # 遗留；接受以保持线路兼容但被忽略（能力源自深度）。
     role: str = "leaf",
 ):
     """Build (don't run) a child AIAgent on the main thread. override_* (from delegation config) replace parent
     inheritance so children can run on a different provider:model pair."""
+    """
+    在主线程上构建（不运行）子 AIAgent。
+    override_*（来自委托配置）替换父代理继承，以便子代理可以在不同的 provider:model 对上运行。
+    """
     import uuid as _uuid
     from run_agent import AIAgent
     from agent.delegation_context import delegated_child_context
     # Role is depth-derived: a child may delegate iff the kill switch is on and
     # depth budget remains below max_spawn_depth. The `role` arg is ignored.
+     # 角色源自深度：子代理可以委托当且仅当 Kill Switch 开启且
+    # 深度预算保持在 max_spawn_depth 以下。`role` 参数被忽略。
     child_depth = getattr(parent_agent, "_delegate_depth", 0) + 1
     max_spawn = _get_max_spawn_depth()
     effective_role = "orchestrator" if _get_orchestrator_enabled() and child_depth < max_spawn else "leaf"
 
     # One subagent_id shared by the progress callback, spawn_requested event and
     # the live registry; parent_id is set when THIS parent is itself a subagent.
+    # 一个 subagent_id 由进度回调、spawn_requested 事件和活动注册表共享；
+    # parent_id 当 THIS 父代理本身是子代理时设置。
     subagent_id = f"sa-{task_index}-{_uuid.uuid4().hex[:8]}"
     parent_subagent_id = getattr(parent_agent, "_subagent_id", None)
 
     # General delegation behavior (reasoning, compression, capabilities) stays
     # global. Only fallback policy follows the owner of a per-call route such
     # as auxiliary.review.
+     # 一般委托行为（推理、压缩、能力）保持全局。
+    # 只有回退策略遵循拥有 per-call 路由的所有者，如 auxiliary.review。
     delegation_cfg = _load_config()
     child_toolsets, child_disabled_toolsets = _resolve_child_toolsets(parent_agent, toolsets, effective_role)
     child_prompt = _build_child_system_prompt(
@@ -210,6 +294,8 @@ def _build_child_agent(
 
     # Shared ref: session_id once the child exists, delegation_id once
     # delegate_task stamps it — both ride on every relayed event.
+     # 共享引用：一旦子代理存在则为 session_id，一旦 delegate_task 标记则为 delegation_id
+    # — 两者都搭载在每个中继事件上。
     child_session_ref: Dict[str, Any] = {}
     child_progress_cb = _build_child_progress_callback(
         task_index, goal, parent_agent, task_count, subagent_id=subagent_id, parent_id=parent_subagent_id,
@@ -226,11 +312,14 @@ def _build_child_agent(
     if override_request_overrides is not None:
         # honored whenever set, incl. the inherit branch where
         # _resolve_delegation_credentials already merged OVER the parent's
+        # 只要设置就 honored，包括 inherit 分支，其中
+        # _resolve_delegation_credentials 已经合并 OVER 了父代理的
         request_overrides = dict(override_request_overrides)
     else:
         request_overrides = {} if override_provider else dict(getattr(parent_agent, "request_overrides", {}) or {})
     parent_sid = getattr(parent_agent, "session_id", None)
     child_session_db = _open_child_session_db(parent_agent)
+    # 在委托子上下文中创建子代理
     with delegated_child_context():
         try:
             child = AIAgent(
@@ -259,6 +348,8 @@ def _build_child_agent(
         child._owns_session_db = True  # released by the child's close(), never by the parent
     # Ownership transfer for the dedicated handle: the child's close() must release it (nothing else holds a
     # reference), and no parent teardown can close it out from under a background child (#81267).
+    # 专用句柄的所有权转移：子代理的 close() 必须释放它（没有其他持有引用），
+    # 并且没有任何父代理拆卸可以从后台子代理下面关闭它 (#81267)。
     child_session_ref["session_id"] = getattr(child, "session_id", "") or ""
     child._progress_identity_ref = child_session_ref
     child._delegate_depth, child._delegate_role = child_depth, effective_role  # post-degrade role
@@ -266,12 +357,16 @@ def _build_child_agent(
     _apply_child_compression_cap(child, delegation_cfg)
     # Ownership chain for action=list/steer/stop; weakref so a finished parent
     # can be collected while a detached child record lingers in the registry.
+    # 动作=list/steer/stop 的所有权链；weakref 以便完成的父代理可以被回收，
+    # 而分离的子代理记录在注册表中徘徊。
     try:
         child._delegate_parent_ref = weakref.ref(parent_agent)
     except TypeError:
         child._delegate_parent_ref = None  # non-weakref-able test doubles
     # Sidebar marker: subagent sessions stay out of session pickers even when a
     # parent delete orphans them (mirrors /branch's ``_branched_from``).
+    # 侧边栏标记：即使父代理删除使它们成为孤儿，子代理会话也留在会话选择器之外
+    # （镜像 /branch 的 ``_branched_from``）。
     if parent_sid and getattr(child, "_session_init_model_config", None) is not None:
         child._session_init_model_config["_delegate_from"] = parent_sid
     # Shared pool lets children rotate credentials on rate limits.

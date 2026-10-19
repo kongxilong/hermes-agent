@@ -5,6 +5,34 @@ tools.registry.register()); exposes get_tool_definitions() (toolset-filtered
 schemas sent to the model) and handle_function_call() (dispatch with
 hooks/middleware) plus registry pass-throughs.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：model_tools.py（约 977 行）
+# 地位：★ 工具系统的「总调度台」，想搞懂工具是怎么被调用的，读这个。
+#
+# 它是什么：
+#   工具（terminal、read_file、browser ...）散落在 tools/ 目录下，各自通过 tools.registry.register()
+#   「自注册」。本文件是它们之上的一层薄封装，对外只暴露两件事：
+#     1. get_tool_definitions()  —— 生成要发给大模型的工具清单（JSON Schema）
+#     2. handle_function_call()  —— 模型说「我要调用某某工具」时，在这里分发执行
+#
+# 关键的调用链（理解这条链 = 理解 Agent 的工具能力）：
+#   模型返回 tool_calls
+#     → handle_function_call(function_name, function_args, ...)
+#     → _apply_request_middleware()      请求中间件（可以改写参数、插桩）
+#     → _pre_dispatch_guards()           派发前检查（权限、拦截）
+#     → _execute_tool()                  真正执行
+#     → _apply_transform_tool_result_hook() 结果后处理
+#     → 返回结果给对话循环
+#
+# 其他要点：
+#   - toolset（工具集）机制：get_tool_definitions 可以按 enabled/disabled 过滤，只给模型看一部分工具。
+#   - _rewrite_* 系列（_rewrite_delegate_task、_rewrite_browser_navigate ...）：
+#     根据「当前哪些工具可用」动态改写工具的 schema 描述。很实用的一招。
+#   - 有缓存：_clear_tool_defs_cache / _tool_defs_cache_key，避免每次都重算工具清单。
+# ==========================================================================
+#
 
 import os
 import json
@@ -28,11 +56,19 @@ logger = logging.getLogger(__name__)
 _post_tool_call_hook_suppressed: ContextVar[bool] = ContextVar("post_tool_call_hook_suppressed", default=False)
 
 
+# ┌── 函数 def suppress_post_tool_call_hook()
+# │  作用：Let an outer executor own the terminal post-tool event.
+# │  参数：无
+# │  返回：（未标注类型）
+# │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+# └──────────────────────────────────────────────────────────────
 @contextmanager
 def suppress_post_tool_call_hook():
     """Let an outer executor own the terminal post-tool event."""
     token = _post_tool_call_hook_suppressed.set(True)
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield
     finally:
         _post_tool_call_hook_suppressed.reset(token)
@@ -41,21 +77,37 @@ def suppress_post_tool_call_hook():
 _WARNED_DISABLED_BUNDLES: set = set()
 
 
+# ┌── 函数 def _is_delegated_child_context()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_delegated_child_context() -> bool:
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.delegation_context import is_delegated_child_context
+        # ⤷ 出口 return：返回 is_delegated_child_context()
         return is_delegated_child_context()
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _is_dispatcher_owned_worker()
+# │  作用：False when HERMES_KANBAN_* is present but this execution does not own it
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_dispatcher_owned_worker() -> bool:
     """False when HERMES_KANBAN_* is present but this execution does not own it
     (delegate_task child, or a cron job fired in-process from a worker)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.delegation_context import is_dispatcher_owned_worker_context
+        # ⤷ 出口 return：返回 is_dispatcher_owned_worker_context()
         return is_dispatcher_owned_worker_context()
     except Exception:
+        # ⤷ 出口 return：返回 True
         return True
 
 
@@ -69,15 +121,27 @@ _tool_loop_lock = threading.Lock()
 _worker_thread_local = threading.local()  # per-worker-thread persistent loops
 
 
+# ┌── 函数 def _get_tool_loop()
+# │  作用：Long-lived event loop for async tool handlers on the main thread.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _get_tool_loop():
     """Long-lived event loop for async tool handlers on the main thread."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _tool_loop
     with _tool_loop_lock:
         if _tool_loop is None or _tool_loop.is_closed():
             _tool_loop = asyncio.new_event_loop()
+        # ⤷ 出口 return：返回 _tool_loop
         return _tool_loop
 
 
+# ┌── 函数 def _get_worker_loop()
+# │  作用：Persistent event loop for the current worker thread (thread-local).
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _get_worker_loop():
     """Persistent event loop for the current worker thread (thread-local)."""
     loop = getattr(_worker_thread_local, 'loop', None)
@@ -85,11 +149,18 @@ def _get_worker_loop():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         _worker_thread_local.loop = loop
+    # ⤷ 出口 return：返回 loop
     return loop
 
 
+# ┌── 函数 def _run_async()
+# │  作用：Run a coroutine from sync code; safe under a running loop (gateway/RL env).
+# │  参数：coro
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _run_async(coro):
     """Run a coroutine from sync code; safe under a running loop (gateway/RL env)."""
+    # ⤷ 关键分支 try/except：捕获 RuntimeError，出错走兜底而不是崩溃。
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -103,9 +174,11 @@ def _run_async(coro):
         loop_ready = threading.Event()
 
         def _run_in_worker():
+            # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
             nonlocal worker_loop
             worker_loop = asyncio.new_event_loop()
             loop_ready.set()
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
                 asyncio.set_event_loop(worker_loop)
                 return worker_loop.run_until_complete(coro)
@@ -124,6 +197,7 @@ def _run_async(coro):
         # Carry profile + approval/sudo context so get_hermes_home() resolves correctly.
         from tools.thread_context import propagate_context_to_thread
         future = pool.submit(propagate_context_to_thread(_run_in_worker))
+        # ⤷ 关键分支 try/except：捕获 concurrent.futures.TimeoutError，出错走兜底而不是崩溃。
         try:
             return future.result(timeout=300)
         except concurrent.futures.TimeoutError:
@@ -139,7 +213,9 @@ def _run_async(coro):
             pool.shutdown(wait=False)  # never block the caller on a stuck coroutine
 
     if threading.current_thread() is not threading.main_thread():
+        # ⤷ 出口 return：返回 _get_worker_loop().run_until_complete(coro)
         return _get_worker_loop().run_until_complete(coro)
+    # ⤷ 出口 return：返回 _get_tool_loop().run_until_complete(coro)
     return _get_tool_loop().run_until_complete(coro)
 
 
@@ -203,12 +279,22 @@ _tool_defs_cache_lock = threading.Lock()
 _TOOL_DEFS_CACHE_MAX = 8
 
 
+# ┌── 函数 def _clear_tool_defs_cache()
+# │  作用：Drop memoized results when a dynamic-schema dependency changes (discord caps, sandbox mode).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _clear_tool_defs_cache() -> None:
     """Drop memoized results when a dynamic-schema dependency changes (discord caps, sandbox mode)."""
     with _tool_defs_cache_lock:
         _tool_defs_cache.clear()
 
 
+# ┌── 函数 def get_tool_definitions()
+# │  作用：Tool definitions for model API calls, filtered by toolset.
+# │  参数：enabled_toolsets: Optional[List[str]] = None, disabled_toolsets: Optional[List[str]] = None, quiet_mode: bool = False, skip_tool_search_assembly: bool = False
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def get_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disabled_toolsets: Optional[List[str]] = None,
                          quiet_mode: bool = False, skip_tool_search_assembly: bool = False) -> List[Dict[str, Any]]:
     """Tool definitions for model API calls, filtered by toolset.
@@ -219,9 +305,11 @@ def get_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disabled_
     the tool_search bridge should use it (it reads the real, uncollapsed catalog).
     """
     def compute():
+        # ⤷ 出口 return：返回 _compute_tool_definitions(enabled_toolsets, disabled_toolset…
         return _compute_tool_definitions(enabled_toolsets, disabled_toolsets, quiet_mode,
                                          skip_tool_search_assembly=skip_tool_search_assembly)
     if not quiet_mode:
+        # ⤷ 出口 return：返回 compute()
         return compute()
     cache_key = _tool_defs_cache_key(enabled_toolsets, disabled_toolsets, skip_tool_search_assembly)
     # Cache the freshly-computed list, but hand callers a shallow copy so downstream mutations (e.g.
@@ -236,6 +324,7 @@ def get_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disabled_
     if cached is None:
         result = compute()
         if cache_key is None:
+            # ⤷ 出口 return：返回 list(result)
             return list(result)
         with _tool_defs_cache_lock:
             cached = _tool_defs_cache.get(cache_key)  # another thread may have filled it meanwhile
@@ -244,13 +333,20 @@ def get_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disabled_
                     _tool_defs_cache.pop(next(iter(_tool_defs_cache)))
                 _tool_defs_cache[cache_key] = cached = result
     else:
+        # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
         global _last_resolved_tool_names
         _last_resolved_tool_names = [t["function"]["name"] for t in cached]
     # Always a shallow copy: run_agent appends memory/LCM schemas to its list; a
     # shared list would accumulate duplicate names (HTTP 400 from DeepSeek/Kimi/MiMo).
+    # ⤷ 出口 return：返回 list(cached)
     return list(cached)
 
 
+# ┌── 函数 def _tool_defs_cache_key()
+# │  作用：Memo key for get_tool_definitions, or None when caching must be bypassed.
+# │  参数：enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]], skip_tool_search_assembly: bool
+# │  返回：Optional[tuple]
+# └──────────────────────────────────────────────────────────────
 def _tool_defs_cache_key(
     enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]], skip_tool_search_assembly: bool,
 ) -> Optional[tuple]:
@@ -262,13 +358,16 @@ def _tool_defs_cache_key(
     """
     profile_scope = check_fn_cache_scope()
     if profile_scope == CHECK_FN_CACHE_BYPASS:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 (FileNotFoundError, OSError, ImportError)，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import get_config_path
         cfg_stat = get_config_path().stat()
         cfg_fp = (cfg_stat.st_mtime_ns, cfg_stat.st_size)
     except (FileNotFoundError, OSError, ImportError):
         cfg_fp = None
+    # ⤷ 出口 return：返回 (registry.current_scope_key(), frozenset(enabled_toolsets) i…
     return (
         registry.current_scope_key(), frozenset(enabled_toolsets) if enabled_toolsets is not None else None,
         frozenset(disabled_toolsets) if disabled_toolsets else None, registry._generation, cfg_fp,
@@ -277,6 +376,11 @@ def _tool_defs_cache_key(
     )
 
 
+# ┌── 函数 def _apply_toolset_selection()
+# │  作用：Add (or subtract) every toolset in *names* to/from *tools*, printing the selection unless quiet.
+# │  参数：tools: set, names: List[str], quiet_mode: bool, disable: bool
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_toolset_selection(tools: set, names: List[str], quiet_mode: bool, *, disable: bool) -> None:
     """Add (or subtract) every toolset in *names* to/from *tools*, printing the selection unless quiet."""
     from toolsets import bundle_non_core_tools, get_toolset
@@ -310,6 +414,11 @@ def _apply_toolset_selection(tools: set, names: List[str], quiet_mode: bool, *, 
             print(f"{icon} {label} '{name}': {', '.join(resolved) if resolved else 'no tools'}")
 
 
+# ┌── 函数 def _select_tool_names()
+# │  作用：Tool names requested by the toolset selection (before check_fn filtering).
+# │  参数：enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]], quiet_mode: bool
+# │  返回：set
+# └──────────────────────────────────────────────────────────────
 def _select_tool_names(enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]], quiet_mode: bool) -> set:
     """Tool names requested by the toolset selection (before check_fn filtering)."""
     tools: set = set()
@@ -331,6 +440,7 @@ def _select_tool_names(enabled_toolsets: Optional[List[str]], disabled_toolsets:
     # disabled toolset are strictly stripped out. See issue #17309.
     if disabled_toolsets:
         _apply_toolset_selection(tools, disabled_toolsets, quiet_mode, disable=True)
+    # ⤷ 出口 return：返回 tools
     return tools
 
 
@@ -342,45 +452,83 @@ def _select_tool_names(enabled_toolsets: Optional[List[str]], disabled_toolsets:
 _BROWSER_NAVIGATE_WEB_HINT = " For simple information retrieval, prefer web_search or web_extract (faster, cheaper)."
 
 
+# ┌── 函数 def _fn_def()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：schema: Dict[str, Any]
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _fn_def(schema: Dict[str, Any]) -> Dict[str, Any]:
+    # ⤷ 出口 return：返回 {'type': 'function', 'function': schema}
     return {"type": "function", "function": schema}
 
 
+# ┌── 函数 def _rewrite_execute_code()
+# │  作用：List only sandbox tools that are actually available.
+# │  参数：td: Dict[str, Any], available: set
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _rewrite_execute_code(td: Dict[str, Any], available: set) -> Optional[Dict[str, Any]]:
     """List only sandbox tools that are actually available."""
     # Without this, the model sees "web_search is available in execute_code" even when the API key isn't
     # configured or the toolset is disabled (#560-discord).
     from tools.code_execution_tool import SANDBOX_ALLOWED_TOOLS, build_execute_code_schema, _get_execution_mode
+    # ⤷ 出口 return：返回 _fn_def(build_execute_code_schema(SANDBOX_ALLOWED_TOOLS & av…
     return _fn_def(build_execute_code_schema(SANDBOX_ALLOWED_TOOLS & available, mode=_get_execution_mode()))
 
 
+# ┌── 函数 def _discord_rewriter()
+# │  作用：Schema depends on the bot's privileged intents and the config action allowlist; None drops the tool.
+# │  参数：schema_fn_name: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _discord_rewriter(schema_fn_name: str):
     """Schema depends on the bot's privileged intents and the config action allowlist; None drops the tool."""
     def _rewrite(td: Dict[str, Any], available: set) -> Optional[Dict[str, Any]]:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools import discord_tool as _dt
             dynamic = getattr(_dt, schema_fn_name)()
         except Exception:
             dynamic = None
+        # ⤷ 出口 return：返回 None if dynamic is None else _fn_def(dynamic)
         return None if dynamic is None else _fn_def(dynamic)
+    # ⤷ 出口 return：返回 _rewrite
     return _rewrite
 
 
+# ┌── 函数 def _rewrite_browser_navigate()
+# │  作用：Drop the "prefer web_search or web_extract" hint when neither web tool is present (else the model hallucinates them).
+# │  参数：td: Dict[str, Any], available: set
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _rewrite_browser_navigate(td: Dict[str, Any], available: set) -> Optional[Dict[str, Any]]:
     """Drop the "prefer web_search or web_extract" hint when neither web tool is present (else the model hallucinates them)."""
     if {"web_search", "web_extract"} & available:
+        # ⤷ 出口 return：返回 td
         return td
     desc = td["function"].get("description", "").replace(_BROWSER_NAVIGATE_WEB_HINT, "")
+    # ⤷ 出口 return：返回 _fn_def({**td['function'], 'description': desc})
     return _fn_def({**td["function"], "description": desc})
 
 
+# ┌── 函数 def _rewrite_browser_exec()
+# │  作用：browser_exec runs arbitrary host Python: a session without the terminal surface
+# │  参数：td: Dict[str, Any], available: set
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _rewrite_browser_exec(td: Dict[str, Any], available: set) -> Optional[Dict[str, Any]]:
     """browser_exec runs arbitrary host Python: a session without the terminal surface
     must not regain host execution via the browser toolset. Session-level gate rather
     than a check_fn because check_fns are TTL-cached process-wide across sessions."""
+    # ⤷ 出口 return：返回 td if 'terminal' in available else None
     return td if "terminal" in available else None
 
 
+# ┌── 函数 def _rewrite_delegate_task()
+# │  作用：Trim the child-restrictions line to sibling tools actually present, or drop
+# │  参数：td: Dict[str, Any], available: set
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _rewrite_delegate_task(td: Dict[str, Any], available: set) -> Optional[Dict[str, Any]]:
     """Trim the child-restrictions line to sibling tools actually present, or drop
     the line when none apply, so the model never learns ghost vocabulary. Two
@@ -388,6 +536,7 @@ def _rewrite_delegate_task(td: Dict[str, Any], available: set) -> Optional[Dict[
     longer one first because the sibling list is a substring of it."""
     blocked_present = [t for t in ("clarify", "memory", "cronjob_manage") if t in available]
     if len(blocked_present) == 3:
+        # ⤷ 出口 return：返回 td
         return td
     fn = td.get("function", {})
     desc = fn.get("description", "")
@@ -395,6 +544,7 @@ def _rewrite_delegate_task(td: Dict[str, Any], available: set) -> Optional[Dict[
         if full in desc:
             break
     else:
+        # ⤷ 出口 return：返回 td
         return td
     if blocked_present:
         names = (["delegate_task"] if self_named else []) + blocked_present
@@ -405,12 +555,18 @@ def _rewrite_delegate_task(td: Dict[str, Any], available: set) -> Optional[Dict[
         start = desc.find("- Children cannot call " + full)
         if start != -1:
             desc = desc[:start] + desc[desc.index("\n", start) + 1:]
+    # ⤷ 出口 return：返回 {**td, 'function': {**fn, 'description': desc}}
     return {**td, "function": {**fn, "description": desc}}
 
 
 _VAULT_INPUT_TOOL_HINT = "the browser's input tool"
 
 
+# ┌── 函数 def _rewrite_browser_vault()
+# │  作用：Name the concrete input tool for typing the login identifier: `fill_input` inside browser_exec code, or
+# │  参数：td: Dict[str, Any], available: set
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _rewrite_browser_vault(td: Dict[str, Any], available: set) -> Optional[Dict[str, Any]]:
     """Name the concrete input tool for typing the login identifier: `fill_input` inside browser_exec code, or
     browser_type on the built-in stack. Resolved here because the two live in different toolsets."""
@@ -419,8 +575,10 @@ def _rewrite_browser_vault(td: Dict[str, Any], available: set) -> Optional[Dict[
     elif "browser_type" in available:
         concrete = "browser_type"
     else:
+        # ⤷ 出口 return：返回 td
         return td
     fn = td["function"]
+    # ⤷ 出口 return：返回 _fn_def({**fn, 'description': fn.get('description', '').repl…
     return _fn_def({**fn, "description": fn.get("description", "").replace(_VAULT_INPUT_TOOL_HINT, concrete)})
 
 
@@ -431,23 +589,38 @@ _VAULT_NO_PASSWORD_NOTE = (" Vault note: on a login/checkout form call browser_v
                            "user shows it.")
 
 
+# ┌── 函数 def _rewrite_input_tool_for_vault()
+# │  作用：The model reads the input tool's description at the moment it decides how to fill a password field; the
+# │  参数：td: Dict[str, Any], available: set
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _rewrite_input_tool_for_vault(td: Dict[str, Any], available: set) -> Optional[Dict[str, Any]]:
     """The model reads the input tool's description at the moment it decides how to fill a password field; the
     vault tools' own descriptions are too far away to win that decision (live: it typed a demo password shown on
     the page). Say it where the temptation is."""
     if "browser_vault_fill" not in available:
+        # ⤷ 出口 return：返回 td
         return td
     fn = td["function"]
+    # ⤷ 出口 return：返回 _fn_def({**fn, 'description': fn.get('description', '') + _V…
     return _fn_def({**fn, "description": fn.get("description", "") + _VAULT_NO_PASSWORD_NOTE})
 
 
+# ┌── 函数 def _compose_rewriters()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：*fns
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _compose_rewriters(*fns):
     def run(td, available):
         for fn in fns:
             td = fn(td, available)
             if td is None:
+                # ⤷ 出口 return：返回 None
                 return None
+        # ⤷ 出口 return：返回 td
         return td
+    # ⤷ 出口 return：返回 run
     return run
 
 
@@ -464,6 +637,11 @@ _DYNAMIC_SCHEMA_REWRITERS = {
 }
 
 
+# ┌── 函数 def _apply_dynamic_schemas()
+# │  作用：Apply _DYNAMIC_SCHEMA_REWRITERS in list order; the availability set is a
+# │  参数：tool_defs: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _apply_dynamic_schemas(tool_defs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Apply _DYNAMIC_SCHEMA_REWRITERS in list order; the availability set is a
     snapshot taken before any rewrite (no rewriter's inputs are droppable)."""
@@ -475,6 +653,7 @@ def _apply_dynamic_schemas(tool_defs: List[Dict[str, Any]]) -> List[Dict[str, An
             td = rewrite(td, available)
         if td is not None:
             out.append(td)
+    # ⤷ 出口 return：返回 out
     return out
 
 
@@ -487,6 +666,11 @@ _TOOL_SEARCH_LISTING_FORMS = {
 }
 
 
+# ┌── 函数 def _compute_tool_definitions()
+# │  作用：Uncached implementation of :func:`get_tool_definitions`.
+# │  参数：enabled_toolsets: Optional[List[str]] = None, disabled_toolsets: Optional[List[str]] = None, quiet_mode: bool = False, skip_tool_search_assembly: bool = False
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _compute_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disabled_toolsets: Optional[List[str]] = None,
                               quiet_mode: bool = False, skip_tool_search_assembly: bool = False) -> List[Dict[str, Any]]:
     """Uncached implementation of :func:`get_tool_definitions`."""
@@ -496,6 +680,7 @@ def _compute_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disa
     from tools.kanban_toolset_context import scoped_kanban_toolset_selection
     with scoped_kanban_toolset_selection(enabled_toolsets):
         filtered_tools = _apply_dynamic_schemas(registry.get_definitions(tools_to_include, quiet=quiet_mode))
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _last_resolved_tool_names
     _last_resolved_tool_names = [t["function"]["name"] for t in filtered_tools]
 
@@ -504,6 +689,7 @@ def _compute_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disa
               if filtered_tools else "🛠️  No tools selected (all filtered out or unavailable)")
     # Normalize schema shapes llama.cpp's grammar converter rejects (bare
     # "type": "object", string-valued nodes from malformed MCP servers).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.schema_sanitizer import sanitize_tool_schemas
         filtered_tools = sanitize_tool_schemas(filtered_tools)
@@ -514,6 +700,7 @@ def _compute_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disa
     # tool_search/describe/call bridge when the deferrable surface exceeds the
     # configured share of the context window. Core tools are never deferred.
     # Must be the LAST step (after sanitization); idempotent if called twice.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.tool_search import assemble_tool_defs, load_config as _load_ts_config
         ts_cfg = _load_ts_config()
@@ -528,9 +715,15 @@ def _compute_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disa
     except Exception as e:  # pragma: no cover — never break tool loading
         logger.warning("Tool search assembly skipped: %s", e)
 
+    # ⤷ 出口 return：返回 filtered_tools
     return filtered_tools
 
 
+# ┌── 函数 def _active_model_config()
+# │  作用：(model_id, model section) from config.yaml; model_id is "" when unset.
+# │  参数：无
+# │  返回：Tuple[str, Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _active_model_config() -> Tuple[str, Dict[str, Any]]:
     """(model_id, model section) from config.yaml; model_id is "" when unset."""
     from hermes_cli.config import load_config
@@ -540,9 +733,15 @@ def _active_model_config() -> Tuple[str, Dict[str, Any]]:
     if isinstance(raw_model_id, dict):
         from hermes_cli.config import split_model_config_default
         raw_model_id, _ = split_model_config_default(raw_model_id)
+    # ⤷ 出口 return：返回 (str(raw_model_id).strip(), model_cfg)
     return str(raw_model_id).strip(), model_cfg
 
 
+# ┌── 函数 def _resolve_active_context_length()
+# │  作用：Active model's context length for the tool-search gate (0 if unresolvable).
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _resolve_active_context_length() -> int:
     """Active model's context length for the tool-search gate (0 if unresolvable).
 
@@ -551,9 +750,11 @@ def _resolve_active_context_length() -> int:
     metadata cache (slightly stale is fine for picking a tier and avoids a ~200 ms
     /models probe per CLI startup); then the full live resolver.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         model_id, model_cfg = _active_model_config()
         if not model_id:
+            # ⤷ 出口 return：返回 0
             return 0
         from agent.model_metadata import get_cached_context_length, get_model_context_length
         # Honor explicit `model.context_length` in config.yaml — short-circuits the OpenRouter /models probe
@@ -567,6 +768,7 @@ def _resolve_active_context_length() -> int:
         if provider:
             # Credential resolution failing (offline, no keys) degrades to a
             # provider+base_url-only lookup so static fallbacks still apply.
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.runtime_provider import resolve_runtime_provider
                 rt = resolve_runtime_provider(requested=provider, target_model=model_id) or {}
@@ -576,16 +778,19 @@ def _resolve_active_context_length() -> int:
                 logger.debug("Runtime credential resolution failed for tool-search "
                              "context gate (provider=%s): %s — using config values only", provider, rt_exc)
         if config_ctx is None and base_url:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 cached_ctx = get_cached_context_length(model_id, base_url)
                 if isinstance(cached_ctx, int) and cached_ctx > 0:
                     return cached_ctx
             except Exception:
                 pass
+        # ⤷ 出口 return：返回 int(get_model_context_length(model_id, base_url=base_url, ap…
         return int(get_model_context_length(model_id, base_url=base_url, api_key=api_key,
                                             config_context_length=config_ctx, provider=provider) or 0)
     except Exception as e:
         logger.debug("Could not resolve active context length: %s", e)
+        # ⤷ 出口 return：返回 0
         return 0
 
 
@@ -617,18 +822,29 @@ _TOOL_ERROR_STRIP_RES = (
 )
 
 
+# ┌── 函数 def _sanitize_tool_error()
+# │  作用：Strip structural framing tokens from a tool error before the model sees it.
+# │  参数：error_msg: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _sanitize_tool_error(error_msg: str) -> str:
     """Strip structural framing tokens from a tool error before the model sees it."""
     if not error_msg:
+        # ⤷ 出口 return：返回 '[TOOL_ERROR] '
         return "[TOOL_ERROR] "
     sanitized = error_msg
     for pattern in _TOOL_ERROR_STRIP_RES:
         sanitized = pattern.sub("", sanitized)
     if len(sanitized) > _TOOL_ERROR_MAX_LEN:
         sanitized = sanitized[:_TOOL_ERROR_MAX_LEN - 3] + "..."
+    # ⤷ 出口 return：返回 f'[TOOL_ERROR] {sanitized}'
     return f"[TOOL_ERROR] {sanitized}"
 
 
+# ┌── 类 class _CallIds
+# │  说明：Identity fields of one tool call, threaded through hooks and middleware.
+# │  成员：共 1 个方法；对外可用 1 个
+# └──────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class _CallIds:
     """Identity fields of one tool call, threaded through hooks and middleware."""
@@ -638,29 +854,50 @@ class _CallIds:
     turn_id: Optional[str] = None
     api_request_id: Optional[str] = None
 
+    # ┌── 函数 def hook_kwargs()
+    # │  作用：Same fields with None -> "" (hook/middleware wire contract).
+    # │  参数：self
+    # │  返回：Dict[str, str]
+    # └──────────────────────────────────────────────────────────────
     def hook_kwargs(self) -> Dict[str, str]:
         """Same fields with None -> "" (hook/middleware wire contract)."""
+        # ⤷ 出口 return：返回 {k: v or '' for k, v in asdict(self).items()}
         return {k: v or "" for k, v in asdict(self).items()}
 
 
+# ┌── 函数 def _tool_result_observer_fields()
+# │  作用：Derive (status, error_type, error_message) from a tool result for observer hooks.
+# │  参数：tool_name: str, result: Any
+# │  返回：tuple[str, Optional[str], Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _tool_result_observer_fields(tool_name: str, result: Any) -> tuple[str, Optional[str], Optional[str]]:
     """Derive (status, error_type, error_message) from a tool result for observer hooks."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         parsed_result = json.loads(result) if isinstance(result, str) else result
         if isinstance(parsed_result, dict) and parsed_result.get("error"):
+            # ⤷ 出口 return：返回 ('error', 'tool_error', str(parsed_result.get('error')))
             return "error", "tool_error", str(parsed_result.get("error"))
     except Exception:
         pass
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.display import _detect_tool_failure
         failed, suffix = _detect_tool_failure(tool_name, result)
         if failed:
+            # ⤷ 出口 return：返回 ('error', 'tool_error', suffix.strip().strip('[]') or None)
             return "error", "tool_error", suffix.strip().strip("[]") or None
     except Exception:
         pass
+    # ⤷ 出口 return：返回 ('ok', None, None)
     return "ok", None, None
 
 
+# ┌── 函数 def _emit_post_tool_call_hook()
+# │  作用：Emit the ``post_tool_call`` observer hook; gated on has_hook, and ok/error
+# │  参数：function_name: str, function_args: Dict[str, Any], result: Any, task_id: Optional[str] = ..., session_id: Optional[str] = ..., tool_call_id: Optional[str] = ..., turn_id: Optional[str] = ..., api_request_id: Optional[str] = ...  …共 13 个
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _emit_post_tool_call_hook(
     *, function_name: str, function_args: Dict[str, Any], result: Any,
     task_id: Optional[str] = None, session_id: Optional[str] = None, tool_call_id: Optional[str] = None,
@@ -672,6 +909,7 @@ def _emit_post_tool_call_hook(
     fields are derived from the result only past that gate when status is None."""
     if _post_tool_call_hook_suppressed.get():
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.lifecycle import has_hook, invoke_hook
         if not has_hook("post_tool_call"):
@@ -688,6 +926,11 @@ def _emit_post_tool_call_hook(
         logger.debug("post_tool_call hook error: %s", _hook_err)
 
 
+# ┌── 函数 def _dispatch_bridge_tool()
+# │  作用：Handle a Tool Search bridge call (tool_search / tool_describe / tool_call).
+# │  参数：function_name: str, function_args: Dict[str, Any], enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]]
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _dispatch_bridge_tool(function_name: str, function_args: Dict[str, Any],
                           enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]]):
     """Handle a Tool Search bridge call (tool_search / tool_describe / tool_call).
@@ -696,14 +939,17 @@ def _dispatch_bridge_tool(function_name: str, function_args: Dict[str, Any],
     finished catalog read or error; ``(None, (name, args))`` when a validated
     tool_call should be re-dispatched as the real tool.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools import tool_search as ts
     except Exception:
         return None
     if not ts.is_bridge_tool(function_name):
+        # ⤷ 出口 return：返回 None
         return None
     # Un-collapsed catalog scoped to the session's toolsets, so a restricted
     # session (subagent, kanban worker) can't reach the whole registry via the bridge.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         current_defs = get_tool_definitions(enabled_toolsets=enabled_toolsets, disabled_toolsets=disabled_toolsets,
                                             quiet_mode=True, skip_tool_search_assembly=True) or []
@@ -711,8 +957,10 @@ def _dispatch_bridge_tool(function_name: str, function_args: Dict[str, Any],
         current_defs = []
     args = function_args or {}
     if function_name == ts.TOOL_SEARCH_NAME:
+        # ⤷ 出口 return：返回 (ts.dispatch_tool_search(args, current_tool_defs=current_def…
         return ts.dispatch_tool_search(args, current_tool_defs=current_defs), None
     if function_name == ts.TOOL_DESCRIBE_NAME:
+        # ⤷ 出口 return：返回 (ts.dispatch_tool_describe(args, current_tool_defs=current_d…
         return ts.dispatch_tool_describe(args, current_tool_defs=current_defs), None
     underlying_name, underlying_args, err = ts.resolve_underlying_call(args)
     if err or not underlying_name:
@@ -731,22 +979,36 @@ def _dispatch_bridge_tool(function_name: str, function_args: Dict[str, Any],
     probe_err = ts.validate_deferred_call_args(underlying_name, underlying_args)
     if probe_err is not None:
         return probe_err, None
+    # ⤷ 出口 return：返回 (None, (underlying_name, underlying_args))
     return None, (underlying_name, underlying_args)
 
 
+# ┌── 函数 def _apply_request_middleware()
+# │  作用：tool_request middleware: returns (args, original_args, trace); fail-open.
+# │  参数：function_name: str, function_args: Dict[str, Any], ids: _CallIds, trace: List[Dict[str, Any]]
+# │  返回：Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, Any]]]
+# └──────────────────────────────────────────────────────────────
 def _apply_request_middleware(
     function_name: str, function_args: Dict[str, Any], ids: _CallIds, trace: List[Dict[str, Any]],
 ) -> Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, Any]]]:
     """tool_request middleware: returns (args, original_args, trace); fail-open."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.middleware import apply_tool_request_middleware
         mw = apply_tool_request_middleware(function_name, function_args, **ids.hook_kwargs())
+        # ⤷ 出口 return：返回 (mw.payload, mw.original_payload, mw.trace)
         return mw.payload, mw.original_payload, mw.trace
     except Exception as _mw_err:
         logger.debug("tool_request middleware error: %s", _mw_err)
+        # ⤷ 出口 return：返回 (function_args, dict(function_args), trace)
         return function_args, dict(function_args), trace
 
 
+# ┌── 函数 def _pre_dispatch_guards()
+# │  作用：Plugin pre_tool_call hook, then ACP edit approval.
+# │  参数：function_name: str, function_args: Dict[str, Any], skip_pre_tool_call_hook: bool, ids: _CallIds, middleware_trace: List[Dict[str, Any]]
+# │  返回：Tuple[Dict[str, Any], Optional[Tuple[Any, str, Optional[str]]]]
+# └──────────────────────────────────────────────────────────────
 def _pre_dispatch_guards(function_name: str, function_args: Dict[str, Any], skip_pre_tool_call_hook: bool,
                          ids: _CallIds, middleware_trace: List[Dict[str, Any]],
                          ) -> Tuple[Dict[str, Any], Optional[Tuple[Any, str, Optional[str]]]]:
@@ -759,6 +1021,7 @@ def _pre_dispatch_guards(function_name: str, function_args: Dict[str, Any], skip
     # both the block message and modified args. skip=True: caller already fired it.
     if not skip_pre_tool_call_hook:
         block_message: Optional[str] = None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.plugins import _dispatch_pre_tool_call_hooks
             block_message, modified_args = _dispatch_pre_tool_call_hooks(
@@ -769,41 +1032,62 @@ def _pre_dispatch_guards(function_name: str, function_args: Dict[str, Any], skip
         except Exception as _hook_err:
             logger.debug("pre_tool_call hook error: %s", _hook_err)
         if block_message is not None:
+            # ⤷ 出口 return：返回 (function_args, (tool_error(block_message), 'plugin_block', …
             return function_args, (tool_error(block_message), "plugin_block", block_message)
 
     # ACP/Zed edit approval before any file mutation. The requester is bound
     # via ContextVar only for ACP sessions, so CLI/gateway paths are unaffected.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from acp_adapter.edit_approval import maybe_require_edit_approval
         edit_block_message = maybe_require_edit_approval(function_name, function_args)
         if edit_block_message is not None:
+            # ⤷ 出口 return：返回 (function_args, (edit_block_message, 'edit_approval_denied',…
             return function_args, (edit_block_message, "edit_approval_denied", None)
     except Exception as _edit_approval_err:
         logger.debug("ACP edit approval guard error: %s", _edit_approval_err)
         if function_name in {"write_file", "patch"}:
+            # ⤷ 出口 return：返回 (function_args, (tool_error('Edit approval denied: approval …
             return function_args, (tool_error("Edit approval denied: approval guard failed"), "edit_approval_error", None)
+    # ⤷ 出口 return：返回 (function_args, None)
     return function_args, None
 
 
+# ┌── 函数 def _approval_observability()
+# │  作用：Bind the approval observability context (turn/tool_call/session ids) for the block.
+# │  参数：ids: _CallIds
+# │  返回：（未标注类型）
+# │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+# └──────────────────────────────────────────────────────────────
 @contextmanager
 def _approval_observability(ids: _CallIds):
     """Bind the approval observability context (turn/tool_call/session ids) for the block."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.approval_context import reset_current_observability_context, set_current_observability_context
         tokens = set_current_observability_context(turn_id=ids.turn_id or "", tool_call_id=ids.tool_call_id or "",
                                                    session_id=ids.session_id or "")
     except Exception:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield
         return
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield
     finally:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             reset_current_observability_context(tokens)
         except Exception:
             pass
 
 
+# ┌── 函数 def _execute_tool()
+# │  作用：Run the registry handler (through tool-execution middleware unless skipped)
+# │  参数：function_name: str, function_args: Dict[str, Any], original_args: Dict[str, Any], ids: _CallIds, user_task: Optional[str], enabled_tools: Optional[List[str]], skip_tool_execution_middleware: bool
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _execute_tool(function_name: str, function_args: Dict[str, Any], original_args: Dict[str, Any], ids: _CallIds,
                   *, user_task: Optional[str], enabled_tools: Optional[List[str]], skip_tool_execution_middleware: bool) -> Any:
     """Run the registry handler (through tool-execution middleware unless skipped)
@@ -819,17 +1103,26 @@ def _execute_tool(function_name: str, function_args: Dict[str, Any], original_ar
     def _dispatch(next_args: Dict[str, Any]) -> Any:
         from tools.connectors import dispatch_connector_call, is_connector_name
         if is_connector_name(function_name):
+            # ⤷ 出口 return：返回 dispatch_connector_call(function_name, next_args, ids.tool_c…
             return dispatch_connector_call(function_name, next_args, ids.tool_call_id)
+        # ⤷ 出口 return：返回 registry.dispatch(function_name, next_args, **dispatch_kwarg…
         return registry.dispatch(function_name, next_args, **dispatch_kwargs)
 
     with _approval_observability(ids):
         if skip_tool_execution_middleware:
+            # ⤷ 出口 return：返回 _dispatch(function_args)
             return _dispatch(function_args)
         from hermes_cli.middleware import run_tool_execution_middleware
+        # ⤷ 出口 return：返回 run_tool_execution_middleware(function_name, function_args, …
         return run_tool_execution_middleware(function_name, function_args, _dispatch, original_args=original_args,
                                              **ids.hook_kwargs())
 
 
+# ┌── 函数 def _apply_transform_tool_result_hook()
+# │  作用：transform_tool_result: plugins may replace the final result string.
+# │  参数：function_name: str, function_args: Dict[str, Any], result: Any, duration_ms: int, ids: _CallIds
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _apply_transform_tool_result_hook(function_name: str, function_args: Dict[str, Any], result: Any, duration_ms: int,
                                       ids: _CallIds) -> Any:
     """transform_tool_result: plugins may replace the final result string.
@@ -837,6 +1130,7 @@ def _apply_transform_tool_result_hook(function_name: str, function_args: Dict[st
     Runs after post_tool_call and before the result enters context. Fail-open;
     first string return wins. Gated on has_hook so the no-listener path is cheap.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.lifecycle import has_hook, invoke_hook
         if has_hook("transform_tool_result"):
@@ -844,16 +1138,29 @@ def _apply_transform_tool_result_hook(function_name: str, function_args: Dict[st
             hook_results = invoke_hook("transform_tool_result", tool_name=function_name, args=function_args,
                                        result=result, **ids.hook_kwargs(), duration_ms=duration_ms,
                                        status=status, error_type=error_type, error_message=error_message)
+            # ⤷ 出口 return：返回 next((r for r in hook_results if isinstance(r, str)), result…
             return next((r for r in hook_results if isinstance(r, str)), result)
     except Exception as _hook_err:
         logger.debug("transform_tool_result hook error: %s", _hook_err)
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def _elapsed_ms()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：start: float
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _elapsed_ms(start: float) -> int:
+    # ⤷ 出口 return：返回 int((time.monotonic() - start) * 1000)
     return int((time.monotonic() - start) * 1000)
 
 
+# ┌── 函数 def handle_function_call()
+# │  作用：Route a tool call through hooks/middleware to the registry; returns a JSON string.
+# │  参数：function_name: str, function_args: Dict[str, Any], task_id: Optional[str] = None, tool_call_id: Optional[str] = None, session_id: Optional[str] = None, turn_id: Optional[str] = None, api_request_id: Optional[str] = None, user_task: Optional[str] = None  …共 15 个
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def handle_function_call(
     function_name: str, function_args: Dict[str, Any], task_id: Optional[str] = None,
     tool_call_id: Optional[str] = None, session_id: Optional[str] = None, turn_id: Optional[str] = None,
@@ -882,6 +1189,7 @@ def handle_function_call(
         """Emit post_tool_call with this call's identity fields; returns *result*."""
         _emit_post_tool_call_hook(function_name=function_name, function_args=function_args, result=result,
                                   **asdict(ids), middleware_trace=list(trace), **extra)
+        # ⤷ 出口 return：返回 result
         return result
 
     # Tool Search bridge: tool_search / tool_describe are catalog reads handled
@@ -891,14 +1199,17 @@ def handle_function_call(
     if bridged is not None:
         result, underlying = bridged
         if underlying is None:
+            # ⤷ 出口 return：返回 _emit(result, duration_ms=_elapsed_ms(start))
             return _emit(result, duration_ms=_elapsed_ms(start))
         from tools.connectors import CONNECTOR_BATCH_SENTINEL, dispatch_connector_batch
         if underlying[0] == CONNECTOR_BATCH_SENTINEL:
+            # ⤷ 出口 return：返回 _emit(dispatch_connector_batch(underlying[1]['calls'], ids, …
             return _emit(dispatch_connector_batch(
                 underlying[1]["calls"], ids, user_task=user_task,
                 enabled_tools=enabled_tools, middleware_trace=trace,
                 enabled_toolsets=enabled_toolsets, disabled_toolsets=disabled_toolsets,
             ), duration_ms=_elapsed_ms(start))
+        # ⤷ 出口 return：返回 handle_function_call(*underlying, **asdict(ids), user_task=u…
         return handle_function_call(
             *underlying, **asdict(ids), user_task=user_task, enabled_tools=enabled_tools,
             skip_pre_tool_call_hook=skip_pre_tool_call_hook, skip_tool_request_middleware=skip_tool_request_middleware,
@@ -918,6 +1229,7 @@ def handle_function_call(
     if not skip_tool_request_middleware:
         function_args, original_args, trace = _apply_request_middleware(function_name, function_args, ids, trace)
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if function_name in _AGENT_LOOP_TOOLS:
             return tool_error(f"{function_name} must be handled by the agent loop")
@@ -941,6 +1253,7 @@ def handle_function_call(
                                enabled_tools=enabled_tools, skip_tool_execution_middleware=skip_tool_execution_middleware)
         duration_ms = _elapsed_ms(start)
         _emit(result, duration_ms=duration_ms)
+        # ⤷ 出口 return：返回 _apply_transform_tool_result_hook(function_name, function_ar…
         return _apply_transform_tool_result_hook(function_name, function_args, result, duration_ms, ids)
 
     except Exception as e:
@@ -954,24 +1267,54 @@ def handle_function_call(
 # Backward-compat wrapper functions (registry pass-throughs)
 # =============================================================================
 
+# ┌── 函数 def get_all_tool_names()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def get_all_tool_names() -> List[str]:
+    # ⤷ 出口 return：返回 registry.get_all_tool_names()
     return registry.get_all_tool_names()
 
 
+# ┌── 函数 def get_toolset_for_tool()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：tool_name: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def get_toolset_for_tool(tool_name: str) -> Optional[str]:
+    # ⤷ 出口 return：返回 registry.get_toolset_for_tool(tool_name)
     return registry.get_toolset_for_tool(tool_name)
 
 
+# ┌── 函数 def get_available_toolsets()
+# │  作用：Toolset availability info for UI display.
+# │  参数：无
+# │  返回：Dict[str, dict]
+# └──────────────────────────────────────────────────────────────
 def get_available_toolsets() -> Dict[str, dict]:
     """Toolset availability info for UI display."""
+    # ⤷ 出口 return：返回 registry.get_available_toolsets()
     return registry.get_available_toolsets()
 
 
+# ┌── 函数 def check_toolset_requirements()
+# │  作用：{toolset: available_bool} for every registered toolset.
+# │  参数：无
+# │  返回：Dict[str, bool]
+# └──────────────────────────────────────────────────────────────
 def check_toolset_requirements() -> Dict[str, bool]:
     """{toolset: available_bool} for every registered toolset."""
+    # ⤷ 出口 return：返回 registry.check_toolset_requirements()
     return registry.check_toolset_requirements()
 
 
+# ┌── 函数 def check_tool_availability()
+# │  作用：(available_toolsets, unavailable_info).
+# │  参数：quiet: bool = False
+# │  返回：Tuple[List[str], List[dict]]
+# └──────────────────────────────────────────────────────────────
 def check_tool_availability(quiet: bool = False) -> Tuple[List[str], List[dict]]:
     """(available_toolsets, unavailable_info)."""
+    # ⤷ 出口 return：返回 registry.check_tool_availability(quiet=quiet)
     return registry.check_tool_availability(quiet=quiet)

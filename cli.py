@@ -1,5 +1,33 @@
 #!/usr/bin/env python3
 """Hermes Agent CLI — interactive terminal interface (``python cli.py --help`` for usage)."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：cli.py（约 4689 行，本项目最大的几个文件之一）
+# 地位：终端交互式界面（就是你在命令行里敲 hermes 之后看到的东西）。
+#
+# 它是什么：
+#   负责「人机交互」这一层：读你输入的文字、把模型回答漂亮地打印出来、处理 /斜杠命令、
+#   处理图片拖拽、检测终端是深色还是浅色模式、处理 Ctrl+C 中断等等。
+#   注意：它不管「怎么跟模型对话」，那是 run_agent.py 的事；它只管「怎么把对话呈现给你」。
+#
+# 核心类：
+#   class HermesCLI —— 继承 CLIProcessNotificationsMixin / CLIAgentSetupMixin / CLICommandsMixin。
+#     40+ 个方法，其中 _init_* 系列（_init_display_options、_init_model_routing、_init_toolsets ...）
+#     是「分步骤初始化」，看这一串就能知道启动一个 Agent 要准备多少东西。
+#   class ChatConsole —— 极简的打印/状态输出封装。
+#
+# 新手看这里就够了（不用通读 4689 行）：
+#   - load_cli_config()         读配置文件
+#   - get_tool_definitions()    拿到全部可用工具的清单
+#   - _build_cli_from_args()    根据命令行参数组装一个 CLI 实例
+#   - main()                    程序入口（最底下）
+#
+# 值得学的 Python 写法：
+#   - @contextmanager（如 _suspend_output_history）：用 with 临时改变某种状态，退出自动恢复。
+#   - 大量 try/except 包裹可能失败的终端探测，体现「终端环境千奇百怪，必须容错」的实战风格。
+# ==========================================================================
+#
 
 # Must be the very first import (UTF-8 stdio on Windows). Missing only mid-``hermes update``.
 try:
@@ -78,29 +106,45 @@ import threading
 import queue
 
 
+# ┌── 函数 def _lazy_shim()
+# │  作用：Import ``module.name`` on first call; keeps heavy imports off startup while ``cli.<name>`` stays patchable.
+# │  参数：module: str, name: str, alias: str | None = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _lazy_shim(module: str, name: str, alias: str | None = None):
     """Import ``module.name`` on first call; keeps heavy imports off startup while ``cli.<name>`` stays patchable."""
     import importlib
 
     def shim(*args, **kwargs):
+        # ⤷ 出口 return：返回 getattr(importlib.import_module(module), name)(*args, **kwar…
         return getattr(importlib.import_module(module), name)(*args, **kwargs)
 
     shim.__name__ = shim.__qualname__ = alias or name
+    # ⤷ 出口 return：返回 shim
     return shim
 
 
+# ┌── 函数 def format_duration_compact()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：*args, **kwargs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def format_duration_compact(*args, **kwargs):
     seconds = float(args[0] if args else kwargs.get("seconds", 0.0))
     if seconds < 60:
+        # ⤷ 出口 return：返回 f'{seconds:.0f}s'
         return f"{seconds:.0f}s"
     minutes = seconds / 60
     if minutes < 60:
+        # ⤷ 出口 return：返回 f'{minutes:.0f}m'
         return f"{minutes:.0f}m"
     hours = minutes / 60
     if hours < 24:
         remaining_min = int(minutes % 60)
+        # ⤷ 出口 return：返回 f'{int(hours)}h {remaining_min}m' if remaining_min else f'{i…
         return f"{int(hours)}h {remaining_min}m" if remaining_min else f"{int(hours)}h"
     days = hours / 24
+    # ⤷ 出口 return：返回 f'{days:.1f}d'
     return f"{days:.1f}d"
 
 
@@ -108,10 +152,17 @@ def format_duration_compact(*args, **kwargs):
 _REVERSE_ALIAS_CACHE: dict[str, str] | None = None
 
 
+# ┌── 函数 def _reverse_alias_for_display()
+# │  作用：Shortest alias for ``model_name`` from ``model_aliases:`` or ``model.aliases:``, else ``model_name``.
+# │  参数：model_name: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _reverse_alias_for_display(model_name: str) -> str:
     """Shortest alias for ``model_name`` from ``model_aliases:`` or ``model.aliases:``, else ``model_name``."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _REVERSE_ALIAS_CACHE
     if not model_name:
+        # ⤷ 出口 return：返回 model_name
         return model_name
     if _REVERSE_ALIAS_CACHE is None:
         rmap: dict[str, str] = {}
@@ -120,6 +171,7 @@ def _reverse_alias_for_display(model_name: str) -> str:
             if m and (m not in rmap or len(alias) < len(rmap[m])):
                 rmap[m] = alias
 
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import load_config
             cfg = load_config() or {}
@@ -139,13 +191,20 @@ def _reverse_alias_for_display(model_name: str) -> str:
         except Exception:
             pass
         _REVERSE_ALIAS_CACHE = rmap
+    # ⤷ 出口 return：返回 _REVERSE_ALIAS_CACHE.get(model_name, model_name)
     return _REVERSE_ALIAS_CACHE.get(model_name, model_name)
 
 
+# ┌── 函数 def format_token_count_compact()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：*args, **kwargs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def format_token_count_compact(*args, **kwargs):
     value = int(args[0] if args else kwargs.get("value", 0))
     abs_value = abs(value)
     if abs_value < 1_000:
+        # ⤷ 出口 return：返回 str(value)
         return str(value)
 
     sign = "-" if value < 0 else ""
@@ -156,8 +215,10 @@ def format_token_count_compact(*args, **kwargs):
             text = f"{scaled:.{2 if scaled < 10 else 1 if scaled < 100 else 0}f}"
             if "." in text:
                 text = text.rstrip("0").rstrip(".")
+            # ⤷ 出口 return：返回 f'{sign}{text}{suffix}'
             return f"{sign}{text}{suffix}"
 
+    # ⤷ 出口 return：返回 f'{value:,}'
     return f"{value:,}"
 
 
@@ -182,6 +243,11 @@ _REASONING_TAGS = ("REASONING_SCRATCHPAD", "think", "thinking", "reasoning", "th
 _TOOL_CALL_TAGS = ("tool_call", "tool_calls", "tool_result", "function_call", "function_calls")
 
 
+# ┌── 函数 def _strip_reasoning_tags()
+# │  作用：Strip reasoning blocks (closed, unterminated, orphan-close) and leaked tool-call XML from display text.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _strip_reasoning_tags(text: str) -> str:
     """Strip reasoning blocks (closed, unterminated, orphan-close) and leaked tool-call XML from display text.
 
@@ -216,49 +282,82 @@ def _strip_reasoning_tags(text: str) -> str:
         cleaned,
         flags=re.DOTALL | re.IGNORECASE,
     )
+    # ⤷ 出口 return：返回 cleaned.strip()
     return cleaned.strip()
 
 
+# ┌── 函数 def _assistant_content_as_text()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：content: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _assistant_content_as_text(content: Any) -> str:
     if content is None:
+        # ⤷ 出口 return：返回 ''
         return ""
     if isinstance(content, str):
+        # ⤷ 出口 return：返回 content
         return content
     if isinstance(content, list):
         parts = [str(part.get("text", "")) for part in content if isinstance(part, dict) and part.get("type") == "text"]
+        # ⤷ 出口 return：返回 '\n'.join((p for p in parts if p))
         return "\n".join(p for p in parts if p)
+    # ⤷ 出口 return：返回 str(content)
     return str(content)
 
 
+# ┌── 函数 def _assistant_copy_text()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：content: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _assistant_copy_text(content: Any) -> str:
+    # ⤷ 出口 return：返回 _strip_reasoning_tags(_assistant_content_as_text(content))
     return _strip_reasoning_tags(_assistant_content_as_text(content))
 
 
+# ┌── 函数 def _load_prefill_messages()
+# │  作用：Load prefill messages (JSON array) from *file_path*; relative to ~/.hermes/; missing/empty -> [].
+# │  参数：file_path: str
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _load_prefill_messages(file_path: str) -> List[Dict[str, Any]]:
     """Load prefill messages (JSON array) from *file_path*; relative to ~/.hermes/; missing/empty -> []."""
     if not file_path:
+        # ⤷ 出口 return：返回 []
         return []
     path = Path(file_path).expanduser()
     if not path.is_absolute():
         path = _hermes_home / path
     if not path.exists():
         logger.warning("Prefill messages file not found: %s", path)
+        # ⤷ 出口 return：返回 []
         return []
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, list):
             logger.warning("Prefill messages file must contain a JSON array: %s", path)
+            # ⤷ 出口 return：返回 []
             return []
+        # ⤷ 出口 return：返回 data
         return data
     except Exception as e:
         logger.warning("Failed to load prefill messages from %s: %s", path, e)
+        # ⤷ 出口 return：返回 []
         return []
 
 
+# ┌── 函数 def _resolve_prefill_messages_file()
+# │  作用：Prefill file path: env, then top-level ``prefill_messages_file``, then legacy ``agent.*``.
+# │  参数：config: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _resolve_prefill_messages_file(config: Dict[str, Any]) -> str:
     """Prefill file path: env, then top-level ``prefill_messages_file``, then legacy ``agent.*``."""
     agent_cfg = config.get("agent", {})
+    # ⤷ 出口 return：返回 os.getenv('HERMES_PREFILL_MESSAGES_FILE', '').strip() or str…
     return (
         os.getenv("HERMES_PREFILL_MESSAGES_FILE", "").strip()
         or str(config.get("prefill_messages_file", "") or "").strip()
@@ -266,25 +365,40 @@ def _resolve_prefill_messages_file(config: Dict[str, Any]) -> str:
     )
 
 
+# ┌── 函数 def _parse_reasoning_config()
+# │  作用：Parse a reasoning effort level (string or YAML bool; ``false``/``off`` = disabled).
+# │  参数：effort
+# │  返回：dict | None
+# └──────────────────────────────────────────────────────────────
 def _parse_reasoning_config(effort) -> dict | None:
     """Parse a reasoning effort level (string or YAML bool; ``false``/``off`` = disabled)."""
     from hermes_constants import parse_reasoning_effort
     result = parse_reasoning_effort(effort)
     if effort and str(effort).strip() and result is None:
         logger.warning("Unknown reasoning_effort '%s', using default (medium)", effort)
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def _parse_service_tier_config()
+# │  作用：Parse a persisted fast-mode preference: None, "priority", "auto", or "cold".
+# │  参数：raw: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _parse_service_tier_config(raw: str) -> str | None:
     """Parse a persisted fast-mode preference: None, "priority", "auto", or "cold"."""
     value = str(raw or "").strip().lower()
     if not value or value in {"normal", "default", "standard", "off", "none"}:
+        # ⤷ 出口 return：返回 None
         return None
     if value in {"fast", "priority", "on"}:
+        # ⤷ 出口 return：返回 'priority'
         return "priority"
     if value in {"auto", "cold"}:
+        # ⤷ 出口 return：返回 value
         return value
     logger.warning("Unknown service_tier '%s', ignoring", raw)
+    # ⤷ 出口 return：返回 None
     return None
 
 
@@ -322,6 +436,11 @@ _AUXILIARY_TASK_ENV = {
 _CWD_PLACEHOLDERS = (".", "auto", "cwd")
 
 
+# ┌── 函数 def _mirror_config_to_env()
+# │  作用：Project config.yaml values into the env vars the tool modules read (terminal/browser/auxiliary/security/sessions). Env always wins when already set.
+# │  参数：defaults, _file_has_terminal_config
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _mirror_config_to_env(defaults, _file_has_terminal_config):
     """Project config.yaml values into the env vars the tool modules read (terminal/browser/auxiliary/security/sessions). Env always wins when already set."""
     terminal_config = defaults.get("terminal", {})
@@ -382,9 +501,15 @@ def _mirror_config_to_env(defaults, _file_has_terminal_config):
             os.environ["HERMES_SEARCH_SLOW_MS"] = str(sessions_config["search_slow_ms"])
 
 
+# ┌── 函数 def _cli_config_defaults()
+# │  作用：Built-in defaults for every config key the CLI reads (the file overlays these).
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _cli_config_defaults():
     """Built-in defaults for every config key the CLI reads (the file overlays these)."""
     img = "nikolaik/python-nodejs:python3.11-nodejs20"
+    # ⤷ 出口 return：返回 {'model': {'default': '', 'base_url': '', 'provider': 'auto'…
     return {
         "model": {"default": "", "base_url": "", "provider": "auto"},
         "terminal": {
@@ -426,6 +551,11 @@ def _cli_config_defaults():
     }
 
 
+# ┌── 函数 def _merge_file_config()
+# │  作用：Overlay a parsed config file onto *defaults* in place (model normalization, deep merge, legacy keys).
+# │  参数：defaults: Dict[str, Any], file_config: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _merge_file_config(defaults: Dict[str, Any], file_config: Dict[str, Any]) -> None:
     """Overlay a parsed config file onto *defaults* in place (model normalization, deep merge, legacy keys)."""
     # model: string (new format) or dict (old format with default/base_url)
@@ -459,6 +589,11 @@ def _merge_file_config(defaults: Dict[str, Any], file_config: Dict[str, Any]) ->
         defaults["agent"]["max_turns"] = file_config["max_turns"]
 
 
+# ┌── 函数 def load_cli_config()
+# │  作用：~/.hermes/config.yaml (else ./cli-config.yaml) over built-in defaults; env vars win.
+# │  参数：无
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def load_cli_config() -> Dict[str, Any]:
     """~/.hermes/config.yaml (else ./cli-config.yaml) over built-in defaults; env vars win.
 
@@ -474,6 +609,7 @@ def load_cli_config() -> Dict[str, Any]:
     _file_has_terminal_config = False
 
     if config_path.exists():
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 from hermes_cli.config import _normalize_root_model_keys
@@ -497,16 +633,23 @@ def load_cli_config() -> Dict[str, Any]:
 
     _mirror_config_to_env(defaults, _file_has_terminal_config)
 
+    # ⤷ 出口 return：返回 defaults
     return defaults
 
 CLI_CONFIG = load_cli_config()
 
 
+# ┌── 函数 def _init_logging_and_display_from_config()
+# │  作用：Best-effort startup side effects: logging, config warnings, skin, display knobs.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _init_logging_and_display_from_config() -> None:
     """Best-effort startup side effects: logging, config warnings, skin, display knobs."""
     from importlib import import_module as _im
 
     def _display(key, default):
+        # ⤷ 出口 return：返回 CLI_CONFIG.get('display', {}).get(key, default)
         return CLI_CONFIG.get("display", {}).get(key, default)
 
     for step in (
@@ -516,6 +659,7 @@ def _init_logging_and_display_from_config() -> None:
         lambda: _im("agent.display").set_tool_preview_max_len(int(_display("tool_preview_length", 0) or 0)),
         lambda: _im("agent.display").set_friendly_tool_labels(bool(_display("friendly_tool_labels", True))),
     ):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             step()
         except Exception:
@@ -534,27 +678,40 @@ try:
     import sys as _httpx_neuter_sys
     import importlib.util as _httpx_neuter_imp_util
 
+# ┌── 类 class _AsyncHttpxDelNeuter
+# │  说明：Patch ``AsyncHttpxClientWrapper.__del__`` to a no-op when ``openai._base_client`` loads.
+# │  成员：共 1 个方法；对外可用 1 个
+# └──────────────────────────────────────────────────────────────
     class _AsyncHttpxDelNeuter:
         """Patch ``AsyncHttpxClientWrapper.__del__`` to a no-op when ``openai._base_client`` loads."""
 
         _armed = True
 
+    # ┌── 函数 def find_spec()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, fullname, path = None, target = None
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
         def find_spec(self, fullname, path=None, target=None):
             if not self._armed or fullname != "openai._base_client":
+                # ⤷ 出口 return：返回 None
                 return None
             # Disarm before delegating so the recursive find_spec doesn't loop through us.
             self._armed = False
+            # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
             try:
                 _httpx_neuter_sys.meta_path.remove(self)
             except ValueError:
                 pass
             spec = _httpx_neuter_imp_util.find_spec(fullname)
             if spec is None or spec.loader is None:
+                # ⤷ 出口 return：返回 None
                 return None
             _orig_exec = spec.loader.exec_module
 
             def _patched_exec(module):
                 _orig_exec(module)
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     cls = getattr(module, "AsyncHttpxClientWrapper", None)
                     if cls is not None:
@@ -563,6 +720,7 @@ try:
                     pass
 
             spec.loader.exec_module = _patched_exec  # type: ignore[method-assign]
+            # ⤷ 出口 return：返回 spec
             return spec
 
     _httpx_neuter_sys.meta_path.insert(0, _AsyncHttpxDelNeuter())
@@ -574,17 +732,28 @@ from rich.markup import escape as _escape
 from rich.text import Text as _RichText
 
 # Agent/tool systems load lazily: bare startup only needs the prompt.
+# ┌── 函数 def get_tool_definitions()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：*args, **kwargs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def get_tool_definitions(*args, **kwargs):
     from hermes_cli.mcp_startup import wait_for_mcp_discovery
     from model_tools import get_tool_definitions as _get_tool_definitions
 
     wait_for_mcp_discovery()
+    # ⤷ 出口 return：返回 _get_tool_definitions(*args, **kwargs)
     return _get_tool_definitions(*args, **kwargs)
 
 
 validate_toolset = _lazy_shim("toolsets", "validate_toolset")
 
 
+# ┌── 函数 def _sync_process_session_id()
+# │  作用：Keep process-local session-id consumers aligned after CLI switches.
+# │  参数：session_id: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _sync_process_session_id(session_id: str) -> None:
     """Keep process-local session-id consumers aligned after CLI switches."""
     from gateway.session_context import set_current_session_id
@@ -622,14 +791,26 @@ _tui_input_modes_active = False
 # Set True once the TUI's prompt_toolkit app starts (which enables focus reporting + mouse tracking). Gates
 # the on-exit terminal reset so non-TUI one-shot CLI runs — which also register _run_cleanup via atexit —
 # don't emit escape codes for modes they never enabled (#36823).
+# ┌── 函数 def _mark_tui_input_modes_active()
+# │  作用：Record that the TUI app started, so _run_cleanup resets input modes.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _mark_tui_input_modes_active() -> None:
     """Record that the TUI app started, so _run_cleanup resets input modes."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _tui_input_modes_active
     _tui_input_modes_active = True
 
 
+# ┌── 函数 def _prepare_deferred_agent_startup()
+# │  作用：Run Termux-deferred agent discovery before the first real agent turn.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _prepare_deferred_agent_startup() -> None:
     """Run Termux-deferred agent discovery before the first real agent turn."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _deferred_agent_startup_done
     if _deferred_agent_startup_done:
         return
@@ -637,18 +818,21 @@ def _prepare_deferred_agent_startup() -> None:
         return
     _deferred_agent_startup_done = True
     _accept_hooks = os.environ.get("HERMES_ACCEPT_HOOKS", "").lower() in {"1", "true", "yes", "on"}
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import discover_plugins
 
         discover_plugins()
     except Exception:
         logger.warning("plugin discovery failed at deferred CLI startup", exc_info=True)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.mcp_startup import start_background_mcp_discovery
 
         start_background_mcp_discovery(logger=logger, thread_name="termux-cli-mcp-discovery")
     except Exception:
         logger.debug("MCP tool discovery failed at deferred CLI startup", exc_info=True)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.shell_hooks import register_from_config
         from agent.outbound_webhooks import register_from_config as register_outbound_webhooks
@@ -661,6 +845,11 @@ def _prepare_deferred_agent_startup() -> None:
         logger.debug("shell-hook registration failed at deferred CLI startup", exc_info=True)
 
 
+# ┌── 函数 def _flush_logging_and_stdio()
+# │  作用：Best-effort ``logging.shutdown()`` + stdout/stderr flush before ``os._exit``.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _flush_logging_and_stdio() -> None:
     """Best-effort ``logging.shutdown()`` + stdout/stderr flush before ``os._exit``."""
     with suppress(Exception):
@@ -670,19 +859,38 @@ def _flush_logging_and_stdio() -> None:
             _stream.flush()
 
 
+# ┌── 函数 def _float_env()
+# │  作用：``float(os.getenv(name))``, or ``default`` when unset/unparseable.
+# │  参数：name: str, default: float
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _float_env(name: str, default: float) -> float:
     """``float(os.getenv(name))``, or ``default`` when unset/unparseable."""
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 float(os.getenv(name, default))
         return float(os.getenv(name, default))
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def _exit_watchdog_timeout()
+# │  作用：``HERMES_EXIT_WATCHDOG_S`` as a float (default 30; ``0`` disables).
+# │  参数：无
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _exit_watchdog_timeout() -> float:
     """``HERMES_EXIT_WATCHDOG_S`` as a float (default 30; ``0`` disables)."""
+    # ⤷ 出口 return：返回 _float_env('HERMES_EXIT_WATCHDOG_S', 30.0)
     return _float_env("HERMES_EXIT_WATCHDOG_S", 30.0)
 
 
+# ┌── 函数 def _arm_exit_watchdog()
+# │  作用：Daemon timer that ``os._exit(0)``s after ``timeout_s`` once shutdown has begun.
+# │  参数：timeout_s: float | None = None, from_signal: bool = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _arm_exit_watchdog(timeout_s: float | None = None, *, from_signal: bool = False) -> None:
     """Daemon timer that ``os._exit(0)``s after ``timeout_s`` once shutdown has begun.
 
@@ -708,6 +916,7 @@ def _arm_exit_watchdog(timeout_s: float | None = None, *, from_signal: bool = Fa
         if from_signal and _cleanup_in_progress:
             return
 
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             logger.warning(
                 "Exit watchdog fired after %.0fs — forcing process exit "
@@ -726,6 +935,11 @@ def _arm_exit_watchdog(timeout_s: float | None = None, *, from_signal: bool = Fa
 _signal_watchdog_armed = False
 
 
+# ┌── 函数 def _arm_exit_watchdog_on_shutdown_signal()
+# │  作用：Arm the exit backstop the moment a termination signal arrives (idempotent; never raises).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _arm_exit_watchdog_on_shutdown_signal() -> None:
     """Arm the exit backstop the moment a termination signal arrives (idempotent; never raises).
 
@@ -741,6 +955,7 @@ def _arm_exit_watchdog_on_shutdown_signal() -> None:
     blocking the ``finally``. When that happens the process has NO backstop and a "dead" CLI lingers
     (observed: ``hermes --tui`` alive ~47 min at 4% CPU after terminal close — the #65998 class).
     """
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _signal_watchdog_armed
     if _signal_watchdog_armed:
         return
@@ -752,6 +967,11 @@ def _arm_exit_watchdog_on_shutdown_signal() -> None:
         _arm_exit_watchdog(timeout_s=base * 2, from_signal=True)
 
 
+# ┌── 函数 def _shutdown_agent_memory_provider()
+# │  作用：Memory-provider shutdown (on_session_end + shutdown_all) at the real session boundary.
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _shutdown_agent_memory_provider(agent) -> None:
     """Memory-provider shutdown (on_session_end + shutdown_all) at the real session boundary."""
     if not (agent and hasattr(agent, 'shutdown_memory_provider')):
@@ -777,22 +997,42 @@ def _shutdown_agent_memory_provider(agent) -> None:
         agent.shutdown_memory_provider()
 
 
+# ┌── 函数 def _stop_cli_wake_word()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _stop_cli_wake_word() -> None:
     from tools.wake_word import stop_listening
     if _cli_wake_owner is not None:
         stop_listening(owner=_cli_wake_owner)
 
 
+# ┌── 函数 def _interrupt_async_delegations()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _interrupt_async_delegations() -> None:
     from tools.async_delegation import interrupt_all
     interrupt_all(reason="CLI shutdown")
 
 
+# ┌── 函数 def _shutdown_mcp_servers()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _shutdown_mcp_servers() -> None:
     from tools.mcp_tool_lifecycle import shutdown_mcp_servers
     shutdown_mcp_servers()
 
 
+# ┌── 函数 def _shutdown_cached_aux_clients()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _shutdown_cached_aux_clients() -> None:
     # Otherwise AsyncHttpxClientWrapper.__del__ fires on a closed loop ("Press ENTER to continue...").
     from agent.auxiliary_client import shutdown_cached_clients
@@ -808,14 +1048,21 @@ _CLEANUP_STEPS = (
 )
 
 
+# ┌── 函数 def _run_cleanup()
+# │  作用：Run resource cleanup exactly once.
+# │  参数：notify_session_finalize: bool = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _run_cleanup(*, notify_session_finalize: bool = True):
     """Run resource cleanup exactly once."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _cleanup_done, _cleanup_in_progress
     if _cleanup_done:
         return
     _cleanup_done = True
     _cleanup_in_progress = True
 
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         _arm_exit_watchdog()
         # Reset terminal input modes FIRST: teardown below can take seconds and a later
@@ -830,6 +1077,7 @@ def _run_cleanup(*, notify_session_finalize: bool = True):
             cleanup_session_id = _active_agent_ref.session_id if _active_agent_ref else None
             if _should_emit_cleanup_session_finalize(cleanup_session_id):
                 _notify_session_finalize(session_id=cleanup_session_id, platform="cli", reason="shutdown")
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _shutdown_agent_memory_provider(_active_agent_ref)
         except Exception as e:
@@ -838,31 +1086,56 @@ def _run_cleanup(*, notify_session_finalize: bool = True):
         _cleanup_in_progress = False
 
 
+# ┌── 函数 def _should_emit_cleanup_session_finalize()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：session_id: str | None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_emit_cleanup_session_finalize(session_id: str | None) -> bool:
     # A handed-off session is owned by the gateway process — never finalize it here.
     # The CLI must not finalize it on exit — that sets end_reason on a row the gateway reopened and is
     # actively writing to, causing the handoff leg to vanish from session history (#88234).
     if session_id is not None and session_id in _handed_off_session_ids:
+        # ⤷ 出口 return：返回 False
         return False
     if not _single_query_finalize_attempted_session_ids:
+        # ⤷ 出口 return：返回 True
         return True
     if session_id is None:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 session_id not in _single_query_finalize_attempted_session_i…
     return session_id not in _single_query_finalize_attempted_session_ids
 
 
+# ┌── 函数 def _notify_session_finalize()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：session_id: str | None, platform: str = ..., reason: str = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _notify_session_finalize(*, session_id: str | None, platform: str = "cli", reason: str = "shutdown") -> None:
     with suppress(Exception):
         from hermes_cli.lifecycle import finalize_session
         finalize_session(session_id=session_id, platform=platform, reason=reason)
 
 
+# ┌── 函数 def _oneshot_agent_and_session()
+# │  作用：``(agent, session_id)`` for a one-shot run; the agent's id wins over the CLI's.
+# │  参数：cli
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _oneshot_agent_and_session(cli):
     """``(agent, session_id)`` for a one-shot run; the agent's id wins over the CLI's."""
     agent = getattr(cli, "agent", None)
+    # ⤷ 出口 return：返回 (agent, getattr(agent, 'session_id', None) or getattr(cli, '…
     return agent, getattr(agent, "session_id", None) or getattr(cli, "session_id", None)
 
 
+# ┌── 函数 def _invoke_interrupted_session_end()
+# │  作用：Best-effort ``on_session_end`` hook for a turn cut short (never raises).
+# │  参数：agent, session_id, reason: str, **extra
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _invoke_interrupted_session_end(agent, session_id, reason: str, **extra) -> None:
     """Best-effort ``on_session_end`` hook for a turn cut short (never raises)."""
     with suppress(Exception):
@@ -874,6 +1147,11 @@ def _invoke_interrupted_session_end(agent, session_id, reason: str, **extra) -> 
         )
 
 
+# ┌── 函数 def _emit_interrupted_session_end()
+# │  作用：Best-effort on_session_end hook for interrupted non-interactive runs.
+# │  参数：cli, reason: str = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _emit_interrupted_session_end(cli, *, reason: str = "keyboard_interrupt") -> None:
     """Best-effort on_session_end hook for interrupted non-interactive runs."""
     agent, session_id = _oneshot_agent_and_session(cli)
@@ -897,6 +1175,11 @@ def _emit_interrupted_session_end(cli, *, reason: str = "keyboard_interrupt") ->
     )
 
 
+# ┌── 函数 def _notify_single_query_session_finalize()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：cli, reason: str = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _notify_single_query_session_finalize(cli, *, reason: str = "shutdown") -> None:
     agent, session_id = _oneshot_agent_and_session(cli)
     if session_id in _single_query_finalize_attempted_session_ids:
@@ -904,12 +1187,18 @@ def _notify_single_query_session_finalize(cli, *, reason: str = "shutdown") -> N
     if session_id in _handed_off_session_ids:  # gateway owns the lifecycle now
         return
 
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         _notify_session_finalize(session_id=session_id, platform=getattr(agent, "platform", None) or "cli", reason=reason)
     finally:
         _single_query_finalize_attempted_session_ids.add(session_id)
 
 
+# ┌── 函数 def _flush_one_shot_session_store()
+# │  作用：Durably flush + finalize the one-shot session row before exit (idempotent, best-effort).
+# │  参数：cli
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _flush_one_shot_session_store(cli) -> None:
     """Durably flush + finalize the one-shot session row before exit (idempotent, best-effort).
 
@@ -934,6 +1223,7 @@ def _flush_one_shot_session_store(cli) -> None:
         return
     # Passing cli.conversation_history keeps resumed messages identity-skipped even when
     # the failed flush never stamped them.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         msgs = getattr(agent, "_session_messages", None)
         if isinstance(msgs, list) and msgs and hasattr(agent, "_persist_session"):
@@ -943,16 +1233,23 @@ def _flush_one_shot_session_store(cli) -> None:
     db = getattr(agent, "_session_db", None) or getattr(cli, "_session_db", None)
     if db is None:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         db.flush_token_counts()
     except Exception:
         logger.debug("one-shot token-count drain failed", exc_info=True)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         db.end_session(session_id, "cli_close")
     except Exception:
         logger.debug("one-shot end_session failed", exc_info=True)
 
 
+# ┌── 函数 def _wait_for_oneshot_background_completions()
+# │  作用：Bounded linger for notify_on_complete background processes (children write to our pipes).
+# │  参数：cli
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _wait_for_oneshot_background_completions(cli) -> None:
     """Bounded linger for notify_on_complete background processes (children write to our pipes).
 
@@ -980,8 +1277,14 @@ def _wait_for_oneshot_background_completions(cli) -> None:
         )
 
 
+# ┌── 函数 def _finalize_single_query()
+# │  作用：Close one-shot CLI resources before releasing the active session lease.
+# │  参数：cli
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _finalize_single_query(cli) -> None:
     """Close one-shot CLI resources before releasing the active session lease."""
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         # Order matters: linger for spawned background work BEFORE any teardown (the
         # parent owns those children's stdout pipes); then the durable flush, since
@@ -991,6 +1294,7 @@ def _finalize_single_query(cli) -> None:
             (_wait_for_oneshot_background_completions, "background completion wait"),
             (_flush_one_shot_session_store, "session store flush"),
         ):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 step(cli)
             except Exception:
@@ -1001,6 +1305,11 @@ def _finalize_single_query(cli) -> None:
         cli._release_active_session()
 
 
+# ┌── 函数 def _reset_terminal_input_modes_on_exit()
+# │  作用：Disable focus reporting + mouse tracking on TUI exit (best-effort).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reset_terminal_input_modes_on_exit() -> None:
     """Disable focus reporting + mouse tracking on TUI exit (best-effort).
 
@@ -1013,11 +1322,13 @@ def _reset_terminal_input_modes_on_exit() -> None:
     ``os._exit(0)`` path bypasses ``atexit``; neither runs this — but both are non-TTY / non-TUI, so there
     is nothing to reset there. See #36823.
     """
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _tui_input_modes_active
     if not _tui_input_modes_active:
         return
     # Clear first so a re-armed _run_cleanup doesn't re-emit.
     _tui_input_modes_active = False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         stream = sys.stdout
         if stream is not None and stream.isatty():
@@ -1046,8 +1357,14 @@ from hermes_cli.worktree_ops import (
 _active_worktree: Optional[Dict[str, str]] = None
 
 
+# ┌── 函数 def _cleanup_worktree()
+# │  作用：Remove a worktree and its branch on exit; kept only when it has unpushed commits.
+# │  参数：info: Dict[str, str] = None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _cleanup_worktree(info: Dict[str, str] = None) -> None:
     """Remove a worktree and its branch on exit; kept only when it has unpushed commits."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _active_worktree
     info = info or _active_worktree
     if not info:
@@ -1077,10 +1394,16 @@ def _cleanup_worktree(info: Dict[str, str] = None) -> None:
     _cprint(f"\033[32m✓ Worktree cleaned up: {wt_path}\033[0m")
 
 
+# ┌── 函数 def _run_state_db_auto_maintenance()
+# │  作用：One-time repairs + auto-archive/prune/vacuum per the ``sessions:`` config. Never raises.
+# │  参数：session_db
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _run_state_db_auto_maintenance(session_db) -> None:
     """One-time repairs + auto-archive/prune/vacuum per the ``sessions:`` config. Never raises."""
     if session_db is None:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config as _load_full_config
         from hermes_constants import get_hermes_home as _get_hermes_home  # lazy: tests patch it
@@ -1099,6 +1422,7 @@ def _run_state_db_auto_maintenance(session_db) -> None:
                 "Finalized %d orphaned compression sessions", "Orphan compression finalize skipped: %s",
             ),
         ):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 if not session_db.get_meta(meta_key):
                     count = repair()
@@ -1130,8 +1454,14 @@ def _run_state_db_auto_maintenance(session_db) -> None:
         logger.debug("state.db auto-maintenance skipped: %s", exc)
 
 
+# ┌── 函数 def _run_checkpoint_auto_maintenance()
+# │  作用：Call ``maybe_auto_prune_checkpoints`` per the ``checkpoints:`` config. Never raises.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _run_checkpoint_auto_maintenance() -> None:
     """Call ``maybe_auto_prune_checkpoints`` per the ``checkpoints:`` config. Never raises."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config as _load_full_config
         cfg = (_load_full_config().get("checkpoints") or {})
@@ -1157,13 +1487,21 @@ _STREAM_PAD = ""  # no indent: leading whitespace pollutes copy/paste
 _STREAM_PARTIAL_PREVIEW_LEN = 60  # tail of an unfinished line mirrored into the spinner
 
 
+# ┌── 函数 def _hex_to_ansi()
+# │  作用：Convert '#RRGGBB' to a true-color ANSI escape, remapping dark-tuned colors in light mode.
+# │  参数：hex_color: str, bold: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _hex_to_ansi(hex_color: str, *, bold: bool = False) -> str:
     """Convert '#RRGGBB' to a true-color ANSI escape, remapping dark-tuned colors in light mode."""
     hex_color = _maybe_remap_for_light_mode(hex_color)
+    # ⤷ 关键分支 try/except：捕获 (ValueError, IndexError)，出错走兜底而不是崩溃。
     try:
         r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+        # ⤷ 出口 return：返回 f"\x1b[{('1;' if bold else '')}38;2;{r};{g};{b}m"
         return f"\033[{'1;' if bold else ''}38;2;{r};{g};{b}m"
     except (ValueError, IndexError):
+        # ⤷ 出口 return：返回 _ACCENT_ANSI_DEFAULT if bold else '\x1b[38;2;184;134;11m'
         return _ACCENT_ANSI_DEFAULT if bold else "\033[38;2;184;134;11m"
 
 
@@ -1176,23 +1514,37 @@ _FALSE_RE = re.compile(r"^(0|false|off|no|n)$")
 _LIGHT_DEFAULT_TERM_PROGRAMS = frozenset()  # Apple_Terminal isn't reliable; require explicit config
 
 
+# ┌── 函数 def _luminance_from_hex()
+# │  作用：Rec.709 luma in [0, 1] for '#RGB'/'#RRGGBB', or None when malformed.
+# │  参数：hex_str: str
+# │  返回：float | None
+# └──────────────────────────────────────────────────────────────
 def _luminance_from_hex(hex_str: str) -> float | None:
     """Rec.709 luma in [0, 1] for '#RGB'/'#RRGGBB', or None when malformed."""
     s = (hex_str or "").strip().lstrip("#")
     if len(s) == 3:
         s = "".join(c * 2 for c in s)
     if len(s) != 6 or not all(c in "0123456789abcdefABCDEF" for c in s):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:
         r, g, b = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
     except ValueError:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
 
 
 _DA1_REPLY_RE = re.compile(rb"\x1b\[\?[0-9;]*c")
 
 
+# ┌── 函数 def _query_osc11_background()
+# │  作用：Terminal background via OSC 11 as "#RRGGBB", or None.
+# │  参数：无
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _query_osc11_background() -> str | None:
     """Terminal background via OSC 11 as "#RRGGBB", or None.
 
@@ -1205,9 +1557,12 @@ def _query_osc11_background() -> str | None:
     past the flush — a race observed on VPS and container terminals under load (#40250).
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
+        # ⤷ 出口 return：返回 None
         return None
     if any(os.environ.get(v) for v in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import select
         import termios
@@ -1216,11 +1571,14 @@ def _query_osc11_background() -> str | None:
         old = termios.tcgetattr(fd)
     except Exception:
         return None
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             tty.setcbreak(fd)
         except Exception:
             return None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # One write so the OSC 11 query and DA1 fence cannot reorder.
             sys.stdout.write("\x1b]11;?\x1b\\\x1b[c")
@@ -1268,6 +1626,11 @@ def _query_osc11_background() -> str | None:
             pass
 
 
+# ┌── 函数 def _heal_cooked_mode_drift()
+# │  作用：Re-apply raw mode on *fd* when termios drifted back to cooked (POSIX only).
+# │  参数：fd: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _heal_cooked_mode_drift(fd: int) -> bool:
     """Re-apply raw mode on *fd* when termios drifted back to cooked (POSIX only).
 
@@ -1275,60 +1638,86 @@ def _heal_cooked_mode_drift(fd: int) -> bool:
     keystroke and the CLI looks dead. Mirrors prompt_toolkit's raw_mode flag surgery in
     place. Returns True when healed; False when already raw or not inspectable.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import termios
         attrs = termios.tcgetattr(fd)
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
     lflag = attrs[3]
     if not (lflag & (termios.ICANON | termios.ECHO)):
+        # ⤷ 出口 return：返回 False
         return False  # still raw — nothing to do
     attrs[3] = lflag & ~(termios.ECHO | termios.ICANON | termios.IEXTEN | termios.ISIG)
     attrs[0] = attrs[0] & ~(termios.IXON | termios.IXOFF | termios.ICRNL | termios.INLCR | termios.IGNCR)
     attrs[6][termios.VMIN] = 1
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         termios.tcsetattr(fd, termios.TCSANOW, attrs)
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _detect_light_mode_uncached()
+# │  作用：The detection ladder documented above; may raise (caller maps errors to dark).
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _detect_light_mode_uncached() -> bool:
     """The detection ladder documented above; may raise (caller maps errors to dark)."""
     for var in ("HERMES_LIGHT", "HERMES_TUI_LIGHT"):
         v = (os.environ.get(var) or "").strip().lower()
         if _TRUE_RE.match(v):
+            # ⤷ 出口 return：返回 True
             return True
         if _FALSE_RE.match(v):
             return False
     theme = (os.environ.get("HERMES_TUI_THEME") or "").strip().lower()
     if theme == "light":
+        # ⤷ 出口 return：返回 True
         return True
     if theme == "dark":
+        # ⤷ 出口 return：返回 False
         return False
     bg_lum = _luminance_from_hex(os.environ.get("HERMES_TUI_BACKGROUND") or "")
     if bg_lum is not None:
+        # ⤷ 出口 return：返回 bg_lum >= 0.5
         return bg_lum >= 0.5
     last = (os.environ.get("COLORFGBG") or "").strip().split(";")[-1]
     if last.isdigit() and 0 <= int(last) < 16:
+        # ⤷ 出口 return：返回 int(last) in {7, 15}
         return int(last) in {7, 15}
     bg_color = _query_osc11_background()
     if bg_color:
         lum = _luminance_from_hex(bg_color)
         if lum is not None:
             return lum >= 0.5
+    # ⤷ 出口 return：返回 (os.environ.get('TERM_PROGRAM') or '').strip() in _LIGHT_DEF…
     return (os.environ.get("TERM_PROGRAM") or "").strip() in _LIGHT_DEFAULT_TERM_PROGRAMS
 
 
+# ┌── 函数 def _detect_light_mode()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _detect_light_mode() -> bool:
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _LIGHT_MODE_CACHE
     if _LIGHT_MODE_CACHE is not None:
+        # ⤷ 出口 return：返回 _LIGHT_MODE_CACHE
         return _LIGHT_MODE_CACHE
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         result = _detect_light_mode_uncached()
     except Exception:
         result = False
     _LIGHT_MODE_CACHE = result
+    # ⤷ 出口 return：返回 result
     return result
 
 
@@ -1343,17 +1732,31 @@ _LIGHT_MODE_REMAP: dict[str, str] = {
 _LIGHT_MODE_REMAP_UPPER = {k.upper(): v for k, v in _LIGHT_MODE_REMAP.items()}
 
 
+# ┌── 函数 def _maybe_remap_for_light_mode()
+# │  作用：In light mode, remap a dark-tuned color to its higher-contrast equivalent.
+# │  参数：hex_color: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _maybe_remap_for_light_mode(hex_color: str) -> str:
     """In light mode, remap a dark-tuned color to its higher-contrast equivalent."""
     if not _detect_light_mode():
+        # ⤷ 出口 return：返回 hex_color
         return hex_color
     if not hex_color or not hex_color.startswith("#"):
+        # ⤷ 出口 return：返回 hex_color
         return hex_color
+    # ⤷ 出口 return：返回 _LIGHT_MODE_REMAP_UPPER.get(hex_color.upper(), hex_color)
     return _LIGHT_MODE_REMAP_UPPER.get(hex_color.upper(), hex_color)
 
 
+# ┌── 函数 def _install_skin_light_mode_hook()
+# │  作用：Wrap SkinConfig.get_color so EVERY skin color read goes through the light-mode remap. Idempotent.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _install_skin_light_mode_hook() -> None:
     """Wrap SkinConfig.get_color so EVERY skin color read goes through the light-mode remap. Idempotent."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.skin_engine import SkinConfig  # type: ignore[import]
     except Exception:
@@ -1364,9 +1767,12 @@ def _install_skin_light_mode_hook() -> None:
 
     def _wrapped_get_color(self, key, fallback=""):
         value = _orig_get_color(self, key, fallback)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 _maybe_remap_for_light_mode(value)
             return _maybe_remap_for_light_mode(value)
         except Exception:
+            # ⤷ 出口 return：返回 value
             return value
 
     SkinConfig.get_color = _wrapped_get_color  # type: ignore[method-assign]
@@ -1382,17 +1788,32 @@ with suppress(Exception):
         _detect_light_mode()
 
 
+# ┌── 类 class _SkinAwareAnsi
+# │  说明：Lazy ANSI escape resolved from the skin on first use; ``.reset()`` after a ``/skin`` switch.
+# │  成员：共 5 个方法；对外可用 1 个；含魔术方法 __init__, __str__, __add__, __radd__
+# └──────────────────────────────────────────────────────────────
 class _SkinAwareAnsi:
     """Lazy ANSI escape resolved from the skin on first use; ``.reset()`` after a ``/skin`` switch."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, skin_key: str, fallback_hex: str = '#FFD700', bold: bool = ...
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, skin_key: str, fallback_hex: str = "#FFD700", *, bold: bool = False):
         self._skin_key = skin_key
         self._fallback_hex = fallback_hex
         self._bold = bold
         self._cached: str | None = None
 
+    # ┌── 函数 def __str__()
+    # │  作用：魔术方法 __str__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def __str__(self) -> str:
         if self._cached is None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.skin_engine import get_active_skin
                 self._cached = _hex_to_ansi(
@@ -1401,14 +1822,32 @@ class _SkinAwareAnsi:
                 )
             except Exception:
                 self._cached = _hex_to_ansi(self._fallback_hex, bold=self._bold)
+        # ⤷ 出口 return：返回 self._cached
         return self._cached
 
+    # ┌── 函数 def __add__()
+    # │  作用：魔术方法 __add__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, other: str
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def __add__(self, other: str) -> str:
+        # ⤷ 出口 return：返回 str(self) + other
         return str(self) + other
 
+    # ┌── 函数 def __radd__()
+    # │  作用：魔术方法 __radd__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, other: str
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def __radd__(self, other: str) -> str:
+        # ⤷ 出口 return：返回 other + str(self)
         return other + str(self)
 
+    # ┌── 函数 def reset()
+    # │  作用：Clear cache so the next access re-reads the skin.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def reset(self) -> None:
         """Clear cache so the next access re-reads the skin."""
         self._cached = None
@@ -1419,11 +1858,19 @@ _ACCENT = _SkinAwareAnsi("response_border", "#FFD700", bold=True)
 _DIM = "\x1b[2;3m"
 
 
+# ┌── 函数 def _tty_wrap()
+# │  作用：Wrap *s* in an SGR attribute when stdout is a real TTY; plain text otherwise.
+# │  参数：s: str, sgr: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _tty_wrap(s: str, sgr: str) -> str:
     """Wrap *s* in an SGR attribute when stdout is a real TTY; plain text otherwise."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 f'{sgr}{s}\x1b[0m' if sys.stdout.isatty() else str(s)
         return f"{sgr}{s}\x1b[0m" if sys.stdout.isatty() else str(s)
     except Exception:
+        # ⤷ 出口 return：返回 str(s)
         return str(s)
 
 
@@ -1431,20 +1878,39 @@ _b = functools.partial(_tty_wrap, sgr="\x1b[1m")  # bold when stdout is a real T
 _d = functools.partial(_tty_wrap, sgr="\x1b[2;3m")  # dim-italic when stdout is a real TTY
 
 
+# ┌── 函数 def _accent_hex()
+# │  作用：Return the active skin accent color for legacy CLI output lines.
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _accent_hex() -> str:
     """Return the active skin accent color for legacy CLI output lines."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.skin_engine import get_active_skin
+        # ⤷ 出口 return：返回 get_active_skin().get_color('ui_accent', '#FFBF00')
         return get_active_skin().get_color("ui_accent", "#FFBF00")
     except Exception:
+        # ⤷ 出口 return：返回 '#FFBF00'
         return "#FFBF00"
 
 
+# ┌── 函数 def _rich_text_from_ansi()
+# │  作用：Rich Text from ANSI output; literal ``[brackets]`` are not treated as markup.
+# │  参数：text: str
+# │  返回：_RichText
+# └──────────────────────────────────────────────────────────────
 def _rich_text_from_ansi(text: str) -> _RichText:
     """Rich Text from ANSI output; literal ``[brackets]`` are not treated as markup."""
+    # ⤷ 出口 return：返回 _RichText.from_ansi(text or '')
     return _RichText.from_ansi(text or "")
 
 
+# ┌── 函数 def _strip_markdown_syntax()
+# │  作用：Best-effort markdown marker removal for plain-text display.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _strip_markdown_syntax(text: str) -> str:
     """Best-effort markdown marker removal for plain-text display."""
     plain = _rich_text_from_ansi(text or "").plain
@@ -1466,35 +1932,63 @@ def _strip_markdown_syntax(text: str) -> str:
     plain = re.sub(r"(?<!\w)_([^_]+)_(?!\w)", r"\1", plain)
     plain = re.sub(r"~~([^~]+)~~", r"\1", plain)
     plain = re.sub(r"\n{3,}", "\n\n", plain)
+    # ⤷ 出口 return：返回 plain.strip('\n')
     return plain.strip("\n")
 
 
 _WINDOWS_PATH_WITH_DOT_SEGMENT_RE = re.compile(r"(?i)(?:\b[a-z]:\\|\\\\)[^\s`]*\\\.[^\s`]*")
 
 
+# ┌── 函数 def _preserve_windows_dot_segments_for_markdown()
+# │  作用：Double the ``\`` before hidden dirs in Windows paths: CommonMark reads ``\.`` as an escaped dot.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _preserve_windows_dot_segments_for_markdown(text: str) -> str:
     r"""Double the ``\`` before hidden dirs in Windows paths: CommonMark reads ``\.`` as an escaped dot."""
     if "\\." not in text:
+        # ⤷ 出口 return：返回 text
         return text
 
     def _protect(match: re.Match[str]) -> str:
+        # ⤷ 出口 return：返回 re.sub('(?<!\\\\)\\\\(?=\\.)', '\\\\\\\\', match.group(0))
         return re.sub(r"(?<!\\)\\(?=\.)", r"\\\\", match.group(0))
 
+    # ⤷ 出口 return：返回 _WINDOWS_PATH_WITH_DOT_SEGMENT_RE.sub(_protect, text)
     return _WINDOWS_PATH_WITH_DOT_SEGMENT_RE.sub(_protect, text)
 
 
+# ┌── 函数 def _terminal_columns()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _terminal_columns() -> int:
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 shutil.get_terminal_size((80, 24)).columns
         return shutil.get_terminal_size((80, 24)).columns
     except Exception:
+        # ⤷ 出口 return：返回 80
         return 80
 
 
+# ┌── 函数 def _terminal_width_for_streaming()
+# │  作用：Display cells inside the streamed response box (small margin for resize races).
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _terminal_width_for_streaming() -> int:
     """Display cells inside the streamed response box (small margin for resize races)."""
+    # ⤷ 出口 return：返回 max(20, _terminal_columns() - len(_STREAM_PAD) - 2)
     return max(20, _terminal_columns() - len(_STREAM_PAD) - 2)
 
 
+# ┌── 函数 def _render_final_assistant_content()
+# │  作用：Render final assistant content as markdown, stripped text, or raw text.
+# │  参数：text: str, mode: str = 'render'
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _render_final_assistant_content(text: str, mode: str = "render"):
     """Render final assistant content as markdown, stripped text, or raw text."""
     from rich.markdown import Markdown
@@ -1505,26 +1999,37 @@ def _render_final_assistant_content(text: str, mode: str = "render"):
     normalized_mode = str(mode or "render").strip().lower()
     if normalized_mode == "strip":
         # Strip first (inline markdown changes cell width), then re-align padding.
+        # ⤷ 出口 return：返回 _RichText(realign_markdown_tables(_strip_markdown_syntax(tex…
         return _RichText(realign_markdown_tables(_strip_markdown_syntax(text), panel_width))
     if normalized_mode == "raw":
+        # ⤷ 出口 return：返回 _rich_text_from_ansi(text or '')
         return _rich_text_from_ansi(text or "")
 
     # Normalising under-padded tables up front gives narrow-panel fallbacks consistent input.
     plain = _rich_text_from_ansi(text or "").plain
     plain = _preserve_windows_dot_segments_for_markdown(plain)
     plain = realign_markdown_tables(plain, panel_width)
+    # ⤷ 出口 return：返回 Markdown(plain)
     return Markdown(plain)
 
 
+# ┌── 函数 def _post_stream_transform_output()
+# │  作用：Text still to display after a streamed response transform: the suffix, or the whole response when replaced.
+# │  参数：response: str, result: dict | None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _post_stream_transform_output(response: str, result: dict | None) -> str:
     """Text still to display after a streamed response transform: the suffix, or the whole response when replaced."""
     if not result or not result.get("response_transformed"):
+        # ⤷ 出口 return：返回 ''
         return ""
 
     original = result.get("pre_transform_response") or ""
     if original and response.startswith(original):
+        # ⤷ 出口 return：返回 response[len(original):]
         return response[len(original):]
 
+    # ⤷ 出口 return：返回 f'\n[Response transformed after streaming]\n{response}'
     return f"\n[Response transformed after streaming]\n{response}"
 
 
@@ -1535,61 +2040,113 @@ _OUTPUT_HISTORY_MAX_LINES = 200
 _OUTPUT_HISTORY = deque(maxlen=_OUTPUT_HISTORY_MAX_LINES)
 
 
+# ┌── 函数 def _coerce_output_history_limit()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _coerce_output_history_limit(value) -> int:
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 max(10, int(value))
         return max(10, int(value))
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 200
         return 200
 
 
+# ┌── 函数 def _configure_output_history()
+# │  作用：Configure recent CLI output replayed after terminal redraws.
+# │  参数：enabled: bool, max_lines = 200
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _configure_output_history(enabled: bool, max_lines=200) -> None:
     """Configure recent CLI output replayed after terminal redraws."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _OUTPUT_HISTORY_ENABLED, _OUTPUT_HISTORY_MAX_LINES, _OUTPUT_HISTORY
     _OUTPUT_HISTORY_ENABLED = bool(enabled)
     _OUTPUT_HISTORY_MAX_LINES = _coerce_output_history_limit(max_lines)
     _OUTPUT_HISTORY = deque(maxlen=_OUTPUT_HISTORY_MAX_LINES)
 
 
+# ┌── 函数 def _clear_output_history()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _clear_output_history() -> None:
     _OUTPUT_HISTORY.clear()
 
 
+# ┌── 函数 def _suspend_output_history()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：（未标注类型）
+# │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+# └──────────────────────────────────────────────────────────────
 @contextmanager
 def _suspend_output_history():
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _OUTPUT_HISTORY_SUPPRESSED
     old_value = _OUTPUT_HISTORY_SUPPRESSED
     _OUTPUT_HISTORY_SUPPRESSED = True
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield
     finally:
         _OUTPUT_HISTORY_SUPPRESSED = old_value
 
 
+# ┌── 函数 def _output_history_recording()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _output_history_recording() -> bool:
+    # ⤷ 出口 return：返回 _OUTPUT_HISTORY_ENABLED and (not _OUTPUT_HISTORY_REPLAYING) …
     return _OUTPUT_HISTORY_ENABLED and not _OUTPUT_HISTORY_REPLAYING and not _OUTPUT_HISTORY_SUPPRESSED
 
 
+# ┌── 函数 def _record_output_history_entry()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：entry
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _record_output_history_entry(entry) -> None:
     if _output_history_recording():
         _OUTPUT_HISTORY.append(entry)
 
 
+# ┌── 函数 def _record_output_history()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：text: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _record_output_history(text: str) -> None:
     if _output_history_recording():
         _OUTPUT_HISTORY.extend(str(text).replace("\r", "").rstrip("\n").splitlines())
 
 
+# ┌── 函数 def _replay_output_history()
+# │  作用：Repaint recent output above the prompt after a full screen clear.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _replay_output_history() -> None:
     """Repaint recent output above the prompt after a full screen clear."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _OUTPUT_HISTORY_REPLAYING
     if not _OUTPUT_HISTORY_ENABLED or not _OUTPUT_HISTORY:
         return
     _OUTPUT_HISTORY_REPLAYING = True
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         rendered_lines = []
         for entry in tuple(_OUTPUT_HISTORY):
             lines = [entry]
             if callable(entry):
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     lines = entry()
                 except Exception:
@@ -1606,8 +2163,14 @@ def _replay_output_history() -> None:
         _OUTPUT_HISTORY_REPLAYING = False
 
 
+# ┌── 函数 def _pt_print_ansi()
+# │  作用：``_pt_print(ANSI(text))``, falling back to ``print`` when stdout is not a real console.
+# │  参数：text: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _pt_print_ansi(text: str) -> None:
     """``_pt_print(ANSI(text))``, falling back to ``print`` when stdout is not a real console."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _pt_print(_PT_ANSI(text))
     except Exception:
@@ -1616,6 +2179,11 @@ def _pt_print_ansi(text: str) -> None:
             print(text)
 
 
+# ┌── 函数 def _cprint()
+# │  作用：Print ANSI text through prompt_toolkit's renderer (patch_stdout swallows raw ANSI).
+# │  参数：text: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _cprint(text: str):
     """Print ANSI text through prompt_toolkit's renderer (patch_stdout swallows raw ANSI).
 
@@ -1624,12 +2192,14 @@ def _cprint(text: str):
     """
     _record_output_history(text)
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from prompt_toolkit.application import get_app_or_none, run_in_terminal
     except Exception:
         _pt_print(_PT_ANSI(text))
         return
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         app = get_app_or_none()
     except Exception:
@@ -1641,10 +2211,12 @@ def _cprint(text: str):
 
     import asyncio as _asyncio
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         loop = app.loop  # type: ignore[attr-defined]
     except Exception:
         loop = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # get_running_loop(): get_event_loop() warns from threads with no current loop.
         # Use get_running_loop() instead of get_event_loop() to avoid the DeprecationWarning /
@@ -1667,12 +2239,18 @@ def _cprint(text: str):
             if coro is not None and (_inspect.isawaitable(coro) or _inspect.iscoroutine(coro)):
                 _asyncio.ensure_future(coro)
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         loop.call_soon_threadsafe(_schedule)
     except Exception:
         _pt_print_ansi(text)
 
 
+# ┌── 函数 def _prepend_note_to_message()
+# │  作用：Prepend a one-shot note to a user message (str, or content-part list when an image is attached).
+# │  参数：message, note: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _prepend_note_to_message(message, note: str):
     """Prepend a one-shot note to a user message (str, or content-part list when an image is attached).
 
@@ -1681,8 +2259,10 @@ def _prepend_note_to_message(message, note: str):
     """
     note = str(note or "").strip()
     if not note:
+        # ⤷ 出口 return：返回 message
         return message
     if isinstance(message, str):
+        # ⤷ 出口 return：返回 f'{note}\n\n{message}' if message else note
         return f"{note}\n\n{message}" if message else note
     if isinstance(message, list):
         parts = list(message)
@@ -1690,21 +2270,37 @@ def _prepend_note_to_message(message, note: str):
             if isinstance(part, dict) and part.get("type") == "text":
                 text = part.get("text", "")
                 parts[i] = {**part, "text": f"{note}\n\n{text}" if text else note}
+                # ⤷ 出口 return：返回 parts
                 return parts
+        # ⤷ 出口 return：返回 [{'type': 'text', 'text': note}, *parts]
         return [{"type": "text", "text": note}, *parts]
+    # ⤷ 出口 return：返回 message
     return message
 
 
+# ┌── 函数 def _pt_app_is_running()
+# │  作用：Whether a prompt_toolkit Application currently owns the live terminal.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _pt_app_is_running() -> bool:
     """Whether a prompt_toolkit Application currently owns the live terminal."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from prompt_toolkit.application import get_app_or_none
         app = get_app_or_none()
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 app is not None and bool(getattr(app, '_is_running', False))
     return app is not None and bool(getattr(app, "_is_running", False))
 
 
+# ┌── 函数 def _cli_visible_print()
+# │  作用：``print`` unless a prompt_toolkit Application owns the terminal (patch_stdout swallows bare prints).
+# │  参数：text: str = ''
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _cli_visible_print(text: str = "") -> None:
     """``print`` unless a prompt_toolkit Application owns the terminal (patch_stdout swallows bare prints)."""
     if _pt_app_is_running():
@@ -1719,6 +2315,11 @@ _IMAGE_EXTENSIONS = frozenset({
 })
 
 
+# ┌── 函数 def _termux_example_image_path()
+# │  作用：Return a realistic example media path for the current Termux setup.
+# │  参数：filename: str = 'cat.png'
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _termux_example_image_path(filename: str = "cat.png") -> str:
     """Return a realistic example media path for the current Termux setup."""
     candidates = [
@@ -1730,14 +2331,22 @@ def _termux_example_image_path(filename: str = "cat.png") -> str:
     # Literal "/" so the Android hint is right even on Windows.
     for root in candidates:
         if os.path.isdir(root):
+            # ⤷ 出口 return：返回 f'{root}/Pictures/{filename}'
             return f"{root}/Pictures/{filename}"
+    # ⤷ 出口 return：返回 f'~/storage/shared/Pictures/{filename}'
     return f"~/storage/shared/Pictures/{filename}"
 
 
+# ┌── 函数 def _split_path_input()
+# │  作用：Split a leading path token (quoted or with ``\ `` escapes) from trailing free-form text.
+# │  参数：raw: str
+# │  返回：tuple[str, str]
+# └──────────────────────────────────────────────────────────────
 def _split_path_input(raw: str) -> tuple[str, str]:
     r"""Split a leading path token (quoted or with ``\ `` escapes) from trailing free-form text."""
     raw = str(raw or "").strip()
     if not raw:
+        # ⤷ 出口 return：返回 ('', '')
         return "", ""
 
     if raw[0] in {'"', "'"}:
@@ -1749,8 +2358,10 @@ def _split_path_input(raw: str) -> tuple[str, str]:
                 pos += 2
                 continue
             if ch == quote:
+                # ⤷ 出口 return：返回 (raw[1:pos], raw[pos + 1:].strip())
                 return raw[1:pos], raw[pos + 1 :].strip()
             pos += 1
+        # ⤷ 出口 return：返回 (raw[1:], '')
         return raw[1:], ""
 
     pos = 0
@@ -1763,9 +2374,15 @@ def _split_path_input(raw: str) -> tuple[str, str]:
         else:
             pos += 1
 
+    # ⤷ 出口 return：返回 (raw[:pos].replace('\\ ', ' '), raw[pos:].strip())
     return raw[:pos].replace('\\ ', ' '), raw[pos:].strip()
 
 
+# ┌── 函数 def _resolve_attachment_path()
+# │  作用：Resolve a user-supplied attachment path (quotes, ``~``, env vars, ``file://``; relative to TERMINAL_CWD).
+# │  参数：raw_path: str
+# │  返回：Path | None
+# └──────────────────────────────────────────────────────────────
 def _resolve_attachment_path(raw_path: str) -> Path | None:
     """Resolve a user-supplied attachment path (quotes, ``~``, env vars, ``file://``; relative to TERMINAL_CWD).
 
@@ -1773,16 +2390,19 @@ def _resolve_attachment_path(raw_path: str) -> Path | None:
     """
     token = str(raw_path or "").strip()
     if not token:
+        # ⤷ 出口 return：返回 None
         return None
 
     if token[0] == token[-1] and token[0] in {'"', "'"}:
         token = token[1:-1].strip()
     token = token.replace('\\ ', ' ')
     if not token:
+        # ⤷ 出口 return：返回 None
         return None
 
     expanded = token
     if token.startswith("file://"):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             parsed = urlparse(token)
             if parsed.scheme == "file":
@@ -1805,6 +2425,7 @@ def _resolve_attachment_path(raw_path: str) -> Path | None:
         base_dir = Path(os.getenv("TERMINAL_CWD", os.getcwd()))
         path = base_dir / path
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         resolved = path.resolve()
     except Exception:
@@ -1812,25 +2433,40 @@ def _resolve_attachment_path(raw_path: str) -> Path | None:
 
     # ENAMETOOLONG for a pasted `/goal <long prose>` that passed the `/` prefilter
     # would otherwise reach process_loop and silently lose the input.
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         if not resolved.exists() or not resolved.is_file():
             return None
     except OSError:
         return None
+    # ⤷ 出口 return：返回 resolved
     return resolved
 
 
+# ┌── 函数 def _file_drop_result()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：path: Path, remainder: str
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _file_drop_result(path: Path, remainder: str) -> dict:
+    # ⤷ 出口 return：返回 {'path': path, 'is_image': path.suffix.lower() in _IMAGE_EXT…
     return {"path": path, "is_image": path.suffix.lower() in _IMAGE_EXTENSIONS, "remainder": remainder}
 
 
+# ┌── 函数 def _detect_file_drop()
+# │  作用：Detect a dragged/pasted file path at the start of *user_input* -> ``{path, is_image, remainder}`` or None.
+# │  参数：user_input: str
+# │  返回：'dict | None'
+# └──────────────────────────────────────────────────────────────
 def _detect_file_drop(user_input: str) -> "dict | None":
     """Detect a dragged/pasted file path at the start of *user_input* -> ``{path, is_image, remainder}`` or None."""
     if not isinstance(user_input, str):
+        # ⤷ 出口 return：返回 None
         return None
 
     stripped = user_input.strip()
     if not stripped:
+        # ⤷ 出口 return：返回 None
         return None
 
     # Optionally quoted; then /, ~, ./, ../, a Windows drive prefix, or (unquoted) file://.
@@ -1842,10 +2478,12 @@ def _detect_file_drop(user_input: str) -> "dict | None":
         or (len(unquoted) >= 3 and unquoted[1] == ":" and unquoted[2] in {"\\", "/"} and unquoted[0].isalpha())
     )
     if not starts_like_path:
+        # ⤷ 出口 return：返回 None
         return None
 
     direct_path = _resolve_attachment_path(stripped)
     if direct_path is not None:
+        # ⤷ 出口 return：返回 _file_drop_result(direct_path, '')
         return _file_drop_result(direct_path, "")
 
     first_token, remainder = _split_path_input(stripped)
@@ -1857,36 +2495,55 @@ def _detect_file_drop(user_input: str) -> "dict | None":
                 remainder = stripped[pos + 1 :].strip()
                 break
     if drop_path is None:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 _file_drop_result(drop_path, remainder)
     return _file_drop_result(drop_path, remainder)
 
 
+# ┌── 函数 def _format_image_attachment_badges()
+# │  作用：Attached-image badge row: compact summary on narrow terminals, per-image badges otherwise.
+# │  参数：attached_images: list[Path], image_counter: int, width: int | None = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _format_image_attachment_badges(attached_images: list[Path], image_counter: int, width: int | None = None) -> str:
     """Attached-image badge row: compact summary on narrow terminals, per-image badges otherwise."""
     if not attached_images:
+        # ⤷ 出口 return：返回 ''
         return ""
 
     width = width or shutil.get_terminal_size((80, 24)).columns
 
     def _trunc(name: str, limit: int) -> str:
+        # ⤷ 出口 return：返回 name if len(name) <= limit else name[:max(1, limit - 3)] + '…
         return name if len(name) <= limit else name[: max(1, limit - 3)] + "..."
 
     if width < 52:
         if len(attached_images) == 1:
+            # ⤷ 出口 return：返回 f'[📎 {_trunc(attached_images[0].name, 20)}]'
             return f"[📎 {_trunc(attached_images[0].name, 20)}]"
+        # ⤷ 出口 return：返回 f'[📎 {len(attached_images)} images attached]'
         return f"[📎 {len(attached_images)} images attached]"
 
     if width < 80:
         if len(attached_images) == 1:
             return f"[📎 {_trunc(attached_images[0].name, 32)}]"
+        # ⤷ 出口 return：返回 f'[📎 {_trunc(attached_images[0].name, 20)}] [+{len(attached_…
         return f"[📎 {_trunc(attached_images[0].name, 20)}] [+{len(attached_images) - 1}]"
 
     base = image_counter - len(attached_images) + 1
+    # ⤷ 出口 return：返回 ' '.join((f'[📎 Image #{base + i}]' for i in range(len(attach…
     return " ".join(f"[📎 Image #{base + i}]" for i in range(len(attached_images)))
 
 
+# ┌── 函数 def _should_auto_attach_clipboard_image_on_paste()
+# │  作用：Auto-attach clipboard images only for image-only paste gestures.
+# │  参数：pasted_text: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_auto_attach_clipboard_image_on_paste(pasted_text: str) -> bool:
     """Auto-attach clipboard images only for image-only paste gestures."""
+    # ⤷ 出口 return：返回 not pasted_text.strip()
     return not pasted_text.strip()
 
 
@@ -1895,6 +2552,11 @@ _strip_leaked_bracketed_paste_wrappers = _lazy_shim(
 )
 
 
+# ┌── 函数 def _hermes_call_output_screen_diff()
+# │  作用：prompt_toolkit ``_output_screen_diff`` with resize guards.
+# │  参数：orig_osd, app, output, screen, current_pos, color_depth, previous_screen, last_style  …共 14 个
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _hermes_call_output_screen_diff(
     orig_osd, app, output, screen, current_pos, color_depth, previous_screen, last_style, is_done, full_screen,
     attrs_for_style_string, style_string_has_style, size, previous_width,
@@ -1909,6 +2571,7 @@ def _hermes_call_output_screen_diff(
     same width), retry once with ``previous_screen=None`` so pt first-paints cleanly instead of crashing the
     event loop with ``'cell' object has no attribute 'char'``. See #26137.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if previous_screen is not None and hasattr(previous_screen, "height") and previous_screen.height < screen.height:
             previous_screen.height = screen.height
@@ -1917,19 +2580,28 @@ def _hermes_call_output_screen_diff(
 
     common = (app, output, screen, current_pos, color_depth)
     tail = (is_done, full_screen, attrs_for_style_string, style_string_has_style, size)
+    # ⤷ 关键分支 try/except：捕获 (AttributeError, TypeError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 orig_osd(*common, previous_screen, last_style, *tail, previo…
         return orig_osd(*common, previous_screen, last_style, *tail, previous_width)
     except (AttributeError, TypeError):
         # Corrupt previous_screen / row cells after client reattach: previous_screen=None
         # takes the first-paint erase path, previous_width=0 treats the width as changed.
+        # ⤷ 出口 return：返回 orig_osd(*common, None, None, *tail, 0)
         return orig_osd(*common, None, None, *tail, 0)
 
 
+# ┌── 函数 def _apply_bracketed_paste_timeout_patch()
+# │  作用：Patch ``Vt100Parser.feed`` to flush a bracketed paste whose ESC[201~ end mark never arrives.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_bracketed_paste_timeout_patch() -> None:
     """Patch ``Vt100Parser.feed`` to flush a bracketed paste whose ESC[201~ end mark never arrives.
 
     Without it a dropped end mark (SSH glitch, sleep/wake) freezes input forever. Idempotent.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import prompt_toolkit.input.vt100_parser as _vt100_mod
         from prompt_toolkit.keys import Keys as _PtKeys
@@ -2018,6 +2690,11 @@ _EXTENDED_ENTER_KEYS_SEQ = _KITTY_KEYBOARD_PUSH_SEQ + _MODIFY_OTHER_KEYS_SEQ
 _BACKSLASH_LINE_CONTINUATION_RE = re.compile(r"\\[ \t]*$")
 
 
+# ┌── 函数 def _is_ghostty_terminal()
+# │  作用：Whether the terminal is Ghostty.
+# │  参数：env: Optional[Mapping[str, str]] = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_ghostty_terminal(env: Optional[Mapping[str, str]] = None) -> bool:
     """Whether the terminal is Ghostty.
 
@@ -2028,14 +2705,21 @@ def _is_ghostty_terminal(env: Optional[Mapping[str, str]] = None) -> bool:
     also maps). See #87630.
     """
     env = os.environ if env is None else env
+    # ⤷ 出口 return：返回 (env.get('TERM_PROGRAM') or '').strip() == 'ghostty' or (env…
     return (env.get("TERM_PROGRAM") or "").strip() == "ghostty" or (env.get("TERM") or "").strip().lower() == "xterm-ghostty"
 
 
+# ┌── 函数 def _terminal_supports_extended_enter_keys()
+# │  作用：Allowlist of terminals where requesting modified-Enter reporting is safe (aligned with the Ink TUI).
+# │  参数：env: Optional[Mapping[str, str]] = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _terminal_supports_extended_enter_keys(env: Optional[Mapping[str, str]] = None) -> bool:
     """Allowlist of terminals where requesting modified-Enter reporting is safe (aligned with the Ink TUI)."""
     env = os.environ if env is None else env
     term_program = (env.get("TERM_PROGRAM") or "").strip()
     term = (env.get("TERM") or "").strip().lower()
+    # ⤷ 出口 return：返回 bool(env.get('WT_SESSION') or term_program in {'iTerm.app', …
     return bool(
         env.get("WT_SESSION")
         or term_program in {"iTerm.app", "WezTerm", "ghostty", "vscode"}
@@ -2045,6 +2729,11 @@ def _terminal_supports_extended_enter_keys(env: Optional[Mapping[str, str]] = No
     )
 
 
+# ┌── 函数 def _enable_extended_enter_keys()
+# │  作用：Ask allowlisted terminals to report modified keys distinctly.
+# │  参数：output = None, env: Optional[Mapping[str, str]] = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _enable_extended_enter_keys(output=None, env: Optional[Mapping[str, str]] = None) -> bool:
     """Ask allowlisted terminals to report modified keys distinctly.
 
@@ -2066,22 +2755,32 @@ def _enable_extended_enter_keys(output=None, env: Optional[Mapping[str, str]] = 
     See #87630.
     """
     if not _terminal_supports_extended_enter_keys(env):
+        # ⤷ 出口 return：返回 False
         return False
     seq = _MODIFY_OTHER_KEYS_SEQ if _is_ghostty_terminal(env) else _EXTENDED_ENTER_KEYS_SEQ
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if output is not None and hasattr(output, "write_raw"):
             output.write_raw(seq)
             output.flush()
+            # ⤷ 出口 return：返回 True
             return True
         if sys.stdout is not None and sys.stdout.isatty():
             sys.stdout.write(seq)
             sys.stdout.flush()
+            # ⤷ 出口 return：返回 True
             return True
     except Exception:
         pass
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _cli_multiline_shortcuts_enabled()
+# │  作用：``display.cli_multiline_shortcuts`` (default on: Ctrl+J = newline; off restores the legacy c-j submit).
+# │  参数：config: Optional[Dict[str, Any]] = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _cli_multiline_shortcuts_enabled(config: Optional[Dict[str, Any]] = None) -> bool:
     """``display.cli_multiline_shortcuts`` (default on: Ctrl+J = newline; off restores the legacy c-j submit)."""
     if config is None:
@@ -2089,20 +2788,39 @@ def _cli_multiline_shortcuts_enabled(config: Optional[Dict[str, Any]] = None) ->
     display = config.get("display") if isinstance(config, dict) else None
     value = display.get("cli_multiline_shortcuts", True) if isinstance(display, dict) else True
     if isinstance(value, bool):
+        # ⤷ 出口 return：返回 value
         return value
+    # ⤷ 出口 return：返回 not (isinstance(value, str) and value.strip().lower() in {'0…
     return not (isinstance(value, str) and value.strip().lower() in {"0", "false", "no", "off", "disabled"})
 
 
+# ┌── 函数 def _is_backslash_line_continuation()
+# │  作用：True when Enter should turn a trailing backslash into a newline.
+# │  参数：text: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_backslash_line_continuation(text: str) -> bool:
     """True when Enter should turn a trailing backslash into a newline."""
+    # ⤷ 出口 return：返回 bool(_BACKSLASH_LINE_CONTINUATION_RE.search(text or ''))
     return bool(_BACKSLASH_LINE_CONTINUATION_RE.search(text or ""))
 
 
+# ┌── 函数 def _apply_backslash_line_continuation()
+# │  作用：Replace a trailing ``\`` marker with an actual newline.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _apply_backslash_line_continuation(text: str) -> str:
     """Replace a trailing ``\\`` marker with an actual newline."""
+    # ⤷ 出口 return：返回 _BACKSLASH_LINE_CONTINUATION_RE.sub('', text or '') + '\n'
     return _BACKSLASH_LINE_CONTINUATION_RE.sub("", text or "") + "\n"
 
 
+# ┌── 函数 def _preserve_ctrl_enter_newline()
+# │  作用：Environments delivering Ctrl+Enter as bare LF (Windows Terminal, WSL, SSH, Ghostty): c-j must stay newline.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _preserve_ctrl_enter_newline() -> bool:
     """Environments delivering Ctrl+Enter as bare LF (Windows Terminal, WSL, SSH, Ghostty): c-j must stay newline.
 
@@ -2116,18 +2834,27 @@ def _preserve_ctrl_enter_newline() -> bool:
         or env.get("TERM", "").lower() == "xterm-ghostty" or env.get("TERM_PROGRAM", "").lower() == "ghostty"
         or "microsoft" in env.get("WSL_DISTRO_NAME", "").lower()
     ):
+        # ⤷ 出口 return：返回 True
         return True
     # WSL env vars can be scrubbed under sudo; also peek /proc.
     for p in ("/proc/version", "/proc/sys/kernel/osrelease"):
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             with open(p, "r", encoding="utf-8", errors="ignore") as f:
                 if "microsoft" in f.read().lower():
+                    # ⤷ 出口 return：返回 True
                     return True
         except OSError:
             continue
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _bind_prompt_submit_keys()
+# │  作用：Enter always submits; c-j submits only with multiline shortcuts off AND where Ctrl+Enter isn't c-j.
+# │  参数：kb, handler, multiline_shortcuts_enabled: Optional[bool] = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bind_prompt_submit_keys(kb, handler, *, multiline_shortcuts_enabled: Optional[bool] = None) -> None:
     """Enter always submits; c-j submits only with multiline shortcuts off AND where Ctrl+Enter isn't c-j.
 
@@ -2142,12 +2869,22 @@ def _bind_prompt_submit_keys(kb, handler, *, multiline_shortcuts_enabled: Option
         kb.add("c-j")(handler)
 
 
+# ┌── 函数 def _disable_prompt_toolkit_cpr_warning()
+# │  作用：Let prompt_toolkit fall back from CPR without printing into the prompt.
+# │  参数：app
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _disable_prompt_toolkit_cpr_warning(app) -> None:
     """Let prompt_toolkit fall back from CPR without printing into the prompt."""
     with suppress(Exception):
         app.renderer.cpr_not_supported_callback = None
 
 
+# ┌── 函数 def _terminal_may_leak_cpr()
+# │  作用：Suppress prompt_toolkit CPR queries (delayed replies leak into input); Windows keeps pt's default.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _terminal_may_leak_cpr() -> bool:
     """Suppress prompt_toolkit CPR queries (delayed replies leak into input); Windows keeps pt's default.
 
@@ -2155,9 +2892,15 @@ def _terminal_may_leak_cpr() -> bool:
     can freeze input when the reply is slow (#13870 on SSH/slow PTYs). The same race hits local POSIX TTYs
     under heavy subagent / status-line load — see ``tests/hermes_cli/test_cpr_local_leak.py``.
     """
+    # ⤷ 出口 return：返回 os.environ.get('PROMPT_TOOLKIT_NO_CPR', '') == '1' or sys.pl…
     return os.environ.get("PROMPT_TOOLKIT_NO_CPR", "") == "1" or sys.platform != "win32"
 
 
+# ┌── 函数 def _build_cpr_disabled_output()
+# │  作用：Vt100_Output with ``enable_cpr=False`` (``from_pty()`` doesn't expose it), or None on failure.
+# │  参数：stdout
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_cpr_disabled_output(stdout):
     """Vt100_Output with ``enable_cpr=False`` (``from_pty()`` doesn't expose it), or None on failure.
 
@@ -2166,6 +2909,7 @@ def _build_cpr_disabled_output(stdout):
     it races into the display as raw ``^[[39;1R`` and can stall the renderer's pending-CPR future (#13870;
     also local POSIX under heavy subagent load).
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import io as _io
         from prompt_toolkit.output.vt100 import Vt100_Output, _get_size
@@ -2173,25 +2917,41 @@ def _build_cpr_disabled_output(stdout):
 
         def _get_term_size():
             rows = columns = None
+            # ⤷ 关键分支 try/except：捕获 (OSError, _io.UnsupportedOperation, AttributeError, ValueError)，出错走兜底而不是崩溃。
             try:
                 rows, columns = _get_size(stdout.fileno())
             except (OSError, _io.UnsupportedOperation, AttributeError, ValueError):
                 pass
+            # ⤷ 出口 return：返回 Size(rows=rows or 24, columns=columns or 80)
             return Size(rows=rows or 24, columns=columns or 80)
 
+        # ⤷ 出口 return：返回 Vt100_Output(stdout, _get_term_size, enable_cpr=False)
         return Vt100_Output(stdout, _get_term_size, enable_cpr=False)
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _select_classic_cli_pt_output()
+# │  作用：CPR-disabled ``Vt100_Output`` when CPR may leak, else None (Application keeps pt's default).
+# │  参数：stdout
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _select_classic_cli_pt_output(stdout):
     """CPR-disabled ``Vt100_Output`` when CPR may leak, else None (Application keeps pt's default)."""
+    # ⤷ 出口 return：返回 _build_cpr_disabled_output(stdout) if _terminal_may_leak_cpr…
     return _build_cpr_disabled_output(stdout) if _terminal_may_leak_cpr() else None
 
 
+# ┌── 函数 def _strip_leaked_terminal_responses_with_meta()
+# │  作用：Strip leaked CPR replies and mouse-report fragments -> ``(cleaned, had_mouse_reports)``.
+# │  参数：text: str
+# │  返回：tuple[str, bool]
+# └──────────────────────────────────────────────────────────────
 def _strip_leaked_terminal_responses_with_meta(text: str) -> tuple[str, bool]:
     """Strip leaked CPR replies and mouse-report fragments -> ``(cleaned, had_mouse_reports)``."""
     if not text:
+        # ⤷ 出口 return：返回 (text, False)
         return text, False
 
     had_mouse_reports = False
@@ -2206,9 +2966,15 @@ def _strip_leaked_terminal_responses_with_meta(text: str) -> tuple[str, bool]:
             text = cpr_re.sub("", text)
         text, count = mouse_re.subn("", text)
         had_mouse_reports = had_mouse_reports or count > 0
+    # ⤷ 出口 return：返回 (text, had_mouse_reports)
     return text, had_mouse_reports
 
 
+# ┌── 函数 def _estimate_tui_input_height()
+# │  作用：Input rows from live terminal cells; the BeforeInput prompt consumes cells only on line 0.
+# │  参数：lines: list[str] | tuple[str, ...], prompt_text: str, terminal_columns: int, max_height: int = ...
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _estimate_tui_input_height(
     lines: list[str] | tuple[str, ...], prompt_text: str, terminal_columns: int, *, max_height: int = 8,
 ) -> int:
@@ -2216,6 +2982,7 @@ def _estimate_tui_input_height(
 
     Never substitute a fake wide fallback: a mis-sized TextArea leaves stale cells at the bottom.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from prompt_toolkit.utils import get_cwidth
     except Exception:
@@ -2229,19 +2996,32 @@ def _estimate_tui_input_height(
         display_width = get_cwidth(line or "") + (prompt_width if index == 0 else 0)
         visual_lines += max(1, -(-display_width // columns))
 
+    # ⤷ 出口 return：返回 min(max(visual_lines, 1), max(1, int(max_height or 1)))
     return min(max(visual_lines, 1), max(1, int(max_height or 1)))
 
 
+# ┌── 函数 def _status_bar_visible_from_display_config()
+# │  作用：Initial status-bar visibility; both YAML ``off`` (False) and strings like ``"hidden"`` mean off.
+# │  参数：display_config: object
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _status_bar_visible_from_display_config(display_config: object) -> bool:
     """Initial status-bar visibility; both YAML ``off`` (False) and strings like ``"hidden"`` mean off."""
     if not isinstance(display_config, dict):
         display_config = {}
     statusbar_config = display_config.get("statusbar", display_config.get("tui_statusbar", "top"))
     if isinstance(statusbar_config, str):
+        # ⤷ 出口 return：返回 statusbar_config.strip().lower() not in {'0', 'false', 'hidd…
         return statusbar_config.strip().lower() not in {"0", "false", "hidden", "no", "off"}
+    # ⤷ 出口 return：返回 statusbar_config is not False
     return statusbar_config is not False
 
 
+# ┌── 函数 def _collect_query_images()
+# │  作用：Collect local image attachments for single-query CLI flows.
+# │  参数：query: str | None, image_arg: str | None = None
+# │  返回：tuple[str, list[Path]]
+# └──────────────────────────────────────────────────────────────
 def _collect_query_images(query: str | None, image_arg: str | None = None) -> tuple[str, list[Path]]:
     """Collect local image attachments for single-query CLI flows."""
     message = query or ""
@@ -2256,11 +3036,14 @@ def _collect_query_images(query: str | None, image_arg: str | None = None) -> tu
     if image_arg:
         explicit_path = _resolve_attachment_path(image_arg)
         if explicit_path is None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ValueError(f"Image file not found: {image_arg}")
         if explicit_path.suffix.lower() not in _IMAGE_EXTENSIONS:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ValueError(f"Not a supported image file: {explicit_path}")
         images.append(explicit_path)
 
+    # ⤷ 出口 return：返回 (message, list(dict.fromkeys(images)))
     return message, list(dict.fromkeys(images))
 
 
@@ -2268,14 +3051,28 @@ def _collect_query_images(query: str | None, image_arg: str | None = None) -> tu
 _OSC_ESCAPE_RE = re.compile(r"\x1b\][\s\S]*?(?:\x07|\x1b\\)")
 
 
+# ┌── 类 class ChatConsole
+# │  说明：Rich Console drop-in routing rendered ANSI through ``_cprint`` so colors survive patch_stdout.
+# │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class ChatConsole:
     """Rich Console drop-in routing rendered ANSI through ``_cprint`` so colors survive patch_stdout."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self):
         from io import StringIO
         self._buffer = StringIO()
         self._inner = Console(file=self._buffer, force_terminal=True, color_system="truecolor", highlight=False)
 
+    # ┌── 函数 def print()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, *args, **kwargs
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def print(self, *args, **kwargs):
         self._buffer.seek(0)
         self._buffer.truncate()
@@ -2284,15 +3081,28 @@ class ChatConsole:
         for line in _OSC_ESCAPE_RE.sub("", self._buffer.getvalue()).rstrip("\n").split("\n"):
             _cprint(line)
 
+    # ┌── 函数 def status()
+    # │  作用：No-op ``console.status`` so slash helpers don't duplicate ``_busy_command()``'s indicator.
+    # │  参数：self, *_args, **_kwargs
+    # │  返回：（未标注类型）
+    # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+    # └──────────────────────────────────────────────────────────────
     @contextmanager
     def status(self, *_args, **_kwargs):
         """No-op ``console.status`` so slash helpers don't duplicate ``_busy_command()``'s indicator."""
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield self
 
 
 
+# ┌── 函数 def _build_compact_banner()
+# │  作用：Build a compact banner that fits the current terminal width.
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _build_compact_banner() -> str:
     """Build a compact banner that fits the current terminal width."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.skin_engine import get_active_skin
         _skin = get_active_skin()
@@ -2300,6 +3110,7 @@ def _build_compact_banner() -> str:
         _skin = None
 
     def _color(key, default):
+        # ⤷ 出口 return：返回 _skin.get_color(key, default) if _skin else default
         return _skin.get_color(key, default) if _skin else default
 
     border_color = _color("banner_border", "#FFD700")
@@ -2322,6 +3133,7 @@ def _build_compact_banner() -> str:
 
     w = min(shutil.get_terminal_size().columns - 2, 88)
     if w < 30:
+        # ⤷ 出口 return：返回 f'\n[{title_color}]{tiny_line}[/] [dim {dim_color}]- Nous Re…
         return f"\n[{title_color}]{tiny_line}[/] [dim {dim_color}]- Nous Research[/]\n"
 
     inner = w - 2  # inside the box border
@@ -2331,6 +3143,7 @@ def _build_compact_banner() -> str:
     line1 = line1[:content_width].ljust(content_width)
     line2 = version_line[:content_width].ljust(content_width)
 
+    # ⤷ 出口 return：返回 f'\n[bold {border_color}]╔{bar}╗[/]\n[bold {border_color}]║[…
     return (
         f"\n[bold {border_color}]╔{bar}╗[/]\n"
         f"[bold {border_color}]║[/] [{title_color}]{line1}[/] [bold {border_color}]║[/]\n"
@@ -2339,10 +3152,17 @@ def _build_compact_banner() -> str:
     )
 
 
+# ┌── 函数 def _looks_like_slash_command()
+# │  作用：``/help`` yes, ``/Users/x/file.md`` no: a command's first word has no further ``/``.
+# │  参数：text: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _looks_like_slash_command(text: str) -> bool:
     """``/help`` yes, ``/Users/x/file.md`` no: a command's first word has no further ``/``."""
     if not text or not text.startswith("/"):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 '/' not in text.split()[0][1:]
     return "/" not in text.split()[0][1:]
 
 
@@ -2350,22 +3170,41 @@ _skill_commands = None
 _skill_bundles = None
 
 
+# ┌── 函数 def _slash_args()
+# │  作用：Text after the slash-command word, stripped ("" when absent).
+# │  参数：cmd: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _slash_args(cmd: str) -> str:
     """Text after the slash-command word, stripped ("" when absent)."""
     parts = cmd.split(None, 1)
+    # ⤷ 出口 return：返回 parts[1].strip() if len(parts) > 1 else ''
     return parts[1].strip() if len(parts) > 1 else ""
 
 
+# ┌── 函数 def _ensure_skill_commands()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _ensure_skill_commands() -> dict:
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _skill_commands
     if _skill_commands is None:
         from agent.skill_commands import scan_skill_commands
 
         _skill_commands = scan_skill_commands()
+    # ⤷ 出口 return：返回 _skill_commands
     return _skill_commands
 
 
+# ┌── 函数 def get_skill_commands()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def get_skill_commands() -> dict:
+    # ⤷ 出口 return：返回 _ensure_skill_commands()
     return _ensure_skill_commands()
 
 
@@ -2373,36 +3212,63 @@ build_skill_invocation_message = _lazy_shim("agent.skill_commands", "build_skill
 build_preloaded_skills_prompt = _lazy_shim("agent.skill_commands", "build_preloaded_skills_prompt")
 
 
+# ┌── 函数 def get_skill_bundles()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def get_skill_bundles() -> dict:
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _skill_bundles
     if _skill_bundles is None:
         from agent.skill_bundles import get_skill_bundles as _impl
 
         _skill_bundles = _impl()
+    # ⤷ 出口 return：返回 _skill_bundles
     return _skill_bundles
 
 
 build_bundle_invocation_message = _lazy_shim("agent.skill_bundles", "build_bundle_invocation_message")
 
 
+# ┌── 函数 def _get_plugin_cmd_handler_names()
+# │  作用：Return plugin command names (without slash prefix) for dispatch matching.
+# │  参数：无
+# │  返回：set
+# └──────────────────────────────────────────────────────────────
 def _get_plugin_cmd_handler_names() -> set:
     """Return plugin command names (without slash prefix) for dispatch matching."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import get_plugin_commands
+        # ⤷ 出口 return：返回 set(get_plugin_commands().keys())
         return set(get_plugin_commands().keys())
     except Exception:
+        # ⤷ 出口 return：返回 set()
         return set()
 
 
+# ┌── 函数 def _parse_skills_argument()
+# │  作用：Normalize a CLI skills flag into a deduplicated list of skill identifiers.
+# │  参数：skills: str | list[str] | tuple[str, ...] | None
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _parse_skills_argument(skills: str | list[str] | tuple[str, ...] | None) -> list[str]:
     """Normalize a CLI skills flag into a deduplicated list of skill identifiers."""
     if not skills:
+        # ⤷ 出口 return：返回 []
         return []
     raw_values = [str(item) for item in skills if item is not None] if isinstance(skills, (list, tuple)) else [str(skills)]
     parts = (p.strip() for raw in raw_values for p in raw.split(","))
+    # ⤷ 出口 return：返回 list(dict.fromkeys((p for p in parts if p)))
     return list(dict.fromkeys(p for p in parts if p))
 
 
+# ┌── 函数 def save_config_value()
+# │  作用：Persist dot-separated ``key_path`` = value into HERMES_HOME/config.yaml; True on success.
+# │  参数：key_path: str, value: any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def save_config_value(key_path: str, value: any) -> bool:
     """Persist dot-separated ``key_path`` = value into HERMES_HOME/config.yaml; True on success.
 
@@ -2410,10 +3276,12 @@ def save_config_value(key_path: str, value: any) -> bool:
     """
     config_path = get_hermes_home() / 'config.yaml'
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         from utils import atomic_roundtrip_yaml_update
         atomic_roundtrip_yaml_update(config_path, key_path, value)
+        # ⤷ 关键分支 try/except：捕获 (OSError, NotImplementedError)，出错走兜底而不是崩溃。
         try:  # owner-only: config files contain API keys
             os.chmod(config_path, 0o600)
         except (OSError, NotImplementedError):
@@ -2422,12 +3290,19 @@ def save_config_value(key_path: str, value: any) -> bool:
         from hermes_cli.config import warn_unpinned_cron_jobs_after_model_config_change
 
         warn_unpinned_cron_jobs_after_model_config_change(key_path, value)
+        # ⤷ 出口 return：返回 True
         return True
     except Exception as e:
         logger.error("Failed to save config: %s", e)
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _normalize_moa_model()
+# │  作用：``moa:<preset>`` -> ``("moa", preset)`` (same routing as ``/moa``); anything else -> ``(None, model)``.
+# │  参数：model: Optional[str]
+# │  返回：tuple[Optional[str], Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _normalize_moa_model(model: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     """``moa:<preset>`` -> ``("moa", preset)`` (same routing as ``/moa``); anything else -> ``(None, model)``.
 
@@ -2441,12 +3316,18 @@ def _normalize_moa_model(model: Optional[str]) -> tuple[Optional[str], Optional[
     if isinstance(model, str) and model.strip().lower().startswith("moa:"):
         preset = model.strip().split(":", 1)[1].strip()
         if preset:
+            # ⤷ 出口 return：返回 ('moa', preset)
             return "moa", preset
+    # ⤷ 出口 return：返回 (None, model)
     return None, model
 
 _split_model_config_default = _lazy_shim("hermes_cli.config", "split_model_config_default", "_split_model_config_default")
 
 
+# ┌── 类 class _VoiceInputMessage
+# │  说明：Sentinel for voice-transcribed input so the concise voice prefix never applies to typed text.
+# │  成员：共 2 个方法；全部是下划线开头的内部方法；含魔术方法 __init__, __str__
+# └──────────────────────────────────────────────────────────────
 class _VoiceInputMessage:
     """Sentinel for voice-transcribed input so the concise voice prefix never applies to typed text.
 
@@ -2457,62 +3338,123 @@ class _VoiceInputMessage:
 
     __slots__ = ("text",)
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, text: str
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, text: str):
         self.text = text
 
+    # ┌── 函数 def __str__()
+    # │  作用：魔术方法 __str__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def __str__(self) -> str:
+        # ⤷ 出口 return：返回 self.text
         return self.text
 
 
+# ┌── 类 class _SeededQueryMessage
+# │  说明：Sentinel for a ``-q`` prompt seeded into an interactive session; treated LITERALLY (no slash/!/file-drop).
+# │  成员：共 2 个方法；全部是下划线开头的内部方法；含魔术方法 __init__, __str__
+# └──────────────────────────────────────────────────────────────
 class _SeededQueryMessage:
     """Sentinel for a ``-q`` prompt seeded into an interactive session; treated LITERALLY (no slash/!/file-drop)."""
 
     __slots__ = ("text", "images")
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, text: str, images = None
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, text: str, images=None):
         self.text = text or ""
         self.images = list(images or [])
 
+    # ┌── 函数 def __str__()
+    # │  作用：魔术方法 __str__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def __str__(self) -> str:
+        # ⤷ 出口 return：返回 self.text
         return self.text
 
 
+# ┌── 函数 def _should_seed_interactive()
+# │  作用：``-q`` seeds an interactive session only on a real TTY without ``--oneshot``/``-Q`` (automation answers and exits).
+# │  参数：query, image, quiet: bool, oneshot: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_seed_interactive(query, image, quiet: bool, oneshot: bool) -> bool:
     """``-q`` seeds an interactive session only on a real TTY without ``--oneshot``/``-Q`` (automation answers and exits)."""
     if not (query or image) or oneshot or quiet:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 bool(sys.stdin.isatty() and sys.stdout.isatty())
         return bool(sys.stdin.isatty() and sys.stdout.isatty())
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _panel_box_width()
+# │  作用：Stable TUI panel width wide enough for the title and content (incl. borders).
+# │  参数：title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76) -> int:
     """Stable TUI panel width wide enough for the title and content (incl. borders)."""
     term_cols = shutil.get_terminal_size((100, 20)).columns
     longest = max([len(title)] + [len(line) for line in content_lines] + [min_width - 4])
     inner = min(max(longest + 4, min_width - 2), max_width - 2, max(24, term_cols - 6))
+    # ⤷ 出口 return：返回 inner + 2
     return inner + 2  # leading/trailing space inside the borders
 
 
+# ┌── 函数 def _wrap_panel_text()
+# │  作用：Wrap panel text; ``keep_ws`` preserves whitespace (command/detail previews).
+# │  参数：text: str, width: int, subsequent_indent: str = '', keep_ws: bool = ...
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _wrap_panel_text(text: str, width: int, subsequent_indent: str = "", *, keep_ws: bool = False) -> list[str]:
     """Wrap panel text; ``keep_ws`` preserves whitespace (command/detail previews)."""
     kw = dict(replace_whitespace=False, drop_whitespace=False) if keep_ws else dict(break_long_words=False, break_on_hyphens=False)
     wrapped = textwrap.wrap(text, width=max(8, width), subsequent_indent=subsequent_indent, **kw)
+    # ⤷ 出口 return：返回 wrapped or ['']
     return wrapped or [""]
 
 
 _wrap_panel_text_keep_ws = functools.partial(_wrap_panel_text, keep_ws=True)
 
 
+# ┌── 函数 def _append_panel_line()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：lines, border_style: str, content_style: str, text: str, box_width: int
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _append_panel_line(lines, border_style: str, content_style: str, text: str, box_width: int) -> None:
     lines.extend(((border_style, "│ "), (content_style, text.ljust(max(0, box_width - 2))), (border_style, " │\n")))
 
 
+# ┌── 函数 def _append_blank_panel_line()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：lines, border_style: str, box_width: int
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
     lines.append((border_style, "│" + (" " * box_width) + "│\n"))
 
 
+# ┌── 类 class _ChatTurn
+# │  说明：Per-turn state shared by the ``chat()`` phases and the agent worker thread.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _ChatTurn:
     """Per-turn state shared by the ``chat()`` phases and the agent worker thread.
@@ -2537,6 +3479,11 @@ from hermes_cli.cli_chat_turn_mixin import CLIChatTurnMixin
 _PASTE_REF_RE = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
 
 
+# ┌── 类 class HermesCLI（继承自：CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin, CLITuiMixin, CLIStatusBarMixin, CLIVoiceMixin, CLIModelSwitchMixin, CLISessionMixin, CLIStreamMixin, CLIModalMixin, CLITerminalMixin, CLIInfoMixin, CLILoopsMixin, CLIChatTurnMixin）
+# │  说明：Interactive REPL for the Hermes Agent.
+# │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
+# │  成员：共 46 个方法；对外可用 4 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin, CLITuiMixin, CLIStatusBarMixin, CLIVoiceMixin, CLIModelSwitchMixin, CLISessionMixin, CLIStreamMixin, CLIModalMixin, CLITerminalMixin, CLIInfoMixin, CLILoopsMixin, CLIChatTurnMixin):
     """Interactive REPL for the Hermes Agent."""
 
@@ -2546,6 +3493,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     # Inspection surfaces (banner, /tools, status line) read this on partially built instances too.
     disabled_toolsets: Optional[List[str]] = None
 
+    # ┌── 函数 def __init__()
+    # │  作用：CLI args win over config; ``reasoning`` is per-run only; ``resume`` restores history from SQLite.
+    # │  参数：self, model: str = None, toolsets: List[str] = None, provider: str = None, reasoning: str = None, api_key: str = None, base_url: str = None, max_turns: int = None  …共 15 个
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(
         self,
         model: str = None,
@@ -2569,6 +3521,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                                  checkpoints, pass_session_id, ignore_rules)
         self._init_runtime_state(resume)
 
+    # ┌── 函数 def _init_display_options()
+    # │  作用：Display-related config: compact/tool-progress/focus view, bells, streaming, previews, stream buffers.
+    # │  参数：self, verbose, compact
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_display_options(self, verbose, compact):
         """Display-related config: compact/tool-progress/focus view, bells, streaming, previews, stream buffers."""
         self.console = Console()
@@ -2638,6 +3595,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._last_input_mode_recovery = self._last_termios_drift_check = 0.0
         self._input_mode_recovery_notice_shown = self._termios_drift_notice_shown = False
 
+    # ┌── 函数 def _init_model_routing()
+    # │  作用：Resolve model/provider/base_url, turn limits, toolsets, checkpoints, prompt/personality, reasoning + routing config.
+    # │  参数：self, model, toolsets, provider, reasoning, api_key, base_url, max_turns  …共 12 个
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_model_routing(self, model, toolsets, provider, reasoning, api_key, base_url, max_turns, run_budget, checkpoints, pass_session_id, ignore_rules):
         """Resolve model/provider/base_url, turn limits, toolsets, checkpoints, prompt/personality, reasoning + routing config."""
         self._init_model_and_provider(model, provider, api_key, base_url)
@@ -2646,6 +3608,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._init_checkpoints_and_rules(checkpoints, pass_session_id, ignore_rules)
         self._init_prompt_and_reasoning(reasoning)
 
+    # ┌── 函数 def _init_model_and_provider()
+    # │  作用：Priority: CLI args > env vars > config file.
+    # │  参数：self, model, provider, api_key, base_url
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_model_and_provider(self, model, provider, api_key, base_url):
         """Priority: CLI args > env vars > config file."""
         # LLM_MODEL/OPENAI_MODEL env vars are deliberately NOT checked (multi-agent setups
@@ -2705,6 +3672,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # default goes to the custom endpoint and the compressor gets the wrong context length.
         # Explicit `-m` still wins. See #86978.
         if not model and provider:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.runtime_provider import _get_named_custom_provider
 
@@ -2734,6 +3702,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             _keys = _keys[::-1]
         self.api_key = api_key or os.getenv(_keys[0]) or os.getenv(_keys[1])
 
+    # ┌── 函数 def _init_turn_limits()
+    # │  作用：max_turns: CLI arg > config > env var > default; run budget: CLI flag > config.
+    # │  参数：self, max_turns, run_budget
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_turn_limits(self, max_turns, run_budget):
         """max_turns: CLI arg > config > env var > default; run budget: CLI flag > config."""
         # resolve_turn_limit() accepts "none"/"unlimited" (-> sys.maxsize) alongside ints.
@@ -2746,6 +3719,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         ))
         self.run_budget_seconds = run_budget if run_budget is not None else CLI_CONFIG["agent"].get("run_budget_seconds")
 
+    # ┌── 函数 def _init_toolsets()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, toolsets
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_toolsets(self, toolsets):
         self.enabled_toolsets = toolsets
         from agent.skill_utils import parse_config_string_list
@@ -2759,6 +3737,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             if invalid:
                 self._console_print(f"[bold red]Warning: Unknown toolsets: {', '.join(invalid)}[/]")
 
+    # ┌── 函数 def _init_checkpoints_and_rules()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, checkpoints, pass_session_id, ignore_rules
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_checkpoints_and_rules(self, checkpoints, pass_session_id, ignore_rules):
         cp_cfg = CLI_CONFIG.get("checkpoints", {})
         if isinstance(cp_cfg, bool):
@@ -2771,6 +3754,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # --ignore-rules: AIAgent skips context files (AGENTS.md/SOUL.md/...) and memory.
         self.ignore_rules = ignore_rules or os.environ.get("HERMES_IGNORE_RULES") == "1"
 
+    # ┌── 函数 def _init_prompt_and_reasoning()
+    # │  作用：Ephemeral system prompt/prefill, reasoning + service tier, OpenRouter routing knobs, fallback chain.
+    # │  参数：self, reasoning
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_prompt_and_reasoning(self, reasoning):
         """Ephemeral system prompt/prefill, reasoning + service tier, OpenRouter routing knobs, fallback chain."""
         # Env var wins, then hermes_cli.personality (single owner of overlay resolution).
@@ -2807,6 +3795,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         _raw_score = (CLI_CONFIG.get("openrouter", {}) or {}).get("min_coding_score")
         self._openrouter_min_coding_score: Optional[float] = None
         if _raw_score not in {None, ""}:
+            # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
             try:
                 _f = float(_raw_score)
                 if 0.0 <= _f <= 1.0:
@@ -2816,6 +3805,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
         self._fallback_model = get_fallback_chain(CLI_CONFIG)
 
+    # ┌── 函数 def _init_runtime_state()
+    # │  作用：Session store + all per-run mutable state (queues, overlays, pet/voice/status-bar fields).
+    # │  参数：self, resume
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_runtime_state(self, resume):
         """Session store + all per-run mutable state (queues, overlays, pet/voice/status-bar fields)."""
         # A signature change across turns (/model, credential rotation) rebuilds the agent.
@@ -2840,10 +3834,16 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._last_invalidate: float = 0.0  # throttles UI repaints
         self._init_ui_state()
 
+    # ┌── 函数 def _init_session_store()
+    # │  作用：Open the session store early (so /title works before the first message) + opportunistic maintenance.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_session_store(self):
         """Open the session store early (so /title works before the first message) + opportunistic maintenance."""
         self._session_db = None
         self._session_db_unavailable = False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Registry handle, not a bare SessionDB(): goals/loops/heartbeat acquire the same
             # path a moment later from the REPL thread, and a second writer repeats the full
@@ -2860,6 +3860,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             # the store before relying on resume.
             self._session_db_unavailable = True
             logger.warning("Failed to initialize SessionDB — session will NOT be indexed for search: %s", e)
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 Console(stderr=True).print(
                     "[bold yellow]⚠ Session store unavailable[/bold yellow] — "
@@ -2876,6 +3877,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         _run_state_db_auto_maintenance(self._session_db)
         _run_checkpoint_auto_maintenance()
 
+    # ┌── 函数 def _init_ui_state()
+    # │  作用：Per-run mutable UI state; must exist before any chat() call since -q never goes through run().
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_ui_state(self):
         """Per-run mutable UI state; must exist before any chat() call since -q never goes through run()."""
         self._pending_input = queue.Queue()
@@ -2898,6 +3904,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._slash_confirm_state = self._model_picker_state = None
         self._clarify_deadline = self._sudo_deadline = self._approval_deadline = self._slash_confirm_deadline = 0
         self._approval_lock = threading.Lock()
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:  # composer placeholder chosen once so it stays stable on screen
             from hermes_cli.tips import get_random_composer_placeholder
             self._composer_placeholder = get_random_composer_placeholder()
@@ -2970,10 +3977,17 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._cache_hit_baseline_prompt = self._cache_hit_baseline_read = self._cache_hit_baseline_compressions = 0
         self._cache_hit_baseline_model: Optional[str] = None
 
+    # ┌── 函数 def _claim_active_session()
+    # │  作用：Claim a global active-session slot for this CLI process.
+    # │  参数：self, surface: str = 'cli', stderr: bool = ...
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _claim_active_session(self, surface: str = "cli", *, stderr: bool = False) -> bool:
         """Claim a global active-session slot for this CLI process."""
         if self._active_session_lease is not None:
+            # ⤷ 出口 return：返回 True
             return True
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.active_sessions import format_refusal_stderr, try_acquire_active_session
 
@@ -2987,19 +4001,28 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             )
         except Exception as exc:
             logger.warning("Failed to claim active session slot: %s", exc)
+            # ⤷ 出口 return：返回 True
             return True
         if message:
             print(format_refusal_stderr(message), file=sys.stderr) if stderr else self._console_print(f"[bold red]{message}[/]")
+            # ⤷ 出口 return：返回 False
             return False
         self._active_session_lease = lease
         with suppress(Exception):
             atexit.register(self._release_active_session)
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _release_active_session()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _release_active_session(self) -> None:
         lease = getattr(self, "_active_session_lease", None)
         if lease is None:
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             lease.release()
         except Exception:
@@ -3010,6 +4033,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     _PET_FRAME_INTERVAL = 0.16
     _PET_CFG_INTERVAL = 2.5
 
+    # ┌── 函数 def _install_tool_callbacks()
+    # │  作用：Install tool callbacks that need the live prompt UI.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _install_tool_callbacks(self) -> None:
         """Install tool callbacks that need the live prompt UI."""
         if self._tool_callbacks_installed:
@@ -3023,11 +4051,17 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         set_code_prompt_callback(self._vault_code_callback)
         self._tool_callbacks_installed = True
 
+    # ┌── 函数 def _ensure_tirith_security()
+    # │  作用：Check tirith availability once before tools can run terminal commands.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _ensure_tirith_security(self) -> None:
         """Check tirith availability once before tools can run terminal commands."""
         if self._tirith_security_checked:
             return
         self._tirith_security_checked = True
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.tirith_security import ensure_installed, is_platform_supported
 
@@ -3042,8 +4076,14 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception:
             pass
 
+    # ┌── 函数 def _show_security_advisories()
+    # │  作用：Startup banner for unacked security advisories, on stderr (piped stdout stays clean); 24h rate-limited.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _show_security_advisories(self):
         """Startup banner for unacked security advisories, on stderr (piped stdout stays clean); 24h rate-limited."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.security_advisories import detect_compromised, startup_banner
 
@@ -3053,8 +4093,14 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception:
             pass  # never block startup
 
+    # ┌── 函数 def _show_browser_backend_notice()
+    # │  作用：Once-per-24h hint when the default Browser Use backend silently fell back to built-in tools.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _show_browser_backend_notice(self):
         """Once-per-24h hint when the default Browser Use backend silently fell back to built-in tools."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.browser_use_cli import default_downgrade_notice
 
@@ -3064,6 +4110,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception:
             logger.debug("browser backend notice failed", exc_info=True)
 
+    # ┌── 函数 def finalize_preloaded_skills()
+    # │  作用：Join the background --skills preload and fold it into the prompt (idempotent).
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def finalize_preloaded_skills(self) -> None:
         """Join the background --skills preload and fold it into the prompt (idempotent).
 
@@ -3079,6 +4130,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._preload_skills_finalized = True
         err = getattr(self, "_preload_skills_error", None)
         if err is not None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise err
         result = getattr(self, "_preload_skills_result", None)
         if not result:
@@ -3096,13 +4148,20 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     ", ".join(loaded_skills),
                 )
             else:
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise ValueError(f"Unknown skill(s): {missing_display}")
         if skills_prompt:
             self.system_prompt = "\n\n".join(p for p in (self.system_prompt, skills_prompt) if p).strip()
             self.preloaded_skills = loaded_skills
 
+    # ┌── 函数 def _show_tool_availability_warnings()
+    # │  作用：Warn about tools disabled by missing API keys (not system deps).
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _show_tool_availability_warnings(self):
         """Warn about tools disabled by missing API keys (not system deps)."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from model_tools import check_tool_availability
 
@@ -3118,6 +4177,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception:
             pass
 
+    # ┌── 函数 def show_config()
+    # │  作用：Display current configuration with kawaii ASCII art.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def show_config(self):
         """Display current configuration with kawaii ASCII art."""
         terminal_env = os.getenv("TERMINAL_ENV", "local")
@@ -3204,6 +4268,12 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         "queue": ("_cmd_queue", True), "steer": ("_cmd_steer", True), "moa": ("_cmd_moa", True),
     }
 
+    # ┌── 函数 def _slash_handler()
+    # │  作用：(method name, pass cmd_original?) for a registered command, else None.
+    # │  参数：cls, canonical: str
+    # │  返回：tuple[str, bool] | None
+    # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
+    # └──────────────────────────────────────────────────────────────
     @classmethod
     def _slash_handler(cls, canonical: str) -> tuple[str, bool] | None:
         """(method name, pass cmd_original?) for a registered command, else None."""
@@ -3212,8 +4282,14 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             name = f"_handle_{canonical.replace('-', '_')}_command"
             if callable(getattr(cls, name, None)):
                 entry = (name, True)
+        # ⤷ 出口 return：返回 entry
         return entry
 
+    # ┌── 函数 def process_command()
+    # │  作用：Dispatch a slash command; returns False to exit the REPL.
+    # │  参数：self, command: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def process_command(self, command: str) -> bool:
         """Dispatch a slash command; returns False to exit the REPL."""
         cmd_lower = command.lower().strip()  # lowercase only for matching; args keep their case
@@ -3245,12 +4321,19 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
         entry = self._slash_handler(canonical)
         if entry is None:
+            # ⤷ 出口 return：返回 self._process_unregistered_slash(cmd_original, cmd_lower)
             return self._process_unregistered_slash(cmd_original, cmd_lower)
         method_name, pass_arg = entry
         handler = getattr(self, method_name)
         result = handler(cmd_original) if pass_arg else handler()
+        # ⤷ 出口 return：返回 result is not False
         return result is not False
 
+    # ┌── 函数 def _process_unregistered_slash()
+    # │  作用：Slash input with no built-in handler; precedence: quick_commands -> plugins -> bundles -> skills -> prefix expansion.
+    # │  参数：self, cmd_original: str, cmd_lower: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _process_unregistered_slash(self, cmd_original: str, cmd_lower: str) -> bool:
         """Slash input with no built-in handler; precedence: quick_commands -> plugins -> bundles -> skills -> prefix expansion."""
         base_cmd = cmd_lower.split()[0]
@@ -3260,6 +4343,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         quick_commands = self.config.get("quick_commands", {})
         user_args = cmd_original[len(base_cmd):].strip()
         if bare in quick_commands:
+            # ⤷ 出口 return：返回 self._run_quick_command(base_cmd, quick_commands[bare], user…
             return self._run_quick_command(base_cmd, quick_commands[bare], user_args)
         if bare in _get_plugin_cmd_handler_names():
             self._run_plugin_slash_command(base_cmd, user_args)
@@ -3268,9 +4352,16 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         elif base_cmd in skill_commands:
             self._run_skill_slash_command(base_cmd, skill_commands[base_cmd], user_args)
         else:
+            # ⤷ 出口 return：返回 self._expand_slash_prefix(cmd_original, cmd_lower, skill_com…
             return self._expand_slash_prefix(cmd_original, cmd_lower, skill_commands, skill_bundles)
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _run_quick_command()
+    # │  作用：User-defined quick command (config.yaml): ``exec`` runs a shell snippet, ``alias`` re-dispatches.
+    # │  参数：self, base_cmd: str, qcmd: dict, user_args: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _run_quick_command(self, base_cmd: str, qcmd: dict, user_args: str) -> bool:
         """User-defined quick command (config.yaml): ``exec`` runs a shell snippet, ``alias`` re-dispatches."""
         qtype = qcmd.get("type")
@@ -3278,17 +4369,22 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             target = qcmd.get("target", "").strip()
             if target:
                 target = target if target.startswith("/") else f"/{target}"
+                # ⤷ 出口 return：返回 self.process_command(f'{target} {user_args}'.strip())
                 return self.process_command(f"{target} {user_args}".strip())
             self._console_print(f"[bold red]Quick command '{base_cmd}' has no target defined[/]")
+            # ⤷ 出口 return：返回 True
             return True
         if qtype != "exec":
             self._console_print(f"[bold red]Quick command '{base_cmd}' has unsupported type (supported: 'exec', 'alias')[/]")
+            # ⤷ 出口 return：返回 True
             return True
         import subprocess
         exec_cmd = qcmd.get("command", "")
         if not exec_cmd:
             self._console_print(f"[bold red]Quick command '{base_cmd}' has no command defined[/]")
+            # ⤷ 出口 return：返回 True
             return True
+        # ⤷ 关键分支 try/except：捕获 subprocess.TimeoutExpired、Exception，出错走兜底而不是崩溃。
         try:
             # shell=True is intentional (user-authored config snippets, never LLM controlled);
             # the env is sanitized because this process holds every API key.
@@ -3310,14 +4406,21 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self._console_print("[bold red]Quick command timed out (30s)[/]")
         except Exception as e:
             self._console_print(f"[bold red]Quick command error: {e}[/]")
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _run_plugin_slash_command()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, base_cmd: str, user_args: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_plugin_slash_command(self, base_cmd: str, user_args: str) -> None:
         from hermes_cli.plugins import get_plugin_command_handler, resolve_plugin_command_result
 
         plugin_handler = get_plugin_command_handler(base_cmd.lstrip("/"))
         if not plugin_handler:
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             result = resolve_plugin_command_result(plugin_handler(user_args))
             if result:
@@ -3325,10 +4428,20 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception as e:
             _cprint(f"\033[1;31mPlugin command error: {e}{_RST}")
 
+    # ┌── 函数 def _queue_skill_message()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, msg
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _queue_skill_message(self, msg) -> None:
         if hasattr(self, '_pending_input'):
             self._pending_input.put(msg)
 
+    # ┌── 函数 def _run_skill_bundle_command()
+    # │  作用：``/<bundle>`` loads several skills at once (bundles win over same-named skills).
+    # │  参数：self, base_cmd: str, bundle_info: dict, user_instruction: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_skill_bundle_command(self, base_cmd: str, bundle_info: dict, user_instruction: str) -> None:
         """``/<bundle>`` loads several skills at once (bundles win over same-named skills)."""
         bundle_result = build_bundle_invocation_message(base_cmd, user_instruction, task_id=self.session_id)
@@ -3338,12 +4451,22 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         msg, loaded_names, missing = bundle_result
         self._queue_loaded_skills(msg, f"Loading bundle: {bundle_info['name']} ({len(loaded_names)} skills)", missing)
 
+    # ┌── 函数 def _queue_loaded_skills()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, msg, label: str, missing
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _queue_loaded_skills(self, msg, label: str, missing) -> None:
         print(f"\n⚡ {label}")
         if missing:
             ChatConsole().print(f"[yellow]Skipped missing skills: {', '.join(missing)}[/]")
         self._queue_skill_message(msg)
 
+    # ┌── 函数 def _run_skill_slash_command()
+    # │  作用：``/<skill> ...``; stacked ``/skill-a /skill-b do XYZ`` loads every leading skill (up to 5).
+    # │  参数：self, base_cmd: str, skill_info: dict, rest: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_skill_slash_command(self, base_cmd: str, skill_info: dict, rest: str) -> None:
         """``/<skill> ...``; stacked ``/skill-a /skill-b do XYZ`` loads every leading skill (up to 5)."""
         from agent.skill_commands import build_stacked_skill_invocation_message, split_stacked_skill_commands
@@ -3367,6 +4490,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         else:
             ChatConsole().print(f"[bold red]Failed to load skill for {base_cmd}[/]")
 
+    # ┌── 函数 def _expand_slash_prefix()
+    # │  作用：Unique-prefix expansion against built-in COMMANDS + skill commands/bundles (agrees with tab-completion).
+    # │  参数：self, cmd_original: str, cmd_lower: str, skill_commands, skill_bundles
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _expand_slash_prefix(self, cmd_original: str, cmd_lower: str, skill_commands, skill_bundles) -> bool:
         """Unique-prefix expansion against built-in COMMANDS + skill commands/bundles (agrees with tab-completion)."""
         from hermes_cli.commands import COMMANDS
@@ -3384,6 +4512,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     matches = shortest
         if len(matches) == 1 and matches[0] != typed_base:
             # Expand to the full name, preserving arguments.
+            # ⤷ 出口 return：返回 self.process_command(matches[0] + cmd_original.strip()[len(t…
             return self.process_command(matches[0] + cmd_original.strip()[len(typed_base):])
         if len(matches) > 1:
             _cprint(f"{_ACCENT}Ambiguous command: {cmd_lower}{_RST}")
@@ -3392,8 +4521,14 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             # Exact token with no handler (never re-dispatch the same token: recursion), or no match.
             _cprint(f"\033[1;31mUnknown command: {cmd_lower}{_RST}")
             _cprint(f"{_DIM}{_ACCENT}Type /help for available commands{_RST}")
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _drain_interrupt_queue_to_pending_input()
+    # │  作用：Move stray ``_interrupt_queue`` messages into ``_pending_input`` after every turn.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _drain_interrupt_queue_to_pending_input(self) -> None:
         """Move stray ``_interrupt_queue`` messages into ``_pending_input`` after every turn.
 
@@ -3404,6 +4539,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         Called once at the end of every turn from ``process_loop``'s ``finally`` block. Catches and swallows
         ``Exception`` because the drain must never break the main loop. (#20271)
         """
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             while not self._interrupt_queue.empty():
                 stray = self._interrupt_queue.get_nowait()
@@ -3412,6 +4548,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception:
             pass
 
+    # ┌── 函数 def _on_reasoning()
+    # │  作用：Callback for intermediate reasoning display during tool-call loops.
+    # │  参数：self, reasoning_text: str
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _on_reasoning(self, reasoning_text: str):
         """Callback for intermediate reasoning display during tool-call loops."""
         if not reasoning_text:
@@ -3427,10 +4568,17 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     # #33961.)
     _DESTRUCTIVE_SKIP_TOKENS = frozenset({"now", "--yes", "-y"})
 
+    # ┌── 函数 def _tui_process_loop()
+    # │  作用：REPL worker thread: drain ``_pending_input``, run idle housekeeping, dispatch each input.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_process_loop(self):
         """REPL worker thread: drain ``_pending_input``, run idle housekeeping, dispatch each input."""
         while not self._should_exit:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
+                # ⤷ 关键分支 try/except：捕获 queue.Empty，出错走兜底而不是崩溃。
                 try:
                     user_input = self._pending_input.get(timeout=0.1)
                 except queue.Empty:
@@ -3445,6 +4593,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     continue
                 logger.warning("process_loop unhandled error (msg may be lost): %s", e)
 
+    # ┌── 函数 def _tui_idle_tick()
+    # │  作用：Idle housekeeping between inputs (agent not running).
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_idle_tick(self):
         """Idle housekeeping between inputs (agent not running)."""
         self._check_config_mcp_changes()  # auto-reload MCP on mcp_servers change
@@ -3458,6 +4611,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             with suppress(Exception):
                 step()
 
+    # ┌── 函数 def _tui_process_one_input()
+    # │  作用：Route one submitted input: file drop, /resume pick, ! shell, slash command, or a chat turn.
+    # │  参数：self, user_input
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_process_one_input(self, user_input):
         """Route one submitted input: file drop, /resume pick, ! shell, slash command, or a chat turn."""
         from tools.process_registry_notifications import TimelineNotification
@@ -3518,14 +4676,21 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._pet_turn_error = self._pet_reasoning = False
         self._turn_summary_begin()
         self._app.invalidate()
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             self.chat(notification_preview or user_input, images=submit_images or None, voice_input=is_voice_input)
         finally:
             self._tui_after_turn()
 
+    # ┌── 函数 def _tui_run_slash_input()
+    # │  作用：Dispatch a slash command. Returns the pending agent seed to run as a chat turn, else None.
+    # │  参数：self, user_input: str
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_run_slash_input(self, user_input: str):
         """Dispatch a slash command. Returns the pending agent seed to run as a chat turn, else None."""
         _cprint(f"\n⚙️  {user_input}")
+        # ⤷ 关键分支 try/except：捕获 KeyboardInterrupt，出错走兜底而不是崩溃。
         try:
             if not self.process_command(user_input):
                 self._should_exit = True
@@ -3534,10 +4699,17 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except KeyboardInterrupt:
             # Ctrl+C during a slow slash command returns to the prompt instead of exiting.
             _cprint("\n[dim]Command interrupted.[/dim]")
+            # ⤷ 出口 return：返回 None
             return None
         _seed, self._pending_agent_seed = self._pending_agent_seed, None
+        # ⤷ 出口 return：返回 _seed or None
         return _seed or None
 
+    # ┌── 函数 def _tui_after_turn()
+    # │  作用：Post-turn bookkeeping after chat() returns (normal, error, or interrupt).
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_after_turn(self):
         """Post-turn bookkeeping after chat() returns (normal, error, or interrupt)."""
         self._agent_running = self._pet_reasoning = False
@@ -3565,6 +4737,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             (self._maybe_continue_goal_after_turn, "goal continuation"),
             (self._maybe_complete_loop_tick_after_turn, "loop completion"),
         ):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 hook()
             except Exception as _exc:
@@ -3573,6 +4746,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # Continuous voice: restart recording off-thread (beep + recorder start would block process_loop).
         if self._voice_mode and self._voice_continuous and not self._voice_recording:
             def _restart_recording():
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     if self._voice_tts:
                         self._voice_tts_done.wait(timeout=60)
@@ -3589,6 +4763,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         with suppress(Exception):
             self._drain_process_notifications("cli-post-turn")
 
+    # ┌── 函数 def _tui_signal_handler()
+    # │  作用：SIGHUP/SIGTERM -> graceful shutdown.
+    # │  参数：self, signum, frame
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_signal_handler(self, signum, frame):
         """SIGHUP/SIGTERM -> graceful shutdown.
 
@@ -3612,6 +4791,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # Prefer app.exit() over raising KeyboardInterrupt: a KBI from a signal handler
         # lands in a pt Task ("Unhandled exception in event loop" + "Press ENTER to
         # continue..."); call_soon_threadsafe lets the loop unwind normally.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from prompt_toolkit.application.current import get_app_or_none
             _app = get_app_or_none()
@@ -3621,8 +4801,14 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 return  # clean unwind — no traceback, no ENTER pause
         except Exception:
             pass
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise KeyboardInterrupt()  # fallback for non-prompt_toolkit contexts
 
+    # ┌── 函数 def _tui_print_startup()
+    # │  作用：Startup output: light-mode probe, banner, advisories, resume/welcome lines, tips.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_print_startup(self):
         """Startup output: light-mode probe, banner, advisories, resume/welcome lines, tips."""
         with suppress(Exception):  # light-mode probe before pt grabs the tty (cached)
@@ -3639,6 +4825,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
         # First-run: an unconfigured install routes into provider onboarding instead of
         # a chat that spins ~30s and fails with a provider-specific error. TTY only.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             if sys.stdin.isatty() and not self._runtime_credentials_ready():
                 self._offer_first_run_setup()
@@ -3651,6 +4838,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         _welcome_skin = None  # stays None when the skin engine failed
         _welcome_text = "Welcome to Hermes Agent! Type your message or /help for commands."
         _welcome_color = "#FFF8DC"
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.skin_engine import get_active_skin
             _welcome_skin = get_active_skin()
@@ -3671,6 +4859,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self._startup_skills_line_shown = True
         self._console_print()
 
+    # ┌── 函数 def _tui_startup_prewarm_and_warnings()
+    # │  作用：Idle-window prewarms (picker cache, agent runtime imports) plus the redaction-off and OpenClaw-residue banners.
+    # │  参数：self, _welcome_skin
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_startup_prewarm_and_warnings(self, _welcome_skin):
         """Idle-window prewarms (picker cache, agent runtime imports) plus the redaction-off and OpenClaw-residue banners."""
         # Warm the /model picker cache off-thread (else its first open blocks ~1-2s).
@@ -3683,6 +4876,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # Skipped when Termux defers agent startup on purpose.
         if os.environ.get("HERMES_DEFER_AGENT_STARTUP") != "1":
             def _prewarm_agent_runtime() -> None:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     import run_agent  # noqa: F401  (imports model_tools + tool registry)
                     import openai  # noqa: F401
@@ -3707,16 +4901,19 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     "to re-enable."
                 )
         # One-time banner when ~/.openclaw/ is left over from a migration.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.onboarding import (
                 OPENCLAW_RESIDUE_FLAG, detect_openclaw_residue, is_seen, mark_seen, openclaw_residue_hint_cli,
             )
             if not is_seen(self.config, OPENCLAW_RESIDUE_FLAG) and detect_openclaw_residue():
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     _resid_color = _welcome_skin.get_color("banner_dim", "#B8860B")
                 except Exception:
                     _resid_color = "#B8860B"
                 self._console_print(f"[{_resid_color}]{openclaw_residue_hint_cli()}[/]")
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     from hermes_cli.config import get_config_path as _get_cfg_path_resid
                     mark_seen(_get_cfg_path_resid(), OPENCLAW_RESIDUE_FLAG)
@@ -3725,6 +4922,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception:
             pass
 
+    # ┌── 函数 def _tui_startup_background_maintenance()
+    # │  作用：Best-effort startup passes: curator skill maintenance, personal + org skill sync.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_startup_background_maintenance(self):
         """Best-effort startup passes: curator skill maintenance, personal + org skill sync."""
         with suppress(Exception):
@@ -3738,6 +4940,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # and a sync base URL is configured. The org pull is gated on a real org role on
         # the token (only issued for multi-member orgs), so a solo account never hits
         # the network here. Both fail-quiet.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.skills_sync_client import maybe_pull_skills
             from tools.skills_sync_client_org import maybe_pull_org_skills
@@ -3747,6 +4950,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             with suppress(Exception):
                 pull()
 
+    # ┌── 函数 def _tui_build_application()
+    # │  作用：Construct the prompt_toolkit Application for the REPL.
+    # │  参数：self, layout, kb, style
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_build_application(self, layout, kb, style):
         """Construct the prompt_toolkit Application for the REPL."""
         _cpr_disabled_output = _select_classic_cli_pt_output(sys.stdout)
@@ -3766,6 +4974,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             # Vi editing mode when display.vim_mode is on.
             # EMACS is prompt_toolkit's own default, so non-opted-in behaviour is unchanged.
             extra_kw["editing_mode"] = EditingMode.VI if self._vim_mode else EditingMode.EMACS
+        # ⤷ 出口 return：返回 Application(layout=layout, key_bindings=kb, style=style, ful…
         return Application(
             layout=layout,
             key_bindings=kb,
@@ -3785,8 +4994,14 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             **extra_kw,
         )
 
+    # ┌── 函数 def _tui_install_signal_handlers()
+    # │  作用：SIGTERM/SIGHUP -> graceful shutdown; Windows absorbs SIGINT (see body).
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_install_signal_handlers(self):
         """SIGTERM/SIGHUP -> graceful shutdown; Windows absorbs SIGINT (see body)."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             import signal as _signal
             _signal.signal(_signal.SIGTERM, self._tui_signal_handler)
@@ -3801,8 +5016,14 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         except Exception:
             pass  # restricted environments
 
+    # ┌── 函数 def _tui_stdin_usable()
+    # │  作用：Validate fd 0 before prompt_toolkit starts; on macOS fall back to a select() loop when kqueue can't watch it (uv-managed Python).
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _tui_stdin_usable(self) -> bool:
         """Validate fd 0 before prompt_toolkit starts; on macOS fall back to a select() loop when kqueue can't watch it (uv-managed Python)."""
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             os.fstat(0)
         except OSError:
@@ -3811,12 +5032,15 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 "This can happen with certain Python installations (e.g. uv-managed cPython on macOS).\n"
                 "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
             )
+            # ⤷ 出口 return：返回 False
             return False
         if sys.platform == "darwin":
             import selectors as _selectors
+            # ⤷ 关键分支 try/except：捕获 (OSError, ValueError, KeyError)，出错走兜底而不是崩溃。
             try:
                 if hasattr(_selectors, "KqueueSelector"):
                     _kq = _selectors.KqueueSelector()
+                    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
                     try:
                         _kq.register(0, _selectors.EVENT_READ)
                         _kq.unregister(0)
@@ -3827,11 +5051,18 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
                 class _SelectEventLoopPolicy(_aio_probe.DefaultEventLoopPolicy):
                     def new_event_loop(self):
+                        # ⤷ 出口 return：返回 _aio_probe.SelectorEventLoop(_selectors.SelectSelector())
                         return _aio_probe.SelectorEventLoop(_selectors.SelectSelector())
 
                 _aio_probe.set_event_loop_policy(_SelectEventLoopPolicy())
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def run()
+    # │  作用：Run the interactive CLI loop with persistent input at bottom.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def run(self):
         """Run the interactive CLI loop with persistent input at bottom."""
         if not self._claim_active_session("cli"):
@@ -3850,6 +5081,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         # Ghost status-bar lines on resize: pt's renderer scrolls the terminal after each
         # paint, pushing chrome into scrollback where a column-shrink reflows it into
         # duplicates. Wrapping _output_screen_diff keeps its reserve-space branch from firing.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Background: prompt_toolkit's renderer (renderer.py L232-242) explicitly moves the cursor to
             # the bottom of the canvas after painting "to make sure the terminal scrolls up, even when the
@@ -3889,8 +5121,10 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self._print_exit_summary()
             return
 
+        # ⤷ 关键分支 try/except：捕获 (EOFError, KeyboardInterrupt, BrokenPipeError)、(KeyError, OSError)，出错走兜底而不是崩溃。
         try:
             with patch_stdout():
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     # run_in_terminal() may return either: • a coroutine / Future (prompt_toolkit ≥ 3.0) —
                     # must be scheduled via ensure_future so the coroutine is actually awaited; calling it
@@ -3932,6 +5166,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                     "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
                 )
             else:
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
         finally:
             self._tui_shutdown()
@@ -3942,6 +5177,11 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             from hermes_cli.relaunch import relaunch
             relaunch(self._pending_relaunch, preserve_inherited=False)
 
+    # ┌── 函数 def _tui_shutdown()
+    # │  作用：Teardown after the app exits: interrupt agent, stop voice/pet, persist + close session, cleanup, exit summary.
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _tui_shutdown(self):
         """Teardown after the app exits: interrupt agent, stop voice/pet, persist + close session, cleanup, exit summary."""
         self._should_exit = True
@@ -3969,18 +5209,21 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._persist_active_session_before_close()
 
         if self._session_db and self.agent:
+            # ⤷ 关键分支 try/except：捕获 (Exception, KeyboardInterrupt)，出错走兜底而不是崩溃。
             try:
                 self._session_db.end_session(self.agent.session_id, "cli_close")
             except (Exception, KeyboardInterrupt) as e:
                 logger.debug("Could not close session in DB: %s", e)
             if not self._delete_session_on_exit:
                 # Drop the empty row of a start-and-quit session so /resume stays clean.
+                # ⤷ 关键分支 try/except：捕获 (Exception, KeyboardInterrupt)，出错走兜底而不是崩溃。
                 try:
                     self._discard_session_if_empty(self.agent.session_id)
                 except (Exception, KeyboardInterrupt) as e:
                     logger.debug("Could not prune empty session: %s", e)
             else:
                 # /exit --delete: remove transcripts + SQLite history.
+                # ⤷ 关键分支 try/except：捕获 (Exception, KeyboardInterrupt)，出错走兜底而不是崩溃。
                 try:
                     _sid = self.agent.session_id
                     if self._session_db.delete_session(_sid, sessions_dir=get_hermes_home() / "sessions"):
@@ -3997,20 +5240,34 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._release_active_session()
 
 
+# ┌── 函数 def _int_or()
+# │  作用：``int(value)``, or ``default`` when it does not parse.
+# │  参数：value, default: int
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _int_or(value, default: int) -> int:
     """``int(value)``, or ``default`` when it does not parse."""
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 int(value)
         return int(value)
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def _interrupt_agent_for_signal()
+# │  作用：Hard-interrupt ``agent`` for a shutdown signal, then sleep ``HERMES_SIGTERM_GRACE`` (1.5 s).
+# │  参数：agent, signum
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _interrupt_agent_for_signal(agent, signum) -> None:
     """Hard-interrupt ``agent`` for a shutdown signal, then sleep ``HERMES_SIGTERM_GRACE`` (1.5 s).
 
     The grace lets the agent thread kill the tool's setsid subprocess group before the
     main thread unwinds (else an orphan child). Never raises.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if agent is not None:
             request_hard_interrupt(agent, f"received signal {signum}")
@@ -4021,6 +5278,11 @@ def _interrupt_agent_for_signal(agent, signum) -> None:
         pass  # never block signal handling
 
 
+# ┌── 函数 def _run_kanban_goal_loop_q()
+# │  作用：Drive a kanban goal_mode worker through ``goals.run_kanban_goal_loop`` after its first turn.
+# │  参数：cli: 'HermesCLI', first_response: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str) -> None:
     """Drive a kanban goal_mode worker through ``goals.run_kanban_goal_loop`` after its first turn.
 
@@ -4054,10 +5316,12 @@ def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str) -> None:
         resp = result.get("final_response", "") if isinstance(result, dict) else str(result)
         if resp:
             print(resp)
+        # ⤷ 出口 return：返回 resp or ''
         return resp or ""
 
     def _task_status() -> "str | None":
         with _kbc.connect_closing() as c:
+            # ⤷ 出口 return：返回 _kb.goal_run_status(c, task_id, worker_run_id)
             return _kb.goal_run_status(c, task_id, worker_run_id)
 
     def _block(reason: str) -> None:
@@ -4071,12 +5335,22 @@ def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str) -> None:
     )
 
 
+# ┌── 函数 def _sync_cli_session_id_from_agent()
+# │  作用：Keep ``cli.session_id`` in sync when mid-run compression rotated the agent's session.
+# │  参数：cli
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _sync_cli_session_id_from_agent(cli) -> None:
     """Keep ``cli.session_id`` in sync when mid-run compression rotated the agent's session."""
     if getattr(cli.agent, "session_id", None) and cli.agent.session_id != cli.session_id:
         cli.session_id = cli.agent.session_id
 
 
+# ┌── 函数 def _run_quiet_single_query()
+# │  作用：Quiet (-Q) one-shot turn: run, print the response (stderr for errors/session_id), then sys.exit with the automation exit code.
+# │  参数：cli, effective_query
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _run_quiet_single_query(cli, effective_query):
     """Quiet (-Q) one-shot turn: run, print the response (stderr for errors/session_id), then sys.exit with the automation exit code.
     HERMES_TURN_AUTHOR (set only by a bot-to-bot dispatcher) is consumed here so tool subprocesses do not inherit it.
@@ -4092,6 +5366,7 @@ def _run_quiet_single_query(cli, effective_query):
     author = take_turn_author_from_env()
     author_kwargs = {"turn_author": author} if author is not None and _accepts_keyword(cli.agent.run_conversation, "turn_author") else {}
     with bind_quiet_session_key(getattr(cli, "session_id", "") or "default"):
+        # ⤷ 关键分支 try/except：捕获 KeyboardInterrupt，出错走兜底而不是崩溃。
         try:
             result = cli.agent.run_conversation(
                 user_message=effective_query, conversation_history=cli.conversation_history, **author_kwargs,
@@ -4107,6 +5382,7 @@ def _run_quiet_single_query(cli, effective_query):
             history = result.get("messages") or cli.conversation_history
 
             def _follow_up(text):
+                # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
                 nonlocal history
                 follow = cli.agent.run_conversation(
                     user_message=text, conversation_history=history, **author_kwargs,
@@ -4116,6 +5392,7 @@ def _run_quiet_single_query(cli, effective_query):
                 # Same sync contract as the main turn: a compression rotation during a
                 # follow-up must not leave a stale id on the exit line / drain key.
                 _sync_cli_session_id_from_agent(cli)
+                # ⤷ 出口 return：返回 follow
                 return follow
 
             # One shared linger budget for the whole run: the loop below and the later
@@ -4124,6 +5401,7 @@ def _run_quiet_single_query(cli, effective_query):
             # Flagged after the loop (finally-equivalent): the wait is the loop's first
             # statement, so anything raising past that point has consumed budget the
             # finalize pass must not re-wait.
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
                 continued = continue_quiet_notify_completions(
                     getattr(cli, "session_id", "") or "",
@@ -4149,6 +5427,7 @@ def _run_quiet_single_query(cli, effective_query):
     # Kanban goal_mode: keep working in THIS session until a judge agrees the card is
     # done, the worker terminates it, or the turn budget runs out (sticky block).
     if os.environ.get("HERMES_KANBAN_GOAL_MODE") == "1":
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _run_kanban_goal_loop_q(cli, response)
         except Exception as _goal_exc:
@@ -4163,6 +5442,7 @@ def _run_quiet_single_query(cli, effective_query):
     if isinstance(result, dict) and result.get("failed"):
         _exit_code = 1
         if os.environ.get("HERMES_KANBAN_TASK") and result.get("failure_reason") in ("rate_limit", "billing"):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.kanban_db import KANBAN_RATE_LIMIT_EXIT_CODE as _RL_CODE
                 _exit_code = _RL_CODE
@@ -4171,9 +5451,15 @@ def _run_quiet_single_query(cli, effective_query):
     sys.exit(_exit_code)
 
 
+# ┌── 函数 def _route_single_query_images()
+# │  作用：Attach one-shot images natively when the model supports vision, else pre-describe them as text.
+# │  参数：cli, query, effective_query, single_query_images, single_query_image_urls
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _route_single_query_images(cli, query, effective_query, single_query_images, single_query_image_urls):
     """Attach one-shot images natively when the model supports vision, else pre-describe them as text."""
     if not (single_query_images or single_query_image_urls):
+        # ⤷ 出口 return：返回 effective_query
         return effective_query
     # Same image-routing decision as the interactive path: a vision-capable model
     # (incl. custom-provider models declaring `model.supports_vision: true`) gets
@@ -4181,6 +5467,7 @@ def _route_single_query_images(cli, query, effective_query, single_query_images,
     # pre-description).
     _img_mode = "text"
     _build_parts = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.image_routing import build_native_content_parts as _build_parts  # noqa: F811
         from agent.image_routing import decide_image_input_mode
@@ -4198,10 +5485,13 @@ def _route_single_query_images(cli, query, effective_query, single_query_images,
         # were supplied keep the original query text intact.
         if single_query_images:
             return cli._preprocess_images_with_vision(query, single_query_images, announce=False)
+        # ⤷ 出口 return：返回 effective_query
         return effective_query
 
     if _img_mode != "native" or _build_parts is None:
+        # ⤷ 出口 return：返回 _text_fallback()
         return _text_fallback()
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _parts, _skipped = _build_parts(
             query if isinstance(query, str) else "",
@@ -4210,17 +5500,25 @@ def _route_single_query_images(cli, query, effective_query, single_query_images,
         )
         if any(p.get("type") == "image_url" for p in _parts):
             return _parts
+        # ⤷ 出口 return：返回 _text_fallback()
         return _text_fallback()  # all images unreadable
     except Exception:
         return _text_fallback()
 
 
+# ┌── 函数 def _collect_kanban_task_images()
+# │  作用：Kanban workers: image paths/URLs in the task body join the first turn's attachments.
+# │  参数：single_query_images
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _collect_kanban_task_images(single_query_images):
     """Kanban workers: image paths/URLs in the task body join the first turn's attachments."""
     single_query_image_urls: list[str] = []
     _kanban_task_id = os.environ.get("HERMES_KANBAN_TASK", "").strip()
     if not _kanban_task_id:
+        # ⤷ 出口 return：返回 single_query_image_urls
         return single_query_image_urls
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli import kanban_db as _kb
         from hermes_cli import kanban_db_connect as _kbc
@@ -4241,9 +5539,15 @@ def _collect_kanban_task_images(single_query_images):
     except Exception as _exc:
         # Best-effort enrichment; never block worker startup on it.
         logger.debug("kanban image-ref extraction failed: %s", _exc)
+    # ⤷ 出口 return：返回 single_query_image_urls
     return single_query_image_urls
 
 
+# ┌── 函数 def _install_single_query_signal_handlers()
+# │  作用：Route SIGINT/SIGTERM/SIGHUP through agent.interrupt() before unwinding; kanban workers hard-exit.
+# │  参数：cli
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _install_single_query_signal_handlers(cli):
     """Route SIGINT/SIGTERM/SIGHUP through agent.interrupt() before unwinding; kanban workers hard-exit.
 
@@ -4282,6 +5586,7 @@ def _install_single_query_signal_handlers(cli):
                 _flush_one_shot_session_store(cli)
             _flush_logging_and_stdio()
             os._exit(0)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise KeyboardInterrupt()
     with suppress(Exception):  # restricted environments
         for _name in ("SIGINT", "SIGTERM", "SIGHUP"):
@@ -4289,6 +5594,11 @@ def _install_single_query_signal_handlers(cli):
                 _signal.signal(getattr(_signal, _name), _signal_handler_q)
 
 
+# ┌── 函数 def _build_cli_from_args()
+# │  作用：Resolve the toolset list (explicit / coding posture / platform default), construct HermesCLI, and start the background skills preload.
+# │  参数：model, toolsets, provider, reasoning, api_key, base_url, max_turns, run_budget  …共 15 个
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url, max_turns, run_budget, verbose, compact, resume, checkpoints, pass_session_id, ignore_rules, skills):
     """Resolve the toolset list (explicit / coding posture / platform default), construct HermesCLI, and start the background skills preload."""
     toolsets_list = None
@@ -4301,6 +5611,7 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
             toolsets_list.extend([x.strip() for x in t.split(",")] if isinstance(t, str) else [str(t)])
     elif not toolsets:
         # Coding posture inside a code workspace, else the shared platform resolver.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.coding_context import coding_selection
             toolsets_list = coding_selection(platform="cli", config=CLI_CONFIG)
@@ -4312,6 +5623,7 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
 
     parsed_skills = _parse_skills_argument(skills)
 
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         cli = HermesCLI(
             model=model,
@@ -4335,6 +5647,7 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
 
         if emit_partial_update_hint(e):
             sys.exit(1)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
 
     if parsed_skills:
@@ -4343,6 +5656,7 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
         # at agent init, not by the banner. finalize_preloaded_skills() joins the
         # thread before any consumer reads cli.system_prompt.
         def _load_preloaded_skills() -> None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 cli._preload_skills_result = build_preloaded_skills_prompt(parsed_skills, task_id=cli.session_id)
             except Exception as exc:  # surfaced by finalize
@@ -4351,9 +5665,15 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
         cli._preload_skills_requested = parsed_skills
         cli._preload_skills_thread = threading.Thread(target=_load_preloaded_skills, name="skills-preload", daemon=True)
         cli._preload_skills_thread.start()
+    # ⤷ 出口 return：返回 cli
     return cli
 
 
+# ┌── 函数 def _run_legacy_gateway()
+# │  作用：Legacy `cli.py --gateway` entry: arm the startup watchdog (before importing the gateway graph), then run it.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _run_legacy_gateway():
     """Legacy `cli.py --gateway` entry: arm the startup watchdog (before importing the gateway graph), then run it."""
     import asyncio
@@ -4365,6 +5685,11 @@ def _run_legacy_gateway():
     asyncio.run(start_gateway())
 
 
+# ┌── 函数 def _start_worktree_setup()
+# │  作用：Start isolated-worktree creation (+ tool prewarm) in the background.
+# │  参数：list_tools, list_toolsets, worktree, w
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _start_worktree_setup(list_tools, list_toolsets, worktree, w):
     """Start isolated-worktree creation (+ tool prewarm) in the background.
 
@@ -4372,10 +5697,12 @@ def _start_worktree_setup(list_tools, list_toolsets, worktree, w):
     schedules stale-worktree GC, or None when no worktree is wanted.
     """
     if list_tools or list_toolsets or not (worktree or w or CLI_CONFIG.get("worktree", False)):
+        # ⤷ 出口 return：返回 None
         return None
     # Overlap tool discovery with the I/O-bound worktree setup so show_banner() hits a warm
     # cache (~0.4s). Only on the -w path: plain `hermes` has no I/O wait to hide.
     def _prewarm_tools() -> None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             import model_tools as _mt
             _mt.get_tool_definitions(quiet_mode=True)
@@ -4387,6 +5714,7 @@ def _start_worktree_setup(list_tools, list_toolsets, worktree, w):
     _wt_result: dict = {}
 
     def _create_worktree() -> None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _wt_result["info"] = _setup_worktree(sync_base=_sync_base)
         except Exception:
@@ -4405,6 +5733,7 @@ def _start_worktree_setup(list_tools, list_toolsets, worktree, w):
         info = _wt_result.get("info")
         if not info:
             return info
+        # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
         global _active_worktree
         _active_worktree = info
         os.environ["TERMINAL_CWD"] = info["path"]
@@ -4415,11 +5744,18 @@ def _start_worktree_setup(list_tools, list_toolsets, worktree, w):
         _repo = _git_repo_root()
         if _repo:
             threading.Thread(target=_worktree_maintenance, args=(_repo,), name="worktree-prune", daemon=True).start()
+        # ⤷ 出口 return：返回 info
         return info
 
+    # ⤷ 出口 return：返回 _join_worktree
     return _join_worktree
 
 
+# ┌── 函数 def _configure_quiet_agent()
+# │  作用：Neutralize every stdout-writing callback so -Q stdout carries only the final response.
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _configure_quiet_agent(agent) -> None:
     """Neutralize every stdout-writing callback so -Q stdout carries only the final response."""
     agent.quiet_mode = True
@@ -4435,6 +5771,11 @@ def _configure_quiet_agent(agent) -> None:
     agent.tool_progress_mode = "off"
 
 
+# ┌── 函数 def _run_single_query_mode()
+# │  作用：``-q``/``--image`` entry: seed an interactive session on a TTY, else run the one-shot turn and exit.
+# │  参数：cli, query, image, quiet, oneshot
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _run_single_query_mode(cli, query, image, quiet, oneshot):
     """``-q``/``--image`` entry: seed an interactive session on a TTY, else run the one-shot turn and exit."""
     if _should_seed_interactive(query, image, quiet, oneshot):
@@ -4444,6 +5785,7 @@ def _run_single_query_mode(cli, query, image, quiet, oneshot):
             len(seeded_query or ""), len(seeded_images),
         )
         cli._seeded_first_message = _SeededQueryMessage(seeded_query, seeded_images)
+        # ⤷ 出口 return：返回 cli.run()
         return cli.run()
     cli._single_query_mode = True  # agent waits the full MCP cold-start before its only tool snapshot
     # No user can answer approval prompts: the approval gate takes the deterministic path.
@@ -4457,6 +5799,7 @@ def _run_single_query_mode(cli, query, image, quiet, oneshot):
     os.environ["HERMES_SINGLE_QUERY_SESSION"] = "1"
     if not cli._claim_active_session("cli", stderr=bool(quiet)):
         sys.exit(1)
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         query, single_query_images = _collect_query_images(query, image)
         single_query_image_urls = _collect_kanban_task_images(single_query_images)
@@ -4490,6 +5833,11 @@ def _run_single_query_mode(cli, query, image, quiet, oneshot):
         _finalize_single_query(cli)
 
 
+# ┌── 函数 def main()
+# │  作用：Hermes Agent CLI - Interactive AI Assistant
+# │  参数：query: str = None, q: str = None, oneshot: bool = False, image: str = None, toolsets: str = None, skills: str | list[str] | tuple[str, ...] = None, model: str = None, provider: str = None  …共 26 个
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def main(
     query: str = None,
     q: str = None,
@@ -4607,6 +5955,10 @@ def main(
     cli.run()
 
 
+# ┌── 程序入口
+# │  【语法】if __name__ == "__main__"：只有被 `python 这个文件.py` 直接运行时才执行，
+# │  被 import 时不执行。这是 Python 脚本的标准入口写法。
+# └──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import fire
 
@@ -4641,14 +5993,26 @@ import copy  # noqa: F401,E402
 from rich import box as rich_box  # noqa: F401,E402
 import tempfile  # noqa: F401,E402
 
+# ┌── 函数 def AIAgent()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：*args, **kwargs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def AIAgent(*args, **kwargs):
     from run_agent import AIAgent as _AIAgent
 
+    # ⤷ 出口 return：返回 _AIAgent(*args, **kwargs)
     return _AIAgent(*args, **kwargs)
 
+# ┌── 函数 def CanonicalUsage()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：*args, **kwargs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def CanonicalUsage(*args, **kwargs):
     from agent.usage_pricing import CanonicalUsage as _CanonicalUsage
 
+    # ⤷ 出口 return：返回 _CanonicalUsage(*args, **kwargs)
     return _CanonicalUsage(*args, **kwargs)
 
 
@@ -4678,12 +6042,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -7,6 +7,33 @@ Usage:
     hermes --version           # Show version and update status
     hermes <cmd> --help        # Per-command help
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：hermes_cli/main.py（约 3484 行）
+# 地位：hermes 命令的主入口（就是你在终端敲 hermes 时执行的地方）。
+#
+# 子命令：hermes chat / gateway / setup / status / cron / doctor / update / model / config ...
+#
+# 核心函数：
+#   _build_cli_parser()    用 argparse 搭出整个命令行（子命令树）
+#   _parse_cli_args()      解析参数
+#   main()                 总入口
+#   cmd_chat(args)         进入交互式对话（最常用）
+#   select_provider_and_model(args)   选择用哪个模型/服务商
+#   _resolve_chat_session_args(args)  决定这次用哪个会话（继续上次？新建？按名字找？）
+#
+# 值得注意的工程实践：
+#   - 启动加速：_try_fast_chat_launch / _try_fast_serve_launch / _start_chat_background_prefetch
+#     Python 项目启动慢是常态（这个项目的 import 极多），所以它做了大量「延迟导入 + 后台预取」优化
+#   - profile 覆盖：_apply_profile_override / _scan_profile_flag
+#   - 容器执行：_probe_container / _exec_in_container
+#   - 更新机制：cmd_update / _finalize_update_receipt
+#   - 插件命令注入：_register_plugin_commands(subparsers) —— 插件可以往 CLI 里加自己的子命令
+#
+# 新手建议：只看 _build_cli_parser 和 main，就能画出整个命令行地图。
+# ==========================================================================
+#
 
 # hermes_bootstrap must be the very first import — it sets up UTF-8 stdio on
 # Windows (no-op on POSIX). Guarded: after a ``git pull`` / interrupted
@@ -62,7 +89,13 @@ except Exception:
 # mentioning both words never arm a 300s hard-exit timer. Foreground runs arm
 # too — a pre-loop wedge is just as dead without a supervisor; GatewayRunner
 # disarms once the event loop is live.
+# ┌── 函数 def _argv_is_gateway_run()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：argv: list
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _argv_is_gateway_run(argv: list) -> bool:
+    # ⤷ 出口 return：返回 any((a == 'gateway' and b == 'run' for a, b in zip(argv, arg…
     return any(a == "gateway" and b == "run" for a, b in zip(argv, argv[1:]))
 
 
@@ -76,6 +109,11 @@ if _argv_is_gateway_run(sys.argv[1:]):
         pass
 
 
+# ┌── 函数 def _exit_after_oneshot()
+# │  作用：Exit one-shot mode without letting late native finalizers change rc.
+# │  参数：rc: object
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _exit_after_oneshot(rc: object) -> None:
     """Exit one-shot mode without letting late native finalizers change rc.
 
@@ -88,10 +126,12 @@ def _exit_after_oneshot(rc: object) -> None:
     See #30387, #43055.
     """
     for stream in (sys.stdout, sys.stderr):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             stream.flush()
         except Exception:
             pass
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         logging.shutdown()
     except Exception:
@@ -111,6 +151,11 @@ _ONESHOT_CLEANUPS = (
 )
 
 
+# ┌── 函数 def _cleanup_oneshot_runtime()
+# │  作用：Best-effort process-global cleanup before one-shot hard exit.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _cleanup_oneshot_runtime() -> None:
     """Best-effort process-global cleanup before one-shot hard exit.
 
@@ -119,6 +164,7 @@ def _cleanup_oneshot_runtime() -> None:
     process-global pieces from ``cli.py:_run_cleanup()`` that would otherwise
     be skipped by ``os._exit``.
     """
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _oneshot_cleanup_done
     if _oneshot_cleanup_done:
         return
@@ -126,12 +172,18 @@ def _cleanup_oneshot_runtime() -> None:
     import importlib
 
     for module, attr, kwargs, swallow in _ONESHOT_CLEANUPS:
+        # ⤷ 关键分支 try/except：捕获 swallow，出错走兜底而不是崩溃。
         try:
             getattr(importlib.import_module(module), attr)(**kwargs)
         except swallow:
             pass
 
 
+# ┌── 函数 def _run_and_exit_oneshot()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：prompt: str, model: object = ..., provider: object = ..., toolsets: object = ..., skills: object = ..., usage_file: object = ..., resume: object = ..., reasoning: object = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _run_and_exit_oneshot(
     prompt: str,
     *,
@@ -143,6 +195,7 @@ def _run_and_exit_oneshot(
     resume: object = None,
     reasoning: object = None,
 ) -> None:
+    # ⤷ 关键分支 try/except：捕获 KeyboardInterrupt、SystemExit、BaseException，出错走兜底而不是崩溃。
     try:
         from hermes_cli.oneshot import run_oneshot
 
@@ -169,11 +222,13 @@ def _run_and_exit_oneshot(
         # still escaping means it malfunctioned. Print it but never fall
         # through to interpreter teardown (the SIGABRT path this routine fixes).
         import traceback
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             traceback.print_exc()
         except Exception:
             pass
         rc = 1
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         _cleanup_oneshot_runtime()
     finally:
@@ -183,6 +238,11 @@ def _run_and_exit_oneshot(
         _exit_after_oneshot(rc)
 
 
+# ┌── 函数 def _set_process_title()
+# │  作用：Cosmetic: show 'hermes' instead of 'python3.xx' in ps/top/htop.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _set_process_title() -> None:
     """Cosmetic: show 'hermes' instead of 'python3.xx' in ps/top/htop.
 
@@ -190,6 +250,7 @@ def _set_process_title() -> None:
     15-char limit); ``pthread_setname_np`` (macOS — lldb/top only, not ``ps
     aux``); no-op on Windows (the .exe is already ``hermes.exe``). Never fatal.
     """
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         import setproctitle  # type: ignore[import-untyped]
 
@@ -201,6 +262,7 @@ def _set_process_title() -> None:
     import ctypes
     import platform
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         system = platform.system()
         if system == "Linux":
@@ -219,13 +281,21 @@ def _set_process_title() -> None:
 _EARLY_INTERFACE_CACHE: "list | None" = None
 
 
+# ┌── 函数 def _config_default_interface_early()
+# │  作用：Return the configured default interface ("cli"/"tui") via a minimal
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _config_default_interface_early() -> str:
     """Return the configured default interface ("cli"/"tui") via a minimal
     YAML read. Best-effort: any error falls back to "cli" (legacy behavior)."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _EARLY_INTERFACE_CACHE
     if _EARLY_INTERFACE_CACHE is not None:
+        # ⤷ 出口 return：返回 _EARLY_INTERFACE_CACHE[0]
         return _EARLY_INTERFACE_CACHE[0]
     value = "cli"
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         home = os.environ.get("HERMES_HOME")
         if home:
@@ -247,9 +317,15 @@ def _config_default_interface_early() -> str:
     except Exception:
         value = "cli"  # best-effort — default to classic REPL on any error
     _EARLY_INTERFACE_CACHE = [value]
+    # ⤷ 出口 return：返回 value
     return value
 
 
+# ┌── 函数 def _wants_tui_early()
+# │  作用：Earliest TUI decision, usable before argparse/config imports.
+# │  参数：argv: 'list[str] | None' = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _wants_tui_early(argv: "list[str] | None" = None) -> bool:
     """Earliest TUI decision, usable before argparse/config imports.
 
@@ -263,14 +339,20 @@ def _wants_tui_early(argv: "list[str] | None" = None) -> bool:
     if argv is None:
         argv = sys.argv[1:]
     if "--cli" in argv:
+        # ⤷ 出口 return：返回 False
         return False
     if os.environ.get("HERMES_TUI") == "1" or "--tui" in argv:
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            # ⤷ 出口 return：返回 False
             return False
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 _config_default_interface_early() == 'tui'
     return _config_default_interface_early() == "tui"
 
 
@@ -280,11 +362,17 @@ def _wants_tui_early(argv: "list[str] | None" = None) -> bool:
 # echo into the shell scrollback as ``^[[<…M``. entry.tsx's
 # `resetTerminalModes()` is the later cousin. ``HERMES_TUI_NO_EARLY_DISABLE``
 # escapes the behaviour for diagnostics.
+# ┌── 函数 def _suppress_mouse_residue_early()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _suppress_mouse_residue_early() -> None:
     if os.environ.get("HERMES_TUI_NO_EARLY_DISABLE") == "1":
         return
     if not _wants_tui_early():
         return
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         if not os.isatty(1):  # redirected stdout: raw CSI would pollute the log
             return
@@ -378,6 +466,11 @@ from hermes_cli.subcommands.sessions import build_sessions_parser
 from hermes_cli.subcommands.completion import build_completion_parser
 
 
+# ┌── 函数 def _require_tty()
+# │  作用：Exit 1 if stdin is not a terminal: curses/input() prompts spin at 100% CPU on a pipe.
+# │  参数：command_name: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _require_tty(command_name: str) -> None:
     """Exit 1 if stdin is not a terminal: curses/input() prompts spin at 100% CPU on a pipe."""
     if not sys.stdin.isatty():
@@ -401,6 +494,11 @@ _startup_fast.ensure_project_root_on_path()
 _PROFILE_NAME_RE = r"^[a-z0-9][a-z0-9_-]{0,63}$"  # mirrors hermes_cli.profiles._PROFILE_ID_RE
 
 
+# ┌── 函数 def _inside_mcp_add_args()
+# │  作用：True once argv reaches `hermes mcp add ... --args <command argv>`.
+# │  参数：argv: list, index: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _inside_mcp_add_args(argv: list, index: int) -> bool:
     """True once argv reaches `hermes mcp add ... --args <command argv>`.
 
@@ -408,14 +506,22 @@ def _inside_mcp_add_args(argv: list, index: int) -> bool:
     belong to the child MCP command (for example Docker MCP Toolkit's
     ``--profile``), not to Hermes' own profile selector.
     """
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:
         mcp_index = argv.index("mcp", 0, index)
         argv.index("add", mcp_index + 1, index)
     except ValueError:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _scan_profile_flag()
+# │  作用：Find -p/--profile/--profile= in argv -> (name, tokens_consumed, index).
+# │  参数：argv: list
+# │  返回：tuple
+# └──────────────────────────────────────────────────────────────
 def _scan_profile_flag(argv: list) -> tuple:
     """Find -p/--profile/--profile= in argv -> (name, tokens_consumed, index).
 
@@ -434,18 +540,26 @@ def _scan_profile_flag(argv: list) -> tuple:
             break
         if arg in {"--profile", "-p"} and i + 1 < len(argv):
             if re.match(_PROFILE_NAME_RE, argv[i + 1]):
+                # ⤷ 出口 return：返回 (argv[i + 1], 2, i)
                 return argv[i + 1], 2, i
             break
         if arg.startswith("--profile="):
+            # ⤷ 出口 return：返回 (arg.split('=', 1)[1], 1, i)
             return arg.split("=", 1)[1], 1, i
         takes_value = "=" not in arg and i + 1 < len(argv) and (
             arg in value_flags
             or (arg in optional_value_flags and not argv[i + 1].startswith("-"))
         )
         i += 2 if takes_value else 1
+    # ⤷ 出口 return：返回 (None, 0, None)
     return None, 0, None
 
 
+# ┌── 函数 def _resolve_sudo_user_profile_env()
+# │  作用：Resolve `sudo hermes -p <name>` against the invoking user's home.
+# │  参数：name: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _resolve_sudo_user_profile_env(name: str) -> str | None:
     """Resolve `sudo hermes -p <name>` against the invoking user's home.
 
@@ -454,16 +568,24 @@ def _resolve_sudo_user_profile_env(name: str) -> str | None:
     privileged install/start action; the profile store belongs to the user.
     """
     if name == "default":
+        # ⤷ 出口 return：返回 None
         return None
     from hermes_constants import sudo_invoker_default_home
 
     sudo_home = sudo_invoker_default_home()
     if sudo_home is None:
+        # ⤷ 出口 return：返回 None
         return None
     candidate = sudo_home / "profiles" / name
+    # ⤷ 出口 return：返回 str(candidate) if candidate.is_dir() else None
     return str(candidate) if candidate.is_dir() else None
 
 
+# ┌── 函数 def _under_gateway_supervisor()
+# │  作用：A supervisor-launched gateway child must NOT follow the sticky active_profile.
+# │  参数：argv: list
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _under_gateway_supervisor(argv: list) -> bool:
     """A supervisor-launched gateway child must NOT follow the sticky active_profile.
 
@@ -485,15 +607,23 @@ def _under_gateway_supervisor(argv: list) -> bool:
     terminals set it too.
     """
     if os.environ.get("HERMES_SUPERVISED_CHILD") or os.environ.get("HERMES_S6_SUPERVISED_CHILD"):
+        # ⤷ 出口 return：返回 True
         return True
     is_gateway_cmd = next((a for a in argv if not a.startswith("-")), None) == "gateway"
     if is_gateway_cmd and os.environ.get("INVOCATION_ID"):
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 os.environ.get('HERMES_GATEWAY_EXTERNAL_SUPERVISOR', '').str…
     return os.environ.get(
         "HERMES_GATEWAY_EXTERNAL_SUPERVISOR", ""
     ).strip().lower() in {"1", "true", "yes", "on"}
 
 
+# ┌── 函数 def _desktop_ssh_backend()
+# │  作用：A Desktop-owned ``serve --ssh-session-token-file`` child has a fixed identity too.
+# │  参数：argv: list
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _desktop_ssh_backend(argv: list) -> bool:
     """A Desktop-owned ``serve --ssh-session-token-file`` child has a fixed identity too.
 
@@ -502,9 +632,15 @@ def _desktop_ssh_backend(argv: list) -> bool:
     re-homes the backend into a profile the UI never asked for, so Settings read one
     ``config.yaml`` and the user edits another (KC's "nothing sticks over SSH").
     """
+    # ⤷ 出口 return：返回 '--ssh-session-token-file' in argv
     return "--ssh-session-token-file" in argv
 
 
+# ┌── 函数 def _apply_profile_override()
+# │  作用：Pre-parse --profile/-p and set HERMES_HOME before imports.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_profile_override() -> None:
     """Pre-parse --profile/-p and set HERMES_HOME before imports."""
     argv = sys.argv[1:]
@@ -520,6 +656,7 @@ def _apply_profile_override() -> None:
         return
 
     if profile_name is None and not _under_gateway_supervisor(argv) and not _desktop_ssh_backend(argv):
+        # ⤷ 关键分支 try/except：捕获 (UnicodeDecodeError, OSError)，出错走兜底而不是崩溃。
         try:
             from hermes_constants import get_default_hermes_root
 
@@ -533,6 +670,7 @@ def _apply_profile_override() -> None:
 
     if profile_name is None:
         return
+    # ⤷ 关键分支 try/except：捕获 FileNotFoundError、ValueError、Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.profiles import resolve_profile_env
 
@@ -773,10 +911,16 @@ from hermes_cli.main_tui_launch import (
 )
 
 
+# ┌── 函数 def _is_termux_startup_environment()
+# │  作用：Import-safe Termux check for cold-start-sensitive CLI paths.
+# │  参数：env: dict[str, str] | None = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_termux_startup_environment(env: dict[str, str] | None = None) -> bool:
     """Import-safe Termux check for cold-start-sensitive CLI paths."""
     check = env or os.environ
     prefix = str(check.get("PREFIX", ""))
+    # ⤷ 出口 return：返回 bool(check.get('TERMUX_VERSION') or 'com.termux/files/usr' i…
     return bool(
         check.get("TERMUX_VERSION")
         or "com.termux/files/usr" in prefix
@@ -784,28 +928,43 @@ def _is_termux_startup_environment(env: dict[str, str] | None = None) -> bool:
     )
 
 
+# ┌── 函数 def _read_packed_ref()
+# │  作用：Look up a ref in .git/packed-refs without spawning git.
+# │  参数：common_dir: Path, ref: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _read_packed_ref(common_dir: Path, ref: str) -> str | None:
     """Look up a ref in .git/packed-refs without spawning git.
 
     packed-refs lines look like ``<sha> <ref>`` with optional ``^<sha>``
     peel lines and ``#``-prefixed comments / ``# pack-refs with:`` header.
     """
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         text = (common_dir / "packed-refs").read_text(encoding="utf-8", errors="replace")
     except OSError:
+        # ⤷ 出口 return：返回 None
         return None
     for line in text.splitlines():
         if not line or line.startswith("#") or line.startswith("^"):
             continue
         parts = line.split(" ", 1)
         if len(parts) == 2 and parts[1].strip() == ref:
+            # ⤷ 出口 return：返回 parts[0].strip()
             return parts[0].strip()
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _read_git_revision_fingerprint()
+# │  作用：Return a cheap checkout fingerprint without spawning git.
+# │  参数：repo_root: Path
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _read_git_revision_fingerprint(repo_root: Path) -> str | None:
     """Return a cheap checkout fingerprint without spawning git."""
     git_dir = repo_root / ".git"
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         if git_dir.is_file():
             for line in git_dir.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -819,6 +978,7 @@ def _read_git_revision_fingerprint(repo_root: Path) -> str | None:
         common_dir = git_dir
         commondir_file = git_dir / "commondir"
         if commondir_file.exists():
+            # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
             try:
                 rel = commondir_file.read_text(encoding="utf-8", errors="replace").strip()
                 if rel:
@@ -837,48 +997,83 @@ def _read_git_revision_fingerprint(repo_root: Path) -> str | None:
                     return f"git:{ref}:{ref_file.read_text(encoding='utf-8', errors='replace').strip()}"
             packed_sha = _read_packed_ref(common_dir, ref)
             if packed_sha:
+                # ⤷ 出口 return：返回 f'git:{ref}:{packed_sha}'
                 return f"git:{ref}:{packed_sha}"
             # Ref name is known but unresolved — still stable across launches,
             # and the version/release fallback in the caller will invalidate
             # after `hermes update`.
+            # ⤷ 出口 return：返回 f'git:{ref}:unresolved'
             return f"git:{ref}:unresolved"
+        # ⤷ 出口 return：返回 f'git:HEAD:{head}'
         return f"git:HEAD:{head}"
     except OSError:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _termux_bundled_skills_fingerprint()
+# │  作用：Cheap invalidation key for Termux bundled-skill startup sync.
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _termux_bundled_skills_fingerprint() -> str:
     """Cheap invalidation key for Termux bundled-skill startup sync."""
     git_fp = _read_git_revision_fingerprint(PROJECT_ROOT)
     if git_fp:
+        # ⤷ 出口 return：返回 git_fp
         return git_fp
     skills_dir = PROJECT_ROOT / "skills"
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         stat = skills_dir.stat()
+        # ⤷ 出口 return：返回 f'skills:{__version__}:{__release_date__}:{stat.st_mtime_ns}…
         return f"skills:{__version__}:{__release_date__}:{stat.st_mtime_ns}:{stat.st_size}"
     except OSError:
+        # ⤷ 出口 return：返回 f'skills:{__version__}:{__release_date__}:missing'
         return f"skills:{__version__}:{__release_date__}:missing"
 
 
+# ┌── 函数 def _termux_bundled_skills_stamp_path()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _termux_bundled_skills_stamp_path() -> Path:
+    # ⤷ 出口 return：返回 get_hermes_home() / 'skills' / '.termux_bundled_sync_stamp'
     return get_hermes_home() / "skills" / ".termux_bundled_sync_stamp"
 
 
+# ┌── 函数 def _termux_bundled_skills_sync_needed()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _termux_bundled_skills_sync_needed() -> bool:
     if not _is_termux_startup_environment():
+        # ⤷ 出口 return：返回 True
         return True
     if os.environ.get("HERMES_TERMUX_FORCE_SKILLS_SYNC") == "1":
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         stamp = _termux_bundled_skills_stamp_path()
+        # ⤷ 出口 return：返回 stamp.read_text(encoding='utf-8').strip() != _termux_bundled…
         return stamp.read_text(encoding="utf-8").strip() != _termux_bundled_skills_fingerprint()
     except OSError:
+        # ⤷ 出口 return：返回 True
         return True
 
 
+# ┌── 函数 def _mark_termux_bundled_skills_synced()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _mark_termux_bundled_skills_synced() -> None:
     if not _is_termux_startup_environment():
         return
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         stamp = _termux_bundled_skills_stamp_path()
         stamp.parent.mkdir(parents=True, exist_ok=True)
@@ -887,6 +1082,11 @@ def _mark_termux_bundled_skills_synced() -> None:
         pass
 
 
+# ┌── 函数 def _sync_bundled_skills_for_startup()
+# │  作用：Sync bundled skills, but skip unchanged Termux checkouts cheaply.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _sync_bundled_skills_for_startup() -> bool:
     """Sync bundled skills, but skip unchanged Termux checkouts cheaply.
 
@@ -895,25 +1095,41 @@ def _sync_bundled_skills_for_startup() -> bool:
     checkout revision forces one real sync, then later starts skip it.
     """
     if _is_termux_startup_environment() and not _termux_bundled_skills_sync_needed():
+        # ⤷ 出口 return：返回 False
         return False
 
     from tools.skills_sync import sync_skills
 
     sync_skills(quiet=True)
     _mark_termux_bundled_skills_synced()
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _termux_should_prefetch_update_check()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _termux_should_prefetch_update_check() -> bool:
     if not _is_termux_startup_environment():
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 os.environ.get('HERMES_TERMUX_PREFETCH_UPDATES') == '1'
     return os.environ.get("HERMES_TERMUX_PREFETCH_UPDATES") == "1"
 
 
+# ┌── 函数 def _dotenv_has_provider_key()
+# │  作用：True if ~/.hermes/.env assigns a non-empty value to any provider key.
+# │  参数：env_file: Path, provider_env_vars: set
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _dotenv_has_provider_key(env_file: Path, provider_env_vars: set) -> bool:
     """True if ~/.hermes/.env assigns a non-empty value to any provider key."""
     if not env_file.exists():
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         for line in env_file.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -925,18 +1141,27 @@ def _dotenv_has_provider_key(env_file: Path, provider_env_vars: set) -> bool:
                 line = line[7:]
             key, _, val = line.partition("=")
             if key.strip() in provider_env_vars and val.strip().strip("'\""):
+                # ⤷ 出口 return：返回 True
                 return True
     except Exception:
         pass
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _auth_store_logged_in()
+# │  作用：True if auth.json's active provider is logged in (api_key providers ignored under strict scope).
+# │  参数：auth_file: Path, registry, strict_profile_scope: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _auth_store_logged_in(auth_file: Path, registry, strict_profile_scope: bool) -> bool:
     """True if auth.json's active provider is logged in (api_key providers ignored under strict scope)."""
     from hermes_cli.auth import get_auth_status
 
     if not auth_file.exists():
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         auth = json.loads(auth_file.read_text(encoding="utf-8-sig"))
         active = auth.get("active_provider")
@@ -944,12 +1169,19 @@ def _auth_store_logged_in(auth_file: Path, registry, strict_profile_scope: bool)
         if active and not (
             strict_profile_scope and active_config and active_config.auth_type == "api_key"
         ):
+            # ⤷ 出口 return：返回 bool(get_auth_status(active).get('logged_in'))
             return bool(get_auth_status(active).get("logged_in"))
     except Exception:
         pass
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _has_any_provider_configured()
+# │  作用：Check if at least one inference provider is usable. Never creates one: the Nous free tier
+# │  参数：strict_profile_scope: bool = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_any_provider_configured(*, strict_profile_scope: bool = False) -> bool:
     """Check if at least one inference provider is usable. Never creates one: the Nous free tier
     counts only once its identity exists, and the boot bootstrap (``hermes_cli.free_tier_bootstrap``)
@@ -995,14 +1227,17 @@ def _has_any_provider_configured(*, strict_profile_scope: bool = False) -> bool:
     else:
         read_provider_env = os.getenv
     if any(read_provider_env(v) for v in provider_env_vars):
+        # ⤷ 出口 return：返回 True
         return True
     if _dotenv_has_provider_key(get_env_path(), provider_env_vars):
+        # ⤷ 出口 return：返回 True
         return True
 
     # Cheap on-disk checks (auth.json, config.yaml) first: the PROVIDER_REGISTRY
     # sweep below spawns subprocesses (gh) and can take 15-20s — long enough
     # that desktop setup.status calls time out.
     if _auth_store_logged_in(get_hermes_home() / "auth.json", PROVIDER_REGISTRY, strict_profile_scope):
+        # ⤷ 出口 return：返回 True
         return True
 
     # model as a dict with provider/base_url/api_key means setup ran (fresh
@@ -1010,6 +1245,7 @@ def _has_any_provider_configured(*, strict_profile_scope: bool = False) -> bool:
     if isinstance(model_cfg, dict) and any(
         (model_cfg.get(k) or "").strip() for k in ("provider", "base_url", "api_key")
     ):
+        # ⤷ 出口 return：返回 True
         return True
 
     # Provider-specific auth fallbacks (e.g. Copilot via gh auth).
@@ -1039,14 +1275,21 @@ def _has_any_provider_configured(*, strict_profile_scope: bool = False) -> bool:
             pass
 
     # Nothing explicit anywhere: an existing Nous free-tier identity counts while the tier is on.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.anon_auth import guest_enabled, has_guest
         return guest_enabled() and has_guest()
     except Exception as exc:
         logger.debug("free tier check on first run skipped: %s", exc)
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _confirm_startup_expensive_model_override()
+# │  作用：Guard startup -m/--provider overrides before the first API call.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _confirm_startup_expensive_model_override(args) -> None:
     """Guard startup -m/--provider overrides before the first API call."""
     explicit_model = (getattr(args, "model", None) or "").strip()
@@ -1054,6 +1297,7 @@ def _confirm_startup_expensive_model_override(args) -> None:
     if not explicit_model and not explicit_provider:
         return
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config
         from hermes_cli.model_selection_guards import (
@@ -1064,6 +1308,7 @@ def _confirm_startup_expensive_model_override(args) -> None:
         logger.warning("startup model cost guard unavailable: %s", exc)
         return
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         config = load_config()
     except Exception as exc:
@@ -1078,6 +1323,7 @@ def _confirm_startup_expensive_model_override(args) -> None:
     if not model:
         return
     provider = (explicit_provider or model_cfg.get("provider") or "").strip()
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Unified registry: cost guard + id-keyed guards (e.g. the
         # data-training-tier warning) all fire at startup too.
@@ -1121,18 +1367,26 @@ def _confirm_startup_expensive_model_override(args) -> None:
             "Refusing this startup model override in non-interactive mode. "
             "Run interactively and confirm if you intend to use it.\n"
         )
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit(1)
 
     sys.stderr.write(message + "\n")
+    # ⤷ 关键分支 try/except：捕获 (EOFError, KeyboardInterrupt)，出错走兜底而不是崩溃。
     try:
         reply = input("Use this model for this invocation? [y/N] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         reply = ""
     if reply not in {"y", "yes"}:
         sys.stderr.write("Model override cancelled.\n")
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit(1)
 
 
+# ┌── 函数 def _resolve_workspace_key()
+# │  作用：The current workspace identity for cwd-scoped resume.
+# │  参数：无
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _resolve_workspace_key() -> Optional[str]:
     """The current workspace identity for cwd-scoped resume.
 
@@ -1140,21 +1394,32 @@ def _resolve_workspace_key() -> Optional[str]:
     subdirs/worktrees group together), else the CWD itself. Returns None when
     neither can be determined — callers fall back to the global MRU then.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
+            # ⤷ 出口 return：返回 os.path.abspath(result.stdout.strip())
             return os.path.abspath(result.stdout.strip())
     except Exception:
         pass
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 os.getcwd()
         return os.getcwd()
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _session_db()
+# │  作用：Yield a read-only ``SessionDB`` (lazy import, so test patches on ``hermes_state``
+# │  参数：无
+# │  返回：（未标注类型）
+# │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+# └──────────────────────────────────────────────────────────────
 @contextlib.contextmanager
 def _session_db():
     """Yield a read-only ``SessionDB`` (lazy import, so test patches on ``hermes_state``
@@ -1163,32 +1428,47 @@ def _session_db():
     Open failures yield None and any error raised by the ``with`` body is swallowed —
     callers fall through to their ``return None``."""
     db = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_state import SessionDB
 
         db = SessionDB(read_only=True)
     except Exception:
         pass
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield db  # body errors (incl. AttributeError on a None db) are swallowed
     except Exception:
         pass
     finally:
         if db is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 db.close()
             except Exception:
                 pass
 
 
+# ┌── 函数 def _latest_session_id()
+# │  作用：MRU session for the active interface; a TUI launch falls back to the CLI MRU.
+# │  参数：use_tui: bool
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _latest_session_id(use_tui: bool) -> Optional[str]:
     """MRU session for the active interface; a TUI launch falls back to the CLI MRU."""
     last_id = _resolve_last_session(source="tui" if use_tui else "cli")
     if not last_id and use_tui:
         last_id = _resolve_last_session(source="cli")
+    # ⤷ 出口 return：返回 last_id
     return last_id
 
 
+# ┌── 函数 def _resolve_last_session()
+# │  作用：Look up the most recently-used session ID for a source.
+# │  参数：source: str = 'cli'
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _resolve_last_session(source: str = "cli") -> Optional[str]:
     """Look up the most recently-used session ID for a source.
 
@@ -1202,20 +1482,30 @@ def _resolve_last_session(source: str = "cli") -> Optional[str]:
         if ws_key:
             sessions = db.search_sessions(source=source, limit=1, workspace_key=ws_key)
             if sessions:
+                # ⤷ 出口 return：返回 sessions[0]['id']
                 return sessions[0]["id"]
         # Fallback: global MRU for this source.
         sessions = db.search_sessions(source=source, limit=1)
+        # ⤷ 出口 return：返回 sessions[0]['id'] if sessions else None
         return sessions[0]["id"] if sessions else None
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _probe_container()
+# │  作用：Run a container inspect probe, returning the CompletedProcess.
+# │  参数：cmd: list, backend: str, via_sudo: bool = False
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _probe_container(cmd: list, backend: str, via_sudo: bool = False):
     """Run a container inspect probe, returning the CompletedProcess.
 
     Catches TimeoutExpired specifically for a human-readable message;
     all other exceptions propagate naturally.
     """
+    # ⤷ 关键分支 try/except：捕获 subprocess.TimeoutExpired，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 subprocess.run(cmd, capture_output=True, text=True, encoding…
         return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15)
     except subprocess.TimeoutExpired:
         label = f"sudo {backend}" if via_sudo else backend
@@ -1227,6 +1517,11 @@ def _probe_container(cmd: list, backend: str, via_sudo: bool = False):
         sys.exit(1)
 
 
+# ┌── 函数 def _exec_in_container()
+# │  作用：Replace the current process with a command inside the managed container.
+# │  参数：container_info: dict, cli_args: list
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _exec_in_container(container_info: dict, cli_args: list):
     """Replace the current process with a command inside the managed container.
 
@@ -1305,6 +1600,11 @@ def _exec_in_container(container_info: dict, cli_args: list):
     os.execvp(exec_cmd[0], exec_cmd)
 
 
+# ┌── 函数 def _resolve_session_by_name_or_id()
+# │  作用：Resolve a session title or ID to a session ID (None if neither matches).
+# │  参数：name_or_id: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _resolve_session_by_name_or_id(name_or_id: str) -> Optional[str]:
     """Resolve a session title or ID to a session ID (None if neither matches).
 
@@ -1318,14 +1618,22 @@ def _resolve_session_by_name_or_id(name_or_id: str) -> Optional[str]:
         if resolved_id:
             # Project forward through compression chain so resumes land on
             # the live tip instead of a dead compressed parent.
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 resolved_id = db.get_compression_tip(resolved_id) or resolved_id
             except Exception:
                 pass
+        # ⤷ 出口 return：返回 resolved_id
         return resolved_id
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _create_titled_session()
+# │  作用：Create a fresh titled session (``chat -c <title> --create-if-missing``).
+# │  参数：title: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _create_titled_session(title: str) -> Optional[str]:
     """Create a fresh titled session (``chat -c <title> --create-if-missing``).
 
@@ -1337,6 +1645,7 @@ def _create_titled_session(title: str) -> Optional[str]:
     no-op.
     """
     db = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_state_ids import new_session_id as mint_session_id
         from hermes_state_registry import acquire
@@ -1347,6 +1656,7 @@ def _create_titled_session(title: str) -> Optional[str]:
         db = acquire()
         db.create_session(new_session_id, source="cli")
         db.set_session_title(new_session_id, title)
+        # ⤷ 出口 return：返回 new_session_id
         return new_session_id
     except Exception:
         # Programmatic callers rely on --create-if-missing being deterministic;
@@ -1354,15 +1664,22 @@ def _create_titled_session(title: str) -> Optional[str]:
         # (DB lock, I/O error, import error — all otherwise invisible).
         # See #86794.
         logger.exception("Failed to create titled session %r", title)
+        # ⤷ 出口 return：返回 None
         return None
     finally:
         if db is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 db.close()
             except Exception:
                 pass
 
 
+# ┌── 函数 def _resolve_continue_arg()
+# │  作用：Resolve ``-c/--continue`` into ``args.resume``.
+# │  参数：args, use_tui: bool
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _resolve_continue_arg(args, *, use_tui: bool) -> None:
     """Resolve ``-c/--continue`` into ``args.resume``.
 
@@ -1413,6 +1730,7 @@ def _resolve_continue_arg(args, *, use_tui: bool) -> None:
                     "`-c <name> --create-if-missing`",
                     file=sys.stderr,
                 )
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.terminal_breadcrumbs import resolve_breadcrumb_session
 
@@ -1432,6 +1750,11 @@ def _resolve_continue_arg(args, *, use_tui: bool) -> None:
                     sys.exit(1)
 
 
+# ┌── 函数 def _apply_in_dir()
+# │  作用：--in DIR: chdir first so workspace-scoped lookups key off DIR; pins the session there.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_in_dir(args) -> None:
     """--in DIR: chdir first so workspace-scoped lookups key off DIR; pins the session there."""
     in_dir = getattr(args, "in_dir", None)
@@ -1445,6 +1768,7 @@ def _apply_in_dir(args) -> None:
     if not os.path.isdir(_target_dir):
         print(f"Error: --in directory not found: {in_dir}")
         sys.exit(1)
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         os.chdir(_target_dir)
     except OSError as e:
@@ -1462,6 +1786,11 @@ def _apply_in_dir(args) -> None:
     args.no_restore_cwd = True
 
 
+# ┌── 函数 def _import_foreign_resume()
+# │  作用：--resume @claude / @codex: import a foreign session and resume it.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _import_foreign_resume(args) -> None:
     """--resume @claude / @codex: import a foreign session and resume it."""
     _resume_foreign = getattr(args, "resume", None)
@@ -1472,6 +1801,7 @@ def _import_foreign_resume(args) -> None:
     _picked = pick_foreign_session(_resume_foreign.strip().lower().lstrip("@"))
     if _picked is None:
         sys.exit(1)
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:
         _imported_id = import_foreign_session(_picked.source, _picked.path)
     except ValueError as e:
@@ -1482,6 +1812,11 @@ def _import_foreign_resume(args) -> None:
     args.resume = _imported_id
 
 
+# ┌── 函数 def _resolve_chat_session_args()
+# │  作用：Normalize --in / --resume / --continue on ``args`` before agent init.
+# │  参数：args, use_tui: bool
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _resolve_chat_session_args(args, use_tui: bool) -> None:
     """Normalize --in / --resume / --continue on ``args`` before agent init.
 
@@ -1532,8 +1867,14 @@ def _resolve_chat_session_args(args, use_tui: bool) -> None:
                 print(f"↪ restored workspace dir: {_saved_cwd}")
 
 
+# ┌── 函数 def _warn_retired_xai_models()
+# │  作用：One-shot xAI retirement warning on stderr; non-blocking, never fails startup.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _warn_retired_xai_models() -> None:
     """One-shot xAI retirement warning on stderr; non-blocking, never fails startup."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.xai_retirement import (
             MIGRATION_GUIDE_URL,
@@ -1557,6 +1898,11 @@ def _warn_retired_xai_models() -> None:
         pass
 
 
+# ┌── 函数 def _start_chat_background_prefetch()
+# │  作用：Kick off the update-check/banner prefetch and the bundled-skills sync.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _start_chat_background_prefetch() -> None:
     """Kick off the update-check/banner prefetch and the bundled-skills sync.
 
@@ -1570,6 +1916,7 @@ def _start_chat_background_prefetch() -> None:
     drops the banner's skills cache.
     """
     if _termux_should_prefetch_update_check():
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.banner import prefetch_banner_data, prefetch_update_check
 
@@ -1579,16 +1926,20 @@ def _start_chat_background_prefetch() -> None:
             pass
 
     def _skills_dir_is_unseeded() -> bool:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import get_hermes_home
             skills_dir = Path(get_hermes_home()) / "skills"
             if not skills_dir.is_dir():
+                # ⤷ 出口 return：返回 True
                 return True
+            # ⤷ 出口 return：返回 next(skills_dir.rglob('SKILL.md'), None) is None
             return next(skills_dir.rglob("SKILL.md"), None) is None
         except Exception:
             return False
 
     def _skills_sync_bg() -> None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _sync_bundled_skills_for_startup()
         except Exception:
@@ -1597,6 +1948,7 @@ def _start_chat_background_prefetch() -> None:
     if _skills_dir_is_unseeded():
         _skills_sync_bg()
         # Drop the banner's possibly-empty skills cache so it recomputes.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             import hermes_cli.banner as _banner_mod
             _banner_mod._available_skills_cache = None
@@ -1608,6 +1960,11 @@ def _start_chat_background_prefetch() -> None:
         ).start()
 
 
+# ┌── 函数 def _first_run_setup_guard()
+# │  作用：No provider configured: offer `hermes setup` (TTY) or exit 1 with guidance.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _first_run_setup_guard(args) -> None:
     """No provider configured: offer `hermes setup` (TTY) or exit 1 with guidance."""
     print()
@@ -1629,6 +1986,7 @@ def _first_run_setup_guard(args) -> None:
         )
         sys.exit(1)
 
+    # ⤷ 关键分支 try/except：捕获 (EOFError, KeyboardInterrupt)，出错走兜底而不是崩溃。
     try:
         reply = input("Run setup now? [Y/n] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
@@ -1641,6 +1999,11 @@ def _first_run_setup_guard(args) -> None:
     sys.exit(1)
 
 
+# ┌── 函数 def _read_query_file()
+# │  作用：--query-file: read the single query from a file (or stdin via '-').
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _read_query_file(args) -> None:
     """--query-file: read the single query from a file (or stdin via '-').
 
@@ -1657,6 +2020,7 @@ def _read_query_file(args) -> None:
         # this guards programmatic callers that fill the namespace directly.
         print("Error: -q/--query and --query-file are mutually exclusive", file=sys.stderr)
         sys.exit(2)
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         if _qfile == "-":
             args.query = sys.stdin.read()
@@ -1680,6 +2044,11 @@ _CHAT_PASSTHROUGH = (
 )
 
 
+# ┌── 函数 def cmd_chat()
+# │  作用：Run interactive chat CLI.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_chat(args):
     """Run interactive chat CLI."""
     _apply_safe_mode(args)
@@ -1746,6 +2115,7 @@ def cmd_chat(args):
     }
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
+    # ⤷ 关键分支 try/except：捕获 ValueError、ImportError，出错走兜底而不是崩溃。
     try:
         from cli import main as cli_main
 
@@ -1763,9 +2133,15 @@ def cmd_chat(args):
 
         if emit_partial_update_hint(e):
             sys.exit(1)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
 
 
+# ┌── 函数 def cmd_gateway()
+# │  作用：Gateway management commands.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_gateway(args):
     """Gateway management commands."""
     _sync_bundled_skills_quietly()
@@ -1775,6 +2151,11 @@ def cmd_gateway(args):
     gateway_command(args)
 
 
+# ┌── 函数 def cmd_proxy()
+# │  作用：Local OpenAI-compatible proxy to OAuth providers.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_proxy(args):
     """Local OpenAI-compatible proxy to OAuth providers."""
     # aiohttp is an extras install; keep it off the common path.
@@ -1782,9 +2163,15 @@ def cmd_proxy(args):
 
     rc = _cmd_proxy(args)
     if isinstance(rc, int) and rc != 0:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit(rc)
 
 
+# ┌── 函数 def _forward_command()
+# │  作用：A ``hermes <cmd>`` handler that hands ``args`` to ``<module>.<attr>``.
+# │  参数：name: str, module: str, attr: str, forward_return: bool = ..., doc: str = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _forward_command(name: str, module: str, attr: str, *, forward_return: bool = False, doc: str = ""):
     """A ``hermes <cmd>`` handler that hands ``args`` to ``<module>.<attr>``.
 
@@ -1797,10 +2184,12 @@ def _forward_command(name: str, module: str, attr: str, *, forward_return: bool 
         import importlib
 
         result = getattr(importlib.import_module(module), attr)(args)
+        # ⤷ 出口 return：返回 result if forward_return else None
         return result if forward_return else None
 
     _cmd.__name__ = _cmd.__qualname__ = name
     _cmd.__doc__ = doc or None
+    # ⤷ 出口 return：返回 _cmd
     return _cmd
 
 
@@ -1829,10 +2218,16 @@ cmd_claw = _forward_command("cmd_claw", "hermes_cli.claw", "claw_command")
 cmd_import_agent = _forward_command("cmd_import_agent", "hermes_cli.agent_import", "import_agent_command")
 
 
+# ┌── 函数 def cmd_model()
+# │  作用：Select default model — starts with provider selection, then model picker.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_model(args):
     """Select default model — starts with provider selection, then model picker."""
     _require_tty("model")
     if getattr(args, "refresh", False):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.models import clear_provider_models_cache
             clear_provider_models_cache()
@@ -1873,10 +2268,21 @@ _PROVIDER_MODEL_FLOWS = {
 }
 
 
+# ┌── 函数 def _norm_base_url()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：url: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _norm_base_url(url: str) -> str:
+    # ⤷ 出口 return：返回 str(url or '').strip().rstrip('/').lower()
     return str(url or "").strip().rstrip("/").lower()
 
 
+# ┌── 函数 def _resolve_active_provider()
+# │  作用：Provider slug currently in effect (the picker's default row), or None.
+# │  参数：config, model_cfg, effective_provider, custom_provider_map
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _resolve_active_provider(config, model_cfg, effective_provider, custom_provider_map):
     """Provider slug currently in effect (the picker's default row), or None.
 
@@ -1920,6 +2326,7 @@ def _resolve_active_provider(config, model_cfg, effective_provider, custom_provi
                 "issues. Falling back to auto provider detection."
             )
     if not active:
+        # ⤷ 关键分支 try/except：捕获 AuthError，出错走兜底而不是崩溃。
         try:
             active = resolve_provider("auto")
         except AuthError as exc:
@@ -1930,9 +2337,15 @@ def _resolve_active_provider(config, model_cfg, effective_provider, custom_provi
     # Detect custom endpoint
     if active == "openrouter" and get_env_value("OPENAI_BASE_URL"):
         active = "custom"
+    # ⤷ 出口 return：返回 active
     return active
 
 
+# ┌── 函数 def _pick_provider()
+# │  作用：Provider picker (+ group member sub-picker) -> concrete slug, or None on cancel.
+# │  参数：config, active, provider_labels, custom_provider_map
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _pick_provider(config, active, provider_labels, custom_provider_map):
     """Provider picker (+ group member sub-picker) -> concrete slug, or None on cancel."""
     # Group rows drill into a member sub-picker that resolves back to a
@@ -1945,9 +2358,11 @@ def _pick_provider(config, active, provider_labels, custom_provider_map):
         default=default_idx,
     )
     if provider_idx is None or ordered[provider_idx][0] == "cancel":
+        # ⤷ 出口 return：返回 None
         return None
     selected_key, group_label, selected_members = ordered[provider_idx]
     if not selected_members:
+        # ⤷ 出口 return：返回 selected_key
         return selected_key
     # Default to the active member when it lives in this group. The group row
     # carries the descriptive text, so member rows show only their short label.
@@ -1956,9 +2371,15 @@ def _pick_provider(config, active, provider_labels, custom_provider_map):
         default=selected_members.index(active) if active in selected_members else 0,
         title=f"Select {group_label.split(' ▸', 1)[0]} provider:",
     )
+    # ⤷ 出口 return：返回 None if member_idx is None else selected_members[member_idx]
     return None if member_idx is None else selected_members[member_idx]
 
 
+# ┌── 函数 def select_provider_and_model()
+# │  作用：Core provider selection + model picking logic.
+# │  参数：args = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def select_provider_and_model(args=None):
     """Core provider selection + model picking logic.
 
@@ -2086,18 +2507,33 @@ _FROZEN_ATTR_SOURCES: dict[str, str] = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：Resolve the frozen updater surface on first read (see _FROZEN_UPDATER_SURFACE).
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):
     """Resolve the frozen updater surface on first read (see _FROZEN_UPDATER_SURFACE)."""
     module = _FROZEN_ATTR_SOURCES.get(name)
     if module is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
 
     value = getattr(importlib.import_module(module), name)
     globals()[name] = value  # cache: later accesses skip __getattr__
+    # ⤷ 出口 return：返回 value
     return value
 
 
+# ┌── 函数 def cmd_verify()
+# │  作用：Detect a project's run recipe and smoke-test it.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_verify(args):
     """Detect a project's run recipe and smoke-test it."""
     from hermes_cli.verify_cmd import run_verify_command
@@ -2105,6 +2541,11 @@ def cmd_verify(args):
     sys.exit(run_verify_command(args))
 
 
+# ┌── 函数 def cmd_security()
+# │  作用：Dispatch `hermes security <subcmd>`.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_security(args):
     """Dispatch `hermes security <subcmd>`."""
     sub = getattr(args, "security_command", None)
@@ -2118,6 +2559,11 @@ def cmd_security(args):
     sys.exit(2)
 
 
+# ┌── 函数 def cmd_approvals()
+# │  作用：Dispatch `hermes approvals <subcmd>`.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_approvals(args):
     """Dispatch `hermes approvals <subcmd>`."""
     from hermes_cli.approvals_suggest import approvals_command
@@ -2125,13 +2571,20 @@ def cmd_approvals(args):
     status = approvals_command(args)
     if status:
         sys.exit(status)
+    # ⤷ 出口 return：返回 status
     return status
 
 
+# ┌── 函数 def cmd_config()
+# │  作用：Configuration management.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_config(args):
     """Configuration management."""
     from hermes_cli.config import config_command
 
+    # ⤷ 关键分支 try/except：捕获 RuntimeError，出错走兜底而不是崩溃。
     try:
         config_command(args)
     except RuntimeError as exc:
@@ -2141,6 +2594,11 @@ def cmd_config(args):
         sys.exit(1)
 
 
+# ┌── 函数 def cmd_backup()
+# │  作用：Back up Hermes home directory to a zip file.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_backup(args):
     """Back up Hermes home directory to a zip file."""
     from hermes_cli import backup
@@ -2148,16 +2606,31 @@ def cmd_backup(args):
     (backup.run_quick_backup if getattr(args, "quick", False) else backup.run_backup)(args)
 
 
+# ┌── 函数 def _print_version_info()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：check_updates: bool = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_version_info(*, check_updates: bool = True) -> None:
     # Shared with the `hermes --version` pre-import fast path.
     _startup_fast.print_fast_version_info(check_updates=check_updates)
 
 
+# ┌── 函数 def cmd_version()
+# │  作用：Show version (--version/-V flag).
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_version(args):
     """Show version (--version/-V flag)."""
     _print_version_info(check_updates=True)
 
 
+# ┌── 函数 def cmd_uninstall()
+# │  作用：Uninstall Hermes Agent (or just the Chat GUI with --gui).
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_uninstall(args):
     """Uninstall Hermes Agent (or just the Chat GUI with --gui).
 
@@ -2186,6 +2659,11 @@ def cmd_uninstall(args):
     run_uninstall(args)
 
 
+# ┌── 函数 def _clear_bytecode_cache()
+# │  作用：Remove all __pycache__ dirs under *root* (stale .pyc → ImportError after updates).
+# │  参数：root: Path
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _clear_bytecode_cache(root: Path) -> int:
     """Remove all __pycache__ dirs under *root* (stale .pyc → ImportError after updates).
 
@@ -2199,17 +2677,25 @@ def _clear_bytecode_cache(root: Path) -> int:
             if d not in {"venv", ".venv", "node_modules", ".git", ".worktrees"}
         ]
         if os.path.basename(dirpath) == "__pycache__":
+            # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
             try:
                 shutil.rmtree(dirpath)
                 removed += 1
             except OSError:
                 pass
             dirnames.clear()  # nothing left to recurse into
+    # ⤷ 出口 return：返回 removed
     return removed
 
 
+# ┌── 函数 def _finalize_update_receipt()
+# │  作用：Best-effort receipt close at the command boundary; no-op if already finalized.
+# │  参数：code: int, reason: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _finalize_update_receipt(code: int, reason: str) -> None:
     """Best-effort receipt close at the command boundary; no-op if already finalized."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Receipt boundary (#91283 review): the impl has many early sys.exit paths (concurrent-instance
         # preflight, venv-holder refusal, head-pinned no-op, fetch failure) that never reach an inner
@@ -2222,12 +2708,18 @@ def _finalize_update_receipt(code: int, reason: str) -> None:
         pass
 
 
+# ┌── 函数 def _update_preflight_handled()
+# │  作用：Managed-install refusal, --plan, admission gate, --check. True = nothing more to do.
+# │  参数：args
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _update_preflight_handled(args) -> bool:
     """Managed-install refusal, --plan, admission gate, --check. True = nothing more to do."""
     from hermes_cli.config import is_managed, managed_error
 
     if is_managed():
         managed_error("update Hermes Agent")
+        # ⤷ 出口 return：返回 True
         return True
 
     # --plan is read-only and deployment-kind aware, so it runs BEFORE the
@@ -2242,6 +2734,7 @@ def _update_preflight_handled(args) -> bool:
         )
 
         print_update_plan(collect_runtime_inventory())
+        # ⤷ 出口 return：返回 True
         return True
 
     # Image/package-managed admission gate: baked provenance marker first
@@ -2273,10 +2766,17 @@ def _update_preflight_handled(args) -> bool:
             branch=branch,
             branch_explicit=bool(getattr(args, "branch", None)),
         )
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def cmd_update()
+# │  作用：Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_update(args):
     """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
     if _update_preflight_handled(args):
@@ -2304,6 +2804,7 @@ def cmd_update(args):
     _update_handoff_exit_code: int | None = None
     from hermes_cli.update_cmd import _cmd_update_impl
 
+    # ⤷ 关键分支 try/except：捕获 SystemExit、BaseException，出错走兜底而不是崩溃。
     try:
         _cmd_update_impl(args, gateway_mode=gateway_mode)
     except SystemExit as _update_exit:
@@ -2315,9 +2816,11 @@ def cmd_update(args):
         _update_handoff_exit_code = (
             _update_exit.code if isinstance(_update_exit.code, int) else 0
         )
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
     except BaseException as _update_exc:
         _finalize_update_receipt(1, f"{type(_update_exc).__name__}: {_update_exc}")
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
     else:
         from hermes_cli.update_receipt import COMMAND_BOUNDARY_STOP_REASON
@@ -2345,6 +2848,11 @@ def cmd_update(args):
             os._exit(_update_handoff_exit_code)
 
 
+# ┌── 函数 def _coalesce_session_name_args()
+# │  作用：Join unquoted multi-word session names after -c/--continue and -r/--resume.
+# │  参数：argv: list
+# │  返回：list
+# └──────────────────────────────────────────────────────────────
 def _coalesce_session_name_args(argv: list) -> list:
     """Join unquoted multi-word session names after -c/--continue and -r/--resume.
 
@@ -2381,15 +2889,22 @@ def _coalesce_session_name_args(argv: list) -> list:
         else:
             result.append(token)
             i += 1
+    # ⤷ 出口 return：返回 result
     return result
 
 
 from hermes_cli.profile_cmd import cmd_profile
 
 
+# ┌── 函数 def _dashboard_lifecycle_flags()
+# │  作用：--status / --stop: report or kill running dashboards and exit (no deps needed).
+# │  参数：args, token_file
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _dashboard_lifecycle_flags(args, token_file) -> None:
     """--status / --stop: report or kill running dashboards and exit (no deps needed)."""
     if token_file and (getattr(args, "status", False) or getattr(args, "stop", False)):
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit("--ssh-session-token-file cannot be used with --status or --stop")
     if getattr(args, "status", False):
         _report_dashboard_status()
@@ -2406,6 +2921,11 @@ def _dashboard_lifecycle_flags(args, token_file) -> None:
         sys.exit(1 if _find_stale_dashboard_pids() else 0)
 
 
+# ┌── 函数 def _dashboard_validate_serve_args()
+# │  作用：Headless-serve argument checks -> ssh_owner_nonce (or None).
+# │  参数：args, headless_backend, token_file
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _dashboard_validate_serve_args(args, headless_backend, token_file):
     """Headless-serve argument checks -> ssh_owner_nonce (or None)."""
     # `hermes serve` is headless/non-interactive: fail closed on a corrupt
@@ -2418,21 +2938,31 @@ def _dashboard_validate_serve_args(args, headless_backend, token_file):
             require_parseable_user_config,
         )
 
+        # ⤷ 关键分支 try/except：捕获 InvalidUserConfigError，出错走兜底而不是崩溃。
         try:
             require_parseable_user_config(
                 ignore_user_config=bool(getattr(args, "ignore_user_config", False))
             )
         except InvalidUserConfigError as exc:
             print(f"Error: {exc}", file=sys.stderr)
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise SystemExit(2) from exc
     ssh_owner_nonce = getattr(args, "ssh_owner_nonce", None)
     if ssh_owner_nonce and not re.fullmatch(r"[0-9a-f]{16}", ssh_owner_nonce):
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit("--ssh-owner-nonce must be 16 lowercase hex characters")
     if token_file and not headless_backend:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit("--ssh-session-token-file is only valid with hermes serve")
+    # ⤷ 出口 return：返回 ssh_owner_nonce
     return ssh_owner_nonce
 
 
+# ┌── 函数 def _dashboard_sanitize_desktop_env()
+# │  作用：Strip Desktop-inherited env that hijacks a standalone launch.
+# │  参数：headless_backend
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _dashboard_sanitize_desktop_env(headless_backend) -> None:
     """Strip Desktop-inherited env that hijacks a standalone launch.
 
@@ -2453,6 +2983,11 @@ def _dashboard_sanitize_desktop_env(headless_backend) -> None:
         os.environ.pop("HERMES_SERVE_HEADLESS", None)
 
 
+# ┌── 函数 def _dashboard_prepare_runtime()
+# │  作用：Deps check, skills seed, terminal env bridge, plugins, MCP discovery.
+# │  参数：args, headless_backend
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _dashboard_prepare_runtime(args, headless_backend) -> bool:
     """Deps check, skills seed, terminal env bridge, plugins, MCP discovery.
 
@@ -2460,12 +2995,14 @@ def _dashboard_prepare_runtime(args, headless_backend) -> bool:
     """
     # Attach gui.log early so dashboard startup/build failures are captured in
     # the same logs directory as every other Hermes surface.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_logging import setup_logging as _setup_logging_gui
         _setup_logging_gui(mode="gui")
     except Exception:
         pass
 
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401
@@ -2490,6 +3027,7 @@ def _dashboard_prepare_runtime(args, headless_backend) -> bool:
     # server._make_agent) and ticks cron itself when desktop-spawned; without
     # this those consumers saw an unset TERMINAL_ENV and ran every command on
     # the host even under `terminal.backend: docker` (#63141, #54449).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # PTY chat spawns already bridge their child env copy; this covers the in-process consumers. See
         # #61115, #65696.
@@ -2506,6 +3044,7 @@ def _dashboard_prepare_runtime(args, headless_backend) -> bool:
     # for built-in subcommands (~500ms), but the dashboard's server-side
     # runtime depends on plugin-registered providers (image_gen, web,
     # dashboard_auth, …).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import discover_plugins
         discover_plugins()
@@ -2525,6 +3064,7 @@ def _dashboard_prepare_runtime(args, headless_backend) -> bool:
     # wait_for_mcp_discovery covers a server still connecting at first turn.
     mcp_discovery_after_bind = headless_backend and os.environ.get("HERMES_DESKTOP") == "1"
     if not mcp_discovery_after_bind:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.mcp_startup import start_background_mcp_discovery
 
@@ -2537,9 +3077,15 @@ def _dashboard_prepare_runtime(args, headless_backend) -> bool:
                 "Background MCP tool discovery failed at dashboard startup",
                 exc_info=True,
             )
+    # ⤷ 出口 return：返回 mcp_discovery_after_bind
     return mcp_discovery_after_bind
 
 
+# ┌── 函数 def cmd_dashboard()
+# │  作用：Start the web UI server, or (with --stop/--status) manage running ones.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_dashboard(args):
     """Start the web UI server, or (with --stop/--status) manage running ones."""
     _token_file = getattr(args, "ssh_session_token_file", None)
@@ -2590,6 +3136,11 @@ def cmd_dashboard(args):
     )
 
 
+# ┌── 函数 def cmd_completion()
+# │  作用：Print shell completion script.
+# │  参数：args, parser = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_completion(args, parser=None):
     """Print shell completion script."""
     from hermes_cli import completion
@@ -2601,6 +3152,11 @@ def cmd_completion(args, parser=None):
     print(generate(parser))
 
 
+# ┌── 函数 def cmd_logs()
+# │  作用：View and filter Hermes log files.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_logs(args):
     """View and filter Hermes log files."""
     from hermes_cli.logs import tail_log, list_logs
@@ -2622,10 +3178,16 @@ def cmd_logs(args):
     )
 
 
+# ┌── 函数 def cmd_console()
+# │  作用：Open the safe Hermes command console.
+# │  参数：args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def cmd_console(args):
     """Open the safe Hermes command console."""
     from hermes_cli.console_engine import run_console_repl
 
+    # ⤷ 出口 return：返回 run_console_repl()
     return run_console_repl()
 
 
@@ -2657,6 +3219,11 @@ _BUILTIN_SUBCOMMANDS = frozenset(
 )
 
 
+# ┌── 函数 def _first_positional_argv()
+# │  作用：First non-flag, non-flag-value token in ``sys.argv[1:]`` (skips values of known flags).
+# │  参数：无
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _first_positional_argv() -> str | None:
     """First non-flag, non-flag-value token in ``sys.argv[1:]`` (skips values of known flags).
 
@@ -2672,14 +3239,22 @@ def _first_positional_argv() -> str | None:
     while i < len(argv):
         tok = argv[i]
         if tok == "--":  # everything after is positional
+            # ⤷ 出口 return：返回 argv[i + 1] if i + 1 < len(argv) else None
             return argv[i + 1] if i + 1 < len(argv) else None
         if not tok.startswith("-"):
+            # ⤷ 出口 return：返回 tok
             return tok
         # ``--flag=value`` is a single token; a known value flag consumes the next.
         i += 2 if ("=" not in tok and tok in value_flags and i + 1 < len(argv)) else 1
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _plugin_cli_discovery_needed()
+# │  作用：True when the CLI might be invoking a plugin-registered subcommand.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _plugin_cli_discovery_needed() -> bool:
     """True when the CLI might be invoking a plugin-registered subcommand.
 
@@ -2688,9 +3263,15 @@ def _plugin_cli_discovery_needed() -> bool:
     discovery is needed; for a prompt its cost amortizes over the agent run.
     """
     first = _first_positional_argv()  # None = bare ``hermes`` → chat
+    # ⤷ 出口 return：返回 first is not None and first not in _BUILTIN_SUBCOMMANDS
     return first is not None and first not in _BUILTIN_SUBCOMMANDS
 
 
+# ┌── 函数 def _resolve_deferred_platform_cli_command()
+# │  作用：Materialize the deferred platform whose top-level CLI command matches.
+# │  参数：command_name: str | None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _resolve_deferred_platform_cli_command(command_name: str | None) -> None:
     """Materialize the deferred platform whose top-level CLI command matches.
 
@@ -2706,6 +3287,7 @@ def _resolve_deferred_platform_cli_command(command_name: str | None) -> None:
     """
     if not command_name:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.platform_registry import platform_registry
 
@@ -2726,8 +3308,14 @@ _AGENT_SUBCOMMANDS = {
 }
 
 
+# ┌── 函数 def _is_tui_chat_launch()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_tui_chat_launch(args) -> bool:
     if getattr(args, "tui", False) or os.environ.get("HERMES_TUI") == "1":
+        # ⤷ 出口 return：返回 True
         return True
     # The chat path decides TUI-vs-classic via _resolve_use_tui (--cli/--tui
     # flags, TTY gate, HERMES_TUI env, display.interface config). Bare
@@ -2738,27 +3326,52 @@ def _is_tui_chat_launch(args) -> bool:
     # launch the TUI; other commands (mcp serve, gateway, acp, cron) keep
     # their own discovery behavior untouched.
     if getattr(args, "command", None) not in {None, "chat"}:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 _resolve_use_tui(args)
     return _resolve_use_tui(args)
 
 
+# ┌── 函数 def _agent_subcommand_selected()
+# │  作用：True for ``cron run/tick``, ``gateway run``, ``mcp serve`` (see _AGENT_SUBCOMMANDS).
+# │  参数：args
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _agent_subcommand_selected(args) -> bool:
     """True for ``cron run/tick``, ``gateway run``, ``mcp serve`` (see _AGENT_SUBCOMMANDS)."""
     _sub_attr, _sub_set = _AGENT_SUBCOMMANDS.get(args.command, (None, None))
+    # ⤷ 出口 return：返回 bool(_sub_attr and getattr(args, _sub_attr, None) in _sub_se…
     return bool(_sub_attr and getattr(args, _sub_attr, None) in _sub_set)
 
 
+# ┌── 函数 def _command_has_dedicated_mcp_startup()
+# │  作用：acp / gateway run / cron run|tick own their MCP startup on the runtime path.
+# │  参数：args
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _command_has_dedicated_mcp_startup(args) -> bool:
     """acp / gateway run / cron run|tick own their MCP startup on the runtime path."""
+    # ⤷ 出口 return：返回 args.command == 'acp' or (args.command != 'mcp' and _agent_s…
     return args.command == "acp" or (
         args.command != "mcp" and _agent_subcommand_selected(args)
     )
 
 
+# ┌── 函数 def _should_background_mcp_startup()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_background_mcp_startup(args) -> bool:
+    # ⤷ 出口 return：返回 not _is_tui_chat_launch(args) and args.command in {None, 'ch…
     return not _is_tui_chat_launch(args) and args.command in {None, "chat", "rl"}
 
 
+# ┌── 函数 def _prepare_agent_startup()
+# │  作用：Discover plugins/MCP/hooks for commands that can run an agent turn.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _prepare_agent_startup(args) -> None:
     """Discover plugins/MCP/hooks for commands that can run an agent turn."""
     # --yolo chokepoint: HERMES_YOLO_MODE must be set before any discovery
@@ -2778,6 +3391,7 @@ def _prepare_agent_startup(args) -> None:
     _accept_hooks = bool(getattr(args, "accept_hooks", False))
     if not _is_tui_chat_launch(args):
         # The TUI backend does its own discovery; the launcher only spawns Node.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.plugins import start_background_plugin_discovery
 
@@ -2794,6 +3408,7 @@ def _prepare_agent_startup(args) -> None:
     # every discovery path (inline below, background thread, TUI/desktop
     # deferred start). Built-in toolset names never match a server key, so
     # `-t terminal` simply spawns nothing; `-t all` keeps the full set.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.mcp_startup import set_mcp_server_filter
 
@@ -2807,6 +3422,7 @@ def _prepare_agent_startup(args) -> None:
         _is_tui_chat_launch(args) or _command_has_dedicated_mcp_startup(args)
     )
     if _run_inline_mcp_discovery and _should_background_mcp_startup(args):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.mcp_startup import start_background_mcp_discovery
 
@@ -2821,6 +3437,7 @@ def _prepare_agent_startup(args) -> None:
             )
         _run_inline_mcp_discovery = False
     if _run_inline_mcp_discovery:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:  # synchronous for entrypoints without a later bounded startup path
             from hermes_cli.mcp_startup import get_mcp_server_filter
             from tools.mcp_tool_discovery import discover_mcp_tools
@@ -2835,6 +3452,7 @@ def _prepare_agent_startup(args) -> None:
                 "MCP tool discovery failed at CLI startup",
                 exc_info=True,
             )
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config
         from agent.shell_hooks import register_from_config
@@ -2854,6 +3472,11 @@ def _prepare_agent_startup(args) -> None:
         )
 
 
+# ┌── 函数 def _apply_safe_mode()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_safe_mode(args) -> None:
     if not getattr(args, "safe_mode", False):
         return
@@ -2862,12 +3485,22 @@ def _apply_safe_mode(args) -> None:
     os.environ["HERMES_IGNORE_RULES"] = "1"
 
 
+# ┌── 函数 def _apply_user_config_bypass()
+# │  作用：Apply the explicit config bypass before any startup config reads.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_user_config_bypass(args) -> None:
     """Apply the explicit config bypass before any startup config reads."""
     if getattr(args, "ignore_user_config", False):
         os.environ["HERMES_IGNORE_USER_CONFIG"] = "1"
 
 
+# ┌── 函数 def _guard_noninteractive_user_config()
+# │  作用：Fail closed before a non-interactive invocation initializes providers.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _guard_noninteractive_user_config(args) -> None:
     """Fail closed before a non-interactive invocation initializes providers."""
     if getattr(args, "_noninteractive_config_validated", False):
@@ -2885,6 +3518,7 @@ def _guard_noninteractive_user_config(args) -> None:
         require_parseable_user_config,
     )
 
+    # ⤷ 关键分支 try/except：捕获 InvalidUserConfigError，出错走兜底而不是崩溃。
     try:
         require_parseable_user_config(
             ignore_user_config=bool(
@@ -2894,11 +3528,17 @@ def _guard_noninteractive_user_config(args) -> None:
         )
     except InvalidUserConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit(2) from exc
 
     setattr(args, "_noninteractive_config_validated", True)
 
 
+# ┌── 函数 def _set_chat_arg_defaults()
+# │  作用：Fill the chat-parser attrs cmd_chat reads when chat was not parsed.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _set_chat_arg_defaults(args) -> None:
     """Fill the chat-parser attrs cmd_chat reads when chat was not parsed."""
     for attr, default in [
@@ -2915,6 +3555,11 @@ def _set_chat_arg_defaults(args) -> None:
             setattr(args, attr, default)
 
 
+# ┌── 函数 def _run_oneshot_from_args()
+# │  作用：Top-level --oneshot / -z: single-shot mode, stdout = final response only.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _run_oneshot_from_args(args) -> None:
     """Top-level --oneshot / -z: single-shot mode, stdout = final response only.
 
@@ -2937,21 +3582,37 @@ def _run_oneshot_from_args(args) -> None:
     )
 
 
+# ┌── 函数 def _light_chat_parser()
+# │  作用：Top-level + chat parser only (no subcommand tree); chat dispatches to cmd_chat.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _light_chat_parser():
     """Top-level + chat parser only (no subcommand tree); chat dispatches to cmd_chat."""
     from hermes_cli._parser import build_top_level_parser
 
     parser, _subparsers, chat_parser = build_top_level_parser()
     chat_parser.set_defaults(func=cmd_chat)
+    # ⤷ 出口 return：返回 parser
     return parser
 
 
+# ┌── 函数 def _promote_top_level_resume()
+# │  作用：Top-level --resume/--continue with no subcommand is a chat shortcut.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _promote_top_level_resume(args) -> None:
     """Top-level --resume/--continue with no subcommand is a chat shortcut."""
     if (args.resume or args.continue_last) and args.command is None:
         args.command = "chat"
 
 
+# ┌── 函数 def _try_fast_serve_launch()
+# │  作用：Dispatch an unambiguous built-in ``serve`` without the full CLI tree.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _try_fast_serve_launch() -> bool:
     """Dispatch an unambiguous built-in ``serve`` without the full CLI tree.
 
@@ -2960,13 +3621,16 @@ def _try_fast_serve_launch() -> bool:
     arguments fall back to normal parsing so error reporting is unchanged.
     """
     if os.environ.get("HERMES_DISABLE_FAST_SERVE_LAUNCH") == "1":
+        # ⤷ 出口 return：返回 False
         return False
 
     argv = sys.argv[1:]
     if not argv or argv[0] != "serve" or "-h" in argv or "--help" in argv:
+        # ⤷ 出口 return：返回 False
         return False
 
     # Container routing is top-level policy and must run before host dispatch.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import get_container_exec_info
 
@@ -2980,17 +3644,25 @@ def _try_fast_serve_launch() -> bool:
         add_help=False,
         exit_on_error=False,
     )
+    # ⤷ 关键分支 try/except：捕获 (argparse.ArgumentError, ValueError)，出错走兜底而不是崩溃。
     try:
         args, unknown = parser.parse_known_args(argv[1:])
     except (argparse.ArgumentError, ValueError):
         return False
     if unknown:
+        # ⤷ 出口 return：返回 False
         return False
 
     cmd_dashboard(args)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _try_fast_chat_launch()
+# │  作用：Fast path for unambiguous interactive chat launches (all hosts).
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _try_fast_chat_launch() -> bool:
     """Fast path for unambiguous interactive chat launches (all hosts).
 
@@ -3001,11 +3673,14 @@ def _try_fast_chat_launch() -> bool:
     separate so phone-tuned behavior doesn't leak to desktops.
     """
     if os.environ.get("HERMES_DISABLE_FAST_CHAT_LAUNCH") == "1":
+        # ⤷ 出口 return：返回 False
         return False
     argv = sys.argv[1:]
     if "-h" in argv or "--help" in argv:
+        # ⤷ 出口 return：返回 False
         return False
     # Container routing must win: NixOS container mode forwards EVERY invocation.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import get_container_exec_info
         if get_container_exec_info():
@@ -3014,11 +3689,13 @@ def _try_fast_chat_launch() -> bool:
         return False
     # TUI launches keep full dispatch outside Termux (own startup path).
     if _wants_tui_early(argv):
+        # ⤷ 出口 return：返回 False
         return False
     if _first_positional_argv() not in {None, "chat"}:
         return False
 
     parser = _light_chat_parser()
+    # ⤷ 关键分支 try/except：捕获 SystemExit，出错走兜底而不是崩溃。
     try:
         args, unknown = parser.parse_known_args(_coalesce_session_name_args(argv))
     except SystemExit:
@@ -3040,24 +3717,35 @@ def _try_fast_chat_launch() -> bool:
     _promote_top_level_resume(args)
     _set_chat_arg_defaults(args)
     cmd_chat(args)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _try_termux_fast_cli_launch()
+# │  作用：Run obvious Termux non-TUI chat/oneshot/version paths on a light parser.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _try_termux_fast_cli_launch() -> bool:
     """Run obvious Termux non-TUI chat/oneshot/version paths on a light parser."""
     if not _is_termux_startup_environment():
+        # ⤷ 出口 return：返回 False
         return False
     if os.environ.get("HERMES_TERMUX_DISABLE_FAST_CLI") == "1":
+        # ⤷ 出口 return：返回 False
         return False
 
     argv = sys.argv[1:]
     if "-h" in argv or "--help" in argv:
+        # ⤷ 出口 return：返回 False
         return False
     if _wants_tui_early(argv):  # TUI fast path / full dispatch owns those
+        # ⤷ 出口 return：返回 False
         return False
 
     if _startup_fast.is_termux_fast_version_argv(argv):
         _print_version_info(check_updates=True)
+        # ⤷ 出口 return：返回 True
         return True
 
     first = _first_positional_argv()
@@ -3095,9 +3783,15 @@ def _try_termux_fast_cli_launch() -> bool:
         cmd_chat(args)
         return True
 
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _try_termux_fast_tui_launch()
+# │  作用：Launch obvious Termux TUI invocations before building every subparser.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _try_termux_fast_tui_launch() -> bool:
     """Launch obvious Termux TUI invocations before building every subparser.
 
@@ -3105,17 +3799,21 @@ def _try_termux_fast_tui_launch() -> bool:
     Node, so the full parser's command-module imports are pure waste there.
     """
     if not _is_termux_startup_environment():
+        # ⤷ 出口 return：返回 False
         return False
 
     if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
+        # ⤷ 出口 return：返回 False
         return False
 
     wants_tui = _wants_tui_early(sys.argv[1:])
     if not wants_tui:
+        # ⤷ 出口 return：返回 False
         return False
 
     first = _first_positional_argv()
     if first not in {None, "chat"}:
+        # ⤷ 出口 return：返回 False
         return False
 
     parser = _light_chat_parser()
@@ -3123,6 +3821,7 @@ def _try_termux_fast_tui_launch() -> bool:
 
     # Preserve top-level behaviours whose semantics are not "launch chat/TUI".
     if getattr(args, "version", False) or getattr(args, "oneshot", None):
+        # ⤷ 出口 return：返回 False
         return False
     if getattr(args, "command", None) not in {None, "chat"}:
         return False
@@ -3130,9 +3829,15 @@ def _try_termux_fast_tui_launch() -> bool:
         return False
 
     cmd_chat(args)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _advertise_agent_env()
+# │  作用：Advertise the agent harness to child processes.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _advertise_agent_env() -> None:
     """Advertise the agent harness to child processes.
 
@@ -3149,6 +3854,11 @@ def _advertise_agent_env() -> None:
     os.environ.setdefault("HERMES_AGENT", "true")
 
 
+# ┌── 函数 def _attach_plugin_cli_command()
+# │  作用：Register one plugin-provided top-level command from its descriptor.
+# │  参数：subparsers, cmd_info
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _attach_plugin_cli_command(subparsers, cmd_info) -> None:
     """Register one plugin-provided top-level command from its descriptor."""
     plugin_parser = subparsers.add_parser(
@@ -3162,6 +3872,11 @@ def _attach_plugin_cli_command(subparsers, cmd_info) -> None:
         plugin_parser.set_defaults(func=cmd_info["handler_fn"])
 
 
+# ┌── 函数 def _register_plugin_cli_commands()
+# │  作用：Register plugin-provided top-level commands (each plugin builds its own argparse tree).
+# │  参数：subparsers
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _register_plugin_cli_commands(subparsers) -> None:
     """Register plugin-provided top-level commands (each plugin builds its own argparse tree).
 
@@ -3170,6 +3885,7 @@ def _register_plugin_cli_commands(subparsers) -> None:
     """
     if not _plugin_cli_discovery_needed():
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from plugins.memory import discover_plugin_cli_commands
         from hermes_cli.plugins import discover_plugins, get_plugin_manager
@@ -3191,13 +3907,24 @@ def _register_plugin_cli_commands(subparsers) -> None:
         logging.getLogger(__name__).debug("Plugin CLI discovery failed: %s", _exc)
 
 
+# ┌── 函数 def _cmd_sessions_lazy()
+# │  作用：``hermes sessions`` handler; sessions_cmd imports only when the subcommand runs.
+# │  参数：args, **kwargs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _cmd_sessions_lazy(args, **kwargs):
     """``hermes sessions`` handler; sessions_cmd imports only when the subcommand runs."""
     from hermes_cli.sessions_cmd import cmd_sessions
 
+    # ⤷ 出口 return：返回 cmd_sessions(args, **kwargs)
     return cmd_sessions(args, **kwargs)
 
 
+# ┌── 函数 def _build_cli_parser()
+# │  作用：Build the full ``hermes`` argparse tree -> ``(parser, subparsers)``.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_cli_parser():
     """Build the full ``hermes`` argparse tree -> ``(parser, subparsers)``.
 
@@ -3224,6 +3951,7 @@ def _build_cli_parser():
     )
 
     # LSP is optional — a registration failure must not break the CLI.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.lsp.cli import register_subparser as _lsp_register
         _lsp_register(subparsers)
@@ -3307,9 +4035,15 @@ def _build_cli_parser():
     build_gui_parser(subparsers, cmd_gui=cmd_gui)
     build_logs_parser(subparsers, cmd_logs=cmd_logs)
     build_prompt_size_parser(subparsers, cmd_prompt_size=cmd_prompt_size)
+    # ⤷ 出口 return：返回 (parser, subparsers)
     return parser, subparsers
 
 
+# ┌── 函数 def _parse_cli_args()
+# │  作用：Parse ``argv`` with the bpo-9338 subparser-routing workaround.
+# │  参数：parser, subparsers, argv
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _parse_cli_args(parser, subparsers, argv):
     """Parse ``argv`` with the bpo-9338 subparser-routing workaround.
 
@@ -3330,10 +4064,12 @@ def _parse_cli_args(parser, subparsers, argv):
     )
     if not _has_cmd_token:
         subparsers.required = False
+        # ⤷ 出口 return：返回 parser.parse_args(_processed_argv)
         return parser.parse_args(_processed_argv)
 
     subparsers.required = True
     _saved_stderr = sys.stderr
+    # ⤷ 关键分支 try/except：捕获 SystemExit，出错走兜底而不是崩溃。
     try:
         sys.stderr = _io.StringIO()
         args = parser.parse_args(_processed_argv)
@@ -3341,13 +4077,20 @@ def _parse_cli_args(parser, subparsers, argv):
     except SystemExit as exc:
         sys.stderr = _saved_stderr
         if exc.code == 0:  # help/version already printed; don't print twice
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         # Subcommand consumed as a flag value (e.g. -c model): normal parse.
         subparsers.required = False
         args = parser.parse_args(_processed_argv)
+    # ⤷ 出口 return：返回 args
     return args
 
 
+# ┌── 函数 def _default_to_chat()
+# │  作用：No subcommand given: run chat.
+# │  参数：args
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _default_to_chat(args) -> None:
     """No subcommand given: run chat."""
     _promote_top_level_resume(args)
@@ -3355,12 +4098,18 @@ def _default_to_chat(args) -> None:
     cmd_chat(args)
 
 
+# ┌── 函数 def main()
+# │  作用：Main entry point for hermes CLI.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def main():
     """Main entry point for hermes CLI."""
     _set_process_title()
     _advertise_agent_env()
 
     # Force UTF-8 stdio on Windows before anything prints.  No-op elsewhere.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.stdio import configure_windows_stdio
         configure_windows_stdio()
@@ -3369,6 +4118,7 @@ def main():
 
     # Sweep stale ``hermes.exe.old.*`` quarantine files from previous Windows
     # updates (see ``_quarantine_running_hermes_exe``). No-op elsewhere.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _cleanup_quarantined_exes()
     except Exception:
@@ -3387,10 +4137,12 @@ def main():
     # (``hermes -p work update``) would race. Never raises.
     # See #95294.
     if "update" not in sys.argv[1:]:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _recover_from_interrupted_install()
         except Exception:
             pass
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.update_cmd_fleet import _warn_pending_fleet_restart_on_startup
 
@@ -3452,6 +4204,10 @@ def main():
         parser.print_help()
 
 
+# ┌── 程序入口
+# │  【语法】if __name__ == "__main__"：只有被 `python 这个文件.py` 直接运行时才执行，
+# │  被 import 时不执行。这是 Python 脚本的标准入口写法。
+# └──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     main()
 
@@ -3473,12 +4229,22 @@ _PLUGIN_COMPAT_LAZY = {
 _plugin_compat_prev_getattr = __getattr__
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — chained onto the module's own __getattr__
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 出口 return：返回 _plugin_compat_prev_getattr(name)
         return _plugin_compat_prev_getattr(name)
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -5,6 +5,34 @@ reached lazily via ``_ra()`` so ``run_agent._set_interrupt`` patches still work.
 call's identity travels as a ``_ToolCallRef``; both executors end in the same
 observe → commit → project pipeline so the tool-result wire shape is produced once.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/tool_executor.py（约 1752 行）
+# 地位：★ 工具调用的执行器（并发 + 串行两条路径）。
+#
+# 背景：模型一次可能要求调用多个工具。
+#   - 互不依赖的（比如同时读两个文件）→ 并发执行更快：execute_tool_calls_concurrent()
+#   - 有依赖的 / 有副作用的（比如先写文件再运行）→ 必须按顺序：execute_tool_calls_sequential()
+#
+# 核心流程（两条路径最后汇合到同一段「观察 → 提交 → 投影」管线）：
+#   解析参数 _parse_tool_call / _parse_tool_arguments
+#     → 权限检查 _pre_tool_block / _blocked_tool_result
+#     → 真正执行 _dispatch_authorized_once
+#     → 记录与展示 _begin_tool_execution / _emit_tool_complete_and_risk
+#     → 写回消息列表 _commit_tool_result
+#
+# 这个文件里很有学习价值的工程细节：
+#   - 并发用 ThreadPoolExecutor（_max_workers_for_tool_batch 控制并发度）
+#   - 超时处理：_ToolTimeoutResult / _resolve_concurrent_tool_timeout
+#   - 顺序保证：_StartOrderGate / _WorkerStartOnce —— 并发执行但结果按顺序返回，
+#     这样模型看到的 tool_result 顺序和它请求的工具顺序一致（很重要，否则模型会错乱）
+#   - 心跳：_run_tool_activity_heartbeat —— 工具跑太久时定期输出「还在跑」，避免用户以为卡死
+#
+# 小知识：class _ToolTimeoutResult(str) 是「继承 str 的假结果」——用字符串冒充工具结果，
+#   这样下游代码不用区分类型就能统一处理。这是一种常见的鸭子类型技巧。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -60,12 +88,24 @@ logger = logging.getLogger(__name__)
 _pairing_tool_call_id = coalesce_tool_call_id  # canonical id used by the persisted assistant message
 
 
+# ┌── 函数 def _tc_name()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：tool_call: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _tc_name(tool_call: Any) -> str:
+    # ⤷ 出口 return：返回 getattr(getattr(tool_call, 'function', None), 'name', '') or…
     return getattr(getattr(tool_call, "function", None), "name", "") or "tool"
 
 
+# ┌── 函数 def _record_persisted_path_for_stub()
+# │  作用：Record the spillover file path so a later result-reference stub can't dangle (best-effort).
+# │  参数：agent, tool_call_id: str, function_result
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _record_persisted_path_for_stub(agent, tool_call_id: str, function_result) -> None:
     """Record the spillover file path so a later result-reference stub can't dangle (best-effort)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         path = extract_persisted_path(function_result) if isinstance(function_result, str) else None
         if path:
@@ -74,6 +114,11 @@ def _record_persisted_path_for_stub(agent, tool_call_id: str, function_result) -
         logger.debug("persisted-path record for result stub failed: %s", exc)
 
 
+# ┌── 函数 def _ensure_file_checkpoint()
+# │  作用：Checkpoint the same workspace path that the file tool will mutate, resolved the way
+# │  参数：agent, function_name: str, function_args: dict, effective_task_id: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _ensure_file_checkpoint(agent, function_name: str, function_args: dict, effective_task_id: str) -> None:
     """Checkpoint the same workspace path that the file tool will mutate, resolved the way
     file tools do (against the task's live cwd, which differs from the process cwd in Docker)."""
@@ -88,6 +133,11 @@ def _ensure_file_checkpoint(agent, function_name: str, function_args: dict, effe
     )
 
 
+# ┌── 函数 def _budget_for_agent()
+# │  作用：Tool-result BudgetConfig scaled to the agent's context window. Unknown length goes
+# │  参数：agent
+# │  返回：BudgetConfig
+# └──────────────────────────────────────────────────────────────
 def _budget_for_agent(agent) -> BudgetConfig:
     """Tool-result BudgetConfig scaled to the agent's context window. Unknown length goes
     through ``budget_for_context_window(None)`` (not DEFAULT_BUDGET) so the MCP threshold
@@ -98,10 +148,13 @@ def _budget_for_agent(agent) -> BudgetConfig:
     can't push the request past the model's limit (#23767). Falls back to the default budget when the
     context length isn't resolvable.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         ctx = getattr(getattr(agent, "context_compressor", None), "context_length", None)
+        # ⤷ 出口 return：返回 budget_for_context_window(int(ctx) if ctx else None)
         return budget_for_context_window(int(ctx) if ctx else None)
     except Exception:
+        # ⤷ 出口 return：返回 DEFAULT_BUDGET
         return DEFAULT_BUDGET
 
 _MAX_TOOL_WORKERS = 8  # concurrent worker threads per batch
@@ -114,6 +167,11 @@ _START_ORDER_GATE_TIMEOUT_S = 120.0
 _AUTHORIZATION_GATE_LOCK_TIMEOUT_S = 360.0
 
 
+# ┌── 函数 def _authorization_gate_lock_timeout()
+# │  作用：Authorization-lock bound = ``tools.approval_human_wait.human_wait_ceiling`` (approval timeout +
+# │  参数：无
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _authorization_gate_lock_timeout() -> float:
     """Authorization-lock bound = ``tools.approval_human_wait.human_wait_ceiling`` (approval timeout +
     margin, capped so it can't overflow Lock.acquire): never break serialization while a
@@ -126,6 +184,7 @@ def _authorization_gate_lock_timeout() -> float:
     ``pre_tool_call`` plugin, dead approval client) cannot park other workers forever (#79719). Resolved
     once per gate (per batch), so a mid-process ``approvals.timeout`` change applies from the next batch.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.approval_human_wait import human_wait_ceiling
 
@@ -134,35 +193,55 @@ def _authorization_gate_lock_timeout() -> float:
         # min()'d with _AUTHORIZATION_GATE_LOCK_TIMEOUT_S — the gate must never give up while a legitimate
         # approval prompt is still answerable (#79719), so a configured approvals.timeout above 360s must
         # extend the gate.
+        # ⤷ 出口 return：返回 human_wait_ceiling()
         return human_wait_ceiling()
     except Exception:
+        # ⤷ 出口 return：返回 _AUTHORIZATION_GATE_LOCK_TIMEOUT_S
         return _AUTHORIZATION_GATE_LOCK_TIMEOUT_S
 
 
+# ┌── 类 class _BatchAbandoned（继承自：BaseException）
+# │  说明：Raised inside a worker when the batch was abandoned before dispatch; a BaseException
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class _BatchAbandoned(BaseException):
     """Raised inside a worker when the batch was abandoned before dispatch; a BaseException
     so ``except Exception`` handlers in the middleware chain can't swallow it."""
 
 
+# ┌── 函数 def _parse_tool_arguments()
+# │  作用：Parse model-emitted arguments without repairing or coercing them.
+# │  参数：raw_arguments: Any
+# │  返回：tuple[dict, Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _parse_tool_arguments(raw_arguments: Any) -> tuple[dict, Optional[str]]:
     """Parse model-emitted arguments without repairing or coercing them."""
+    # ⤷ 关键分支 try/except：捕获 (json.JSONDecodeError, TypeError)，出错走兜底而不是崩溃。
     try:
         arguments = json.loads(raw_arguments)
     except (json.JSONDecodeError, TypeError):
         arguments = None
     if isinstance(arguments, dict):
+        # ⤷ 出口 return：返回 (arguments, None)
         return arguments, None
+    # ⤷ 出口 return：返回 ({}, json.dumps({'error': 'Invalid tool arguments', 'message…
     return {}, json.dumps(
         {"error": "Invalid tool arguments", "message": "Tool arguments must be a valid JSON object; tool was not executed."},
         ensure_ascii=False,
     )
 
 
+# ┌── 函数 def _resolve_concurrent_tool_timeout()
+# │  作用：Per-batch concurrent deadline: ``timeouts.tools.concurrent_batch`` wins,
+# │  参数：无
+# │  返回：float | None
+# └──────────────────────────────────────────────────────────────
 def _resolve_concurrent_tool_timeout() -> float | None:
     """Per-batch concurrent deadline: ``timeouts.tools.concurrent_batch`` wins,
     ``HERMES_CONCURRENT_TOOL_TIMEOUT_S`` is the legacy bridge, ``0``/negative disables."""
     from agent.deadline import resolve_timeout
 
+    # ⤷ 出口 return：返回 resolve_timeout('tools.concurrent_batch', default=_DEFAULT_C…
     return resolve_timeout(
         "tools.concurrent_batch",
         default=_DEFAULT_CONCURRENT_TOOL_TIMEOUT_S,
@@ -170,6 +249,11 @@ def _resolve_concurrent_tool_timeout() -> float | None:
     )
 
 
+# ┌── 函数 def _flush_session_db_after_tool_progress()
+# │  作用：Flush tool-call progress to the session DB before projecting it to any UI: tool side
+# │  参数：agent, messages: list, stage: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _flush_session_db_after_tool_progress(agent, messages: list, *, stage: str) -> bool:
     """Flush tool-call progress to the session DB before projecting it to any UI: tool side
     effects can kill/restart the process before turn-end persistence runs."""
@@ -180,6 +264,7 @@ def _flush_session_db_after_tool_progress(agent, messages: list, *, stage: str) 
     # this tool result as durable. Already-written rows must never be rewritten later.
     _maybe_inject_run_budget_wrapup(agent, messages)
     _maybe_inject_iteration_budget_warning(agent, messages)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         persisted = agent._flush_messages_to_session_db(messages) is not False
         if not persisted:
@@ -187,17 +272,25 @@ def _flush_session_db_after_tool_progress(agent, messages: list, *, stage: str) 
             # The flush recorded any classified cause; default to 'unknown' only if nothing more specific exists.
             if getattr(agent, "_last_persistence_error_cause", None) is None:
                 agent._last_persistence_error_cause = "unknown"
+        # ⤷ 出口 return：返回 persisted
         return persisted
     except Exception as exc:
         agent._incremental_persistence_failed = True
         from hermes_state import classify_persistence_error
         agent._last_persistence_error_cause = classify_persistence_error(exc)
         logger.warning("Incremental tool-call persistence failed after %s: %s", stage, exc)
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _image_generate_parallel_limit()
+# │  作用：Configured image-generation parallelism cap (conservative: backend bursts hit rate limits).
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _image_generate_parallel_limit() -> int:
     """Configured image-generation parallelism cap (conservative: backend bursts hit rate limits)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config
 
@@ -207,29 +300,49 @@ def _image_generate_parallel_limit() -> int:
     except Exception:
         value = None
 
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
         limit = int(value)
     except (TypeError, ValueError):
         limit = _DEFAULT_IMAGE_PARALLEL_REQUESTS
+    # ⤷ 出口 return：返回 max(1, min(limit, _MAX_TOOL_WORKERS))
     return max(1, min(limit, _MAX_TOOL_WORKERS))
 
 
+# ┌── 函数 def _max_workers_for_tool_batch()
+# │  作用：Return the worker cap for a concurrent tool batch.
+# │  参数：runnable_calls
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _max_workers_for_tool_batch(runnable_calls) -> int:
     """Return the worker cap for a concurrent tool batch."""
     if not runnable_calls:
+        # ⤷ 出口 return：返回 0
         return 0
     max_workers = _MAX_TOOL_WORKERS
     if any((call[2] if len(call) >= 3 else None) == "image_generate" for call in runnable_calls):
         max_workers = min(max_workers, _image_generate_parallel_limit())
+    # ⤷ 出口 return：返回 min(len(runnable_calls), max_workers)
     return min(len(runnable_calls), max_workers)
 
 
+# ┌── 函数 def _ra()
+# │  作用：Lazy reference to ``run_agent`` so patches like ``run_agent._set_interrupt`` work.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _ra():
     """Lazy reference to ``run_agent`` so patches like ``run_agent._set_interrupt`` work."""
     import run_agent
+    # ⤷ 出口 return：返回 run_agent
     return run_agent
 
 
+# ┌── 函数 def _is_interpreter_shutdown_submit_error()
+# │  作用：Shutdown-race predicate; ``tools.interpreter_shutdown`` knows both CPython message variants.
+# │  参数：exc: RuntimeError
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_interpreter_shutdown_submit_error(exc: RuntimeError) -> bool:
     """Shutdown-race predicate; ``tools.interpreter_shutdown`` knows both CPython message variants.
 
@@ -239,12 +352,17 @@ def _is_interpreter_shutdown_submit_error(exc: RuntimeError) -> bool:
     """
     from tools.interpreter_shutdown import interpreter_shutting_down
 
+    # ⤷ 出口 return：返回 interpreter_shutting_down(exc)
     return interpreter_shutting_down(exc)
 
 
 _emit_terminal_post_tool_call = emit_terminal_post_tool_call
 
 
+# ┌── 类 class _ToolCallRef
+# │  说明：Identity of one tool call as every hook / result message sees it: the (possibly
+# │  成员：共 4 个方法；对外可用 4 个
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _ToolCallRef:
     """Identity of one tool call as every hook / result message sees it: the (possibly
@@ -256,13 +374,24 @@ class _ToolCallRef:
     call_id: str
     trace: list
 
+    # ┌── 函数 def middleware_kwargs()
+    # │  作用：Keyword form ``_run_agent_tool_execution_middleware`` (and tests patching it) expect.
+    # │  参数：self
+    # │  返回：dict[str, Any]
+    # └──────────────────────────────────────────────────────────────
     def middleware_kwargs(self) -> dict[str, Any]:
         """Keyword form ``_run_agent_tool_execution_middleware`` (and tests patching it) expect."""
+        # ⤷ 出口 return：返回 {'function_name': self.name, 'function_args': self.args, 'ef…
         return {
             "function_name": self.name, "function_args": self.args, "effective_task_id": self.task_id,
             "tool_call_id": self.call_id, "middleware_trace": self.trace,
         }
 
+    # ┌── 函数 def emit_post()
+    # │  作用：Emit the one terminal ``post_tool_call`` for this call (``outcome`` = status /
+    # │  参数：self, agent, result, trace = ..., **outcome
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def emit_post(self, agent, result, *, trace=None, **outcome) -> None:
         """Emit the one terminal ``post_tool_call`` for this call (``outcome`` = status /
         error_type / error_message / duration_ms). Resolved through the module attribute so
@@ -278,6 +407,11 @@ class _ToolCallRef:
             **outcome,
         )
 
+    # ┌── 函数 def emit_cancelled()
+    # │  作用：Synthesize the ``cancelled`` result for a KeyboardInterrupt mid-tool and emit its hook.
+    # │  参数：self, agent, start_time: float
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def emit_cancelled(self, agent, start_time: float) -> str:
         """Synthesize the ``cancelled`` result for a KeyboardInterrupt mid-tool and emit its hook."""
         message = "Tool execution cancelled by user interrupt"
@@ -286,8 +420,14 @@ class _ToolCallRef:
             agent, result, duration_ms=int((time.time() - start_time) * 1000),
             status="cancelled", error_type="keyboard_interrupt", error_message=message,
         )
+        # ⤷ 出口 return：返回 result
         return result
 
+    # ┌── 函数 def emit_invalid_arguments()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, agent, result: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def emit_invalid_arguments(self, agent, result: str) -> None:
         self.emit_post(
             agent, result, trace=[],
@@ -295,6 +435,11 @@ class _ToolCallRef:
         )
 
 
+# ┌── 函数 def _append_skipped_tool_results()
+# │  作用：Append one ``tool`` result per unstarted call so the assistant tool-call turn never
+# │  参数：agent, messages: list, tool_calls, effective_task_id: str, content: str, hook_error_type: Optional[str] = ..., hook_id: Optional[Callable[[Any], str]] = ..., flush_stage: Optional[str] = ...  …共 9 个
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _append_skipped_tool_results(
     agent,
     messages: list,
@@ -324,19 +469,28 @@ def _append_skipped_tool_results(
         if flush_stage is not None:
             flushed = _flush_session_db_after_tool_progress(agent, messages, stage=f"{flush_stage} {name}")
             if not flushed and stop_on_flush_failure:
+                # ⤷ 出口 return：返回 False
                 return False
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _tool_search_scoped_names()
+# │  作用：Deferrable tool names the session may invoke via ``tool_call``; the unwrap bypasses
+# │  参数：agent
+# │  返回：frozenset
+# └──────────────────────────────────────────────────────────────
 def _tool_search_scoped_names(agent) -> frozenset:
     """Deferrable tool names the session may invoke via ``tool_call``; the unwrap bypasses
     the bridge's scope check in ``model_tools.handle_function_call``, so restricted sessions
     validate against this set. Cached on the agent, keyed by registry scope/generation."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import model_tools
         from tools import tool_search as _ts
         from tools.registry import registry as _registry
     except Exception:
+        # ⤷ 出口 return：返回 frozenset()
         return frozenset()
 
     enabled = getattr(agent, "enabled_toolsets", None)
@@ -349,7 +503,9 @@ def _tool_search_scoped_names(agent) -> frozenset:
     )
     cached = getattr(agent, "_tool_search_scope_cache", None)
     if cached is not None and cached[0] == cache_key:
+        # ⤷ 出口 return：返回 cached[1]
         return cached[1]
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         names = _ts.scoped_deferrable_names(model_tools.get_tool_definitions(
             enabled_toolsets=enabled, disabled_toolsets=disabled, quiet_mode=True, skip_tool_search_assembly=True,
@@ -358,16 +514,28 @@ def _tool_search_scoped_names(agent) -> frozenset:
         names = frozenset()
     with contextlib.suppress(Exception):
         agent._tool_search_scope_cache = (cache_key, names)
+    # ⤷ 出口 return：返回 names
     return names
 
 
+# ┌── 函数 def _canonical_tool_name()
+# │  作用：Map legacy tool-name aliases BEFORE agent-loop dispatch.
+# │  参数：function_name: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _canonical_tool_name(function_name: str) -> str:
     """Map legacy tool-name aliases BEFORE agent-loop dispatch."""
     from model_tools import _LEGACY_TOOL_ALIASES as _lta
 
+    # ⤷ 出口 return：返回 _lta.get(function_name, function_name)
     return _lta.get(function_name, function_name)
 
 
+# ┌── 函数 def _unwrap_tool_search_call()
+# │  作用：Peel the ``tool_call`` bridge so downstream hooks (checkpointing, guardrails, plugin
+# │  参数：agent, function_name: str, function_args: dict, flatten_probe: bool = ...
+# │  返回：tuple[str, dict, Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _unwrap_tool_search_call(
     agent, function_name: str, function_args: dict, *, flatten_probe: bool = False
 ) -> tuple[str, dict, Optional[str]]:
@@ -382,18 +550,23 @@ def _unwrap_tool_search_call(
     callers that wrap the message in ``{"error": ...}``).
     """
     scope_block: Optional[str] = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools import tool_search as _ts
         if function_name != _ts.TOOL_CALL_NAME:
+            # ⤷ 出口 return：返回 (function_name, function_args, None)
             return function_name, function_args, None
         underlying, underlying_args, err = _ts.resolve_underlying_call(function_args)
         if err or not underlying:
+            # ⤷ 出口 return：返回 (function_name, function_args, None)
             return function_name, function_args, None
         if underlying == _ts.CONNECTOR_BATCH_SENTINEL:
             # Both executors retain the wrapper: scope/probe/hooks run per entry
             # in the batch dispatcher, not against a synthetic registry name.
+            # ⤷ 出口 return：返回 (function_name, function_args, None)
             return function_name, function_args, None
         if underlying not in _tool_search_scoped_names(agent):
+            # ⤷ 出口 return：返回 (function_name, function_args, f"'{underlying}' is not avail…
             return function_name, function_args, (
                 f"'{underlying}' is not available in this session. Use tool_search to find tools you can call."
             )
@@ -411,9 +584,14 @@ def _unwrap_tool_search_call(
             ).strip()
     except Exception:
         pass
+    # ⤷ 出口 return：返回 (function_name, function_args, scope_block)
     return function_name, function_args, scope_block
 
 
+# ┌── 类 class _ParsedCall
+# │  说明：One model tool call after alias canonicalization, arg parsing and bridge unwrap.
+# │  成员：共 1 个方法；对外可用 1 个
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _ParsedCall:
     """One model tool call after alias canonicalization, arg parsing and bridge unwrap."""
@@ -425,19 +603,34 @@ class _ParsedCall:
     parse_error: Optional[str]
     scope_block: Optional[str]
 
+    # ┌── 函数 def ref()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, task_id: str
+    # │  返回：_ToolCallRef
+    # └──────────────────────────────────────────────────────────────
     def ref(self, task_id: str) -> _ToolCallRef:
+        # ⤷ 出口 return：返回 _ToolCallRef(self.name, self.args, task_id, _pairing_tool_ca…
         return _ToolCallRef(self.name, self.args, task_id, _pairing_tool_call_id(self.tool_call), self.middleware_trace)
 
 
+# ┌── 函数 def _parse_tool_call()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, tool_call, flatten_probe: bool = ...
+# │  返回：_ParsedCall
+# └──────────────────────────────────────────────────────────────
 def _parse_tool_call(agent, tool_call, *, flatten_probe: bool = False) -> _ParsedCall:
     name = _canonical_tool_name(tool_call.function.name)
     args, parse_error = _parse_tool_arguments(tool_call.function.arguments)
     scope_block = None
     if parse_error is None:
         name, args, scope_block = _unwrap_tool_search_call(agent, name, args, flatten_probe=flatten_probe)
+    # ⤷ 出口 return：返回 _ParsedCall(tool_call, name, args, [], parse_error, scope_bl…
     return _ParsedCall(tool_call, name, args, [], parse_error, scope_block)
 
 
+# ┌── 类 class _ManagedToolResult
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _ManagedToolResult:
     result: Any
@@ -447,15 +640,27 @@ class _ManagedToolResult:
     dispatched: bool
 
 
+# ┌── 类 class _ToolTimeoutResult（继承自：str）
+# │  说明：Marker for a synthesized sequential-tool timeout result.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class _ToolTimeoutResult(str):
     """Marker for a synthesized sequential-tool timeout result."""
 
 
+# ┌── 类 class _ToolCancelledResult（继承自：str）
+# │  说明：Marker for a synthesized sequential-tool user-interrupt result; its terminal
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class _ToolCancelledResult(str):
     """Marker for a synthesized sequential-tool user-interrupt result; its terminal
     post_tool_call was already emitted, so a late-finishing abandoned worker must not report."""
 
 
+# ┌── 类 class _ConcurrentToolAuthorizationGate
+# │  说明：Serialize policy prompts and exclude human approval waits from batch deadlines.
+# │  成员：共 4 个方法；对外可用 2 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _ConcurrentToolAuthorizationGate:
     """Serialize policy prompts and exclude human approval waits from batch deadlines.
 
@@ -476,6 +681,11 @@ class _ConcurrentToolAuthorizationGate:
     still excluded in full.
     """
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, lock_timeout: float | None = ..., session_key: str | None = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, *, lock_timeout: float | None = None, session_key: str | None = None) -> None:
         self._serialization_lock = threading.Lock()
         self._lock_timeout = _authorization_gate_lock_timeout() if lock_timeout is None else lock_timeout
@@ -483,6 +693,7 @@ class _ConcurrentToolAuthorizationGate:
         if self._session_key is None:
             # Snapshot on the SUBMITTING thread: excluded_seconds() is polled from the
             # batch wait loop, whose context may differ from the workers'.
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from tools.approval_context import get_current_session_key
 
@@ -495,14 +706,27 @@ class _ConcurrentToolAuthorizationGate:
                 )
         self._baseline_wait_seconds = self._human_wait_seconds()
 
+    # ┌── 函数 def _human_wait_seconds()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：float
+    # └──────────────────────────────────────────────────────────────
     def _human_wait_seconds(self) -> float:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.approval_human_wait import human_wait_seconds
 
+            # ⤷ 出口 return：返回 human_wait_seconds(self._session_key)
             return human_wait_seconds(self._session_key)
         except Exception:
+            # ⤷ 出口 return：返回 0.0
             return 0.0
 
+    # ┌── 函数 def run()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, callback
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def run(self, callback):
         if not self._serialization_lock.acquire(timeout=self._lock_timeout):
             # Deterministic failure (bad command, non-MCP URL, 401/403): every retry hits the same wall.
@@ -518,17 +742,32 @@ class _ConcurrentToolAuthorizationGate:
                 "round-trip?); running prompt unserialized",
                 self._lock_timeout,
             )
+            # ⤷ 出口 return：返回 callback()
             return callback()
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 callback()
             return callback()
         finally:
             self._serialization_lock.release()
 
+    # ┌── 函数 def excluded_seconds()
+    # │  作用：Return human-approval wait seconds accrued since the batch started.
+    # │  参数：self
+    # │  返回：float
+    # └──────────────────────────────────────────────────────────────
     def excluded_seconds(self) -> float:
         """Return human-approval wait seconds accrued since the batch started."""
+        # ⤷ 出口 return：返回 max(0.0, self._human_wait_seconds() - self._baseline_wait_se…
         return max(0.0, self._human_wait_seconds() - self._baseline_wait_seconds)
 
 
+# ┌── 函数 def _registered_tool_worker()
+# │  作用：Track this worker tid for interrupt fan-out (``AIAgent.interrupt()``); on ANY exit
+# │  参数：agent
+# │  返回：（未标注类型）
+# │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+# └──────────────────────────────────────────────────────────────
 @contextlib.contextmanager
 def _registered_tool_worker(agent):
     """Track this worker tid for interrupt fan-out (``AIAgent.interrupt()``); on ANY exit
@@ -536,7 +775,9 @@ def _registered_tool_worker(agent):
     tid = threading.current_thread().ident
     with agent._tool_worker_threads_lock:
         agent._tool_worker_threads.add(tid)
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield tid
     finally:
         with agent._tool_worker_threads_lock:
@@ -548,6 +789,11 @@ def _registered_tool_worker(agent):
 _NO_REASON = object()
 
 
+# ┌── 函数 def _interrupt_worker_tids()
+# │  作用：Raise the interrupt bit on each worker tid (best-effort, via ``run_agent``).
+# │  参数：agent, tids, reason = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _interrupt_worker_tids(agent, tids, *, reason=_NO_REASON) -> None:
     """Raise the interrupt bit on each worker tid (best-effort, via ``run_agent``)."""
     kwargs = {} if reason is _NO_REASON else {"reason": reason}
@@ -556,6 +802,11 @@ def _interrupt_worker_tids(agent, tids, *, reason=_NO_REASON) -> None:
             _ra()._set_interrupt(True, tid, **kwargs)
 
 
+# ┌── 函数 def _set_worker_activity_callback()
+# │  作用：The activity callback is thread-local: bind it on THIS thread so tool-layer heartbeats fire.
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _set_worker_activity_callback(agent) -> None:
     """The activity callback is thread-local: bind it on THIS thread so tool-layer heartbeats fire."""
     with contextlib.suppress(Exception):
@@ -568,6 +819,11 @@ def _set_worker_activity_callback(agent) -> None:
 _TOOL_ACTIVITY_HEARTBEAT_INTERVAL_S = 30.0
 
 
+# ┌── 函数 def _run_tool_activity_heartbeat()
+# │  作用：Daemon thread stamping ``agent._touch_activity`` every ``interval`` seconds until
+# │  参数：agent, stop_event: threading.Event, label: str, interval: float = _TOOL_ACTIVITY_HEARTBEAT_INTERVAL_S
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _run_tool_activity_heartbeat(
     agent,
     stop_event: threading.Event,
@@ -577,6 +833,7 @@ def _run_tool_activity_heartbeat(
     """Daemon thread stamping ``agent._touch_activity`` every ``interval`` seconds until
     ``stop_event`` is set, so the gateway inactivity watchdog never abandons a turn whose
     tool runs silently. Wedged tools stay bounded by the tool layer's own timeouts."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         while not stop_event.wait(interval):
             agent._touch_activity(label)
@@ -584,6 +841,11 @@ def _run_tool_activity_heartbeat(
         pass  # a heartbeat must never break the agent loop
 
 
+# ┌── 函数 def _run_with_activity_heartbeat()
+# │  作用：Run ``fn()`` under the activity heartbeat; covers both executor paths.
+# │  参数：agent, function_name: str, fn
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _run_with_activity_heartbeat(agent, function_name: str, fn):
     """Run ``fn()`` under the activity heartbeat; covers both executor paths."""
     stop = threading.Event()
@@ -599,13 +861,20 @@ def _run_with_activity_heartbeat(agent, function_name: str, fn):
         name=f"tool-activity-hb-{function_name[:24]}",
     )
     thread.start()
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 fn()
         return fn()
     finally:
         stop.set()
         thread.join(timeout=2.0)
 
 
+# ┌── 函数 def _blocked_tool_result()
+# │  作用：Synthesize the result for a call blocked by scope/plugin (``block_message``) or by
+# │  参数：agent, ref: _ToolCallRef, block_message: Optional[str], block_error_type: str, guardrail_decision
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _blocked_tool_result(agent, ref: _ToolCallRef, *, block_message: Optional[str], block_error_type: str, guardrail_decision) -> str:
     """Synthesize the result for a call blocked by scope/plugin (``block_message``) or by
     guardrail policy (``guardrail_decision``) and emit its terminal post_tool_call."""
@@ -616,12 +885,19 @@ def _blocked_tool_result(agent, ref: _ToolCallRef, *, block_message: Optional[st
         error_type = "guardrail_block"
         error_message = getattr(guardrail_decision, "message", None) or "Tool blocked by guardrail policy"
     ref.emit_post(agent, result, status="blocked", error_type=error_type, error_message=error_message)
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def _pre_tool_block()
+# │  作用：Run ``pre_tool_call`` plugin hooks; returns ``(block_message, final_args)`` with any
+# │  参数：agent, ref: _ToolCallRef
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _pre_tool_block(agent, ref: _ToolCallRef):
     """Run ``pre_tool_call`` plugin hooks; returns ``(block_message, final_args)`` with any
     hook-modified args applied. Hook failures never block."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import _dispatch_pre_tool_call_hooks
 
@@ -631,11 +907,18 @@ def _pre_tool_block(agent, ref: _ToolCallRef):
             **tool_hook_ids(agent, ref.task_id, ref.call_id),
             middleware_trace=list(ref.trace),
         )
+        # ⤷ 出口 return：返回 (block_msg, ref.args if modified_args is None else modified_…
         return block_msg, (ref.args if modified_args is None else modified_args)
     except Exception:
+        # ⤷ 出口 return：返回 (None, ref.args)
         return None, ref.args
 
 
+# ┌── 函数 def _dispatch_authorized_once()
+# │  作用：Hermes policy (scope → plugin pre-hooks → guardrails) then the one real dispatch.
+# │  参数：agent, state: _ManagedToolResult, ref: _ToolCallRef, execute, scope_block: str | None, display_index: int | None, begin_execution, authorization_gate: _ConcurrentToolAuthorizationGate | None
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _dispatch_authorized_once(
     agent,
     state: _ManagedToolResult,
@@ -675,6 +958,7 @@ def _dispatch_authorized_once(
     if block_message is not None or guardrail_decision is not None:
         _advance_start_order()
         state.blocked = True
+        # ⤷ 出口 return：返回 _blocked_tool_result(agent, ref, block_message=block_message…
         return _blocked_tool_result(
             agent, ref,
             block_message=block_message, block_error_type=block_error_type, guardrail_decision=guardrail_decision,
@@ -686,9 +970,15 @@ def _dispatch_authorized_once(
         agent._iters_since_skill = 0
 
     _advance_start_order(lambda: _begin_tool_execution(agent, ref, display_index))
+    # ⤷ 出口 return：返回 _run_with_activity_heartbeat(agent, ref.name, lambda: execut…
     return _run_with_activity_heartbeat(agent, ref.name, lambda: execute(ref.args))
 
 
+# ┌── 函数 def _run_agent_tool_execution_middleware()
+# │  作用：Run Relay rewrites before Hermes policy and dispatch exactly once.
+# │  参数：agent, function_name: str, function_args: dict, effective_task_id: str, tool_call_id: str, execute, scope_block: str | None = ..., display_index: int | None = ...  …共 11 个
+# │  返回：_ManagedToolResult
+# └──────────────────────────────────────────────────────────────
 def _run_agent_tool_execution_middleware(
     agent,
     *,
@@ -717,10 +1007,12 @@ def _run_agent_tool_execution_middleware(
     def _authorized_dispatch(final_args: dict[str, Any]) -> Any:
         with dispatch_lock:
             if state.dispatched:
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise RuntimeError("Hermes tool execution callback invoked more than once")
             state.dispatched = True
             state.blocked = False
             state.args = final_args
+        # ⤷ 出口 return：返回 _dispatch_authorized_once(agent, state, _ToolCallRef(functio…
         return _dispatch_authorized_once(
             agent,
             state,
@@ -742,6 +1034,7 @@ def _run_agent_tool_execution_middleware(
         request_args = request_result.payload if isinstance(request_result.payload, dict) else relay_args
         trace.clear()
         trace.extend(request_result.trace)
+        # ⤷ 出口 return：返回 run_tool_execution_middleware(function_name, request_args, l…
         return run_tool_execution_middleware(
             function_name,
             request_args,
@@ -763,6 +1056,7 @@ def _run_agent_tool_execution_middleware(
             "tool_call_id": tool_call_id or "",
         },
     )
+    # ⤷ 出口 return：返回 state
     return state
 
 
@@ -770,6 +1064,11 @@ def _run_agent_tool_execution_middleware(
 _SEQUENTIAL_INTERRUPT_POLL_SECONDS = 1.0
 
 
+# ┌── 函数 def _resolve_sequential_tool_timeout()
+# │  作用：Deadline for one sequential call: ``timeouts.tools.sequential_call``, else the
+# │  参数：无
+# │  返回：float | None
+# └──────────────────────────────────────────────────────────────
 def _resolve_sequential_tool_timeout() -> float | None:
     """Deadline for one sequential call: ``timeouts.tools.sequential_call``, else the
     concurrent batch deadline so the two paths can't drift; ``0``/negative disables.
@@ -777,6 +1076,7 @@ def _resolve_sequential_tool_timeout() -> float | None:
     deadline while an approval prompt is open, which a fixed deadline can't express."""
     from agent.deadline import resolve_timeout
 
+    # ⤷ 出口 return：返回 resolve_timeout('tools.sequential_call', default=_resolve_co…
     return resolve_timeout("tools.sequential_call", default=_resolve_concurrent_tool_timeout())
 
 
@@ -791,13 +1091,24 @@ def _resolve_sequential_tool_timeout() -> float | None:
 _SEQUENTIAL_DEADLINE_EXEMPT_TOOLS = frozenset({"delegate_task", "manage_connections"})
 
 
+# ┌── 函数 def _abandoned_sequential_result()
+# │  作用：Emit the terminal post_tool_call for a worker the sequential runner gave up on
+# │  参数：agent, ref: _ToolCallRef, message: str, result_cls, **outcome
+# │  返回：_ManagedToolResult
+# └──────────────────────────────────────────────────────────────
 def _abandoned_sequential_result(agent, ref: _ToolCallRef, message: str, result_cls, **outcome) -> _ManagedToolResult:
     """Emit the terminal post_tool_call for a worker the sequential runner gave up on
     (timeout / interrupt) and wrap ``message`` in its marker ``result_cls``."""
     ref.emit_post(agent, message, **outcome)
+    # ⤷ 出口 return：返回 _ManagedToolResult(result=result_cls(message), args=ref.args…
     return _ManagedToolResult(result=result_cls(message), args=ref.args, middleware_trace=ref.trace, blocked=False, dispatched=True)
 
 
+# ┌── 函数 def _poll_sequential_future()
+# │  作用：Wait for the worker in interrupt-poll slices, extending the deadline by human approval
+# │  参数：agent, future, function_name: str, deadline: float | None, started: float, authorization_gate
+# │  返回：tuple[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _poll_sequential_future(agent, future, function_name: str, deadline: float | None, started: float, authorization_gate) -> tuple[str, Any]:
     """Wait for the worker in interrupt-poll slices, extending the deadline by human approval
     wait; returns ``("done", result)``, ``("timeout", None)`` or ``("interrupted", None)``.
@@ -809,12 +1120,16 @@ def _poll_sequential_future(agent, future, function_name: str, deadline: float |
         if deadline is not None:
             remaining = deadline + authorization_gate.excluded_seconds() - time.monotonic()
             if remaining <= 0:
+                # ⤷ 出口 return：返回 ('timeout', None)
                 return "timeout", None
             wait_slice = min(wait_slice, remaining)
+        # ⤷ 关键分支 try/except：捕获 concurrent.futures.TimeoutError，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 ('done', future.result(timeout=wait_slice))
             return "done", future.result(timeout=wait_slice)
         except concurrent.futures.TimeoutError:
             if agent._interrupt_requested:
+                # ⤷ 出口 return：返回 ('interrupted', None)
                 return "interrupted", None
             elapsed = int(time.monotonic() - started)
             if elapsed - _last_heartbeat >= 30:
@@ -822,6 +1137,11 @@ def _poll_sequential_future(agent, future, function_name: str, deadline: float |
                 agent._touch_activity(f"sequential tool running ({elapsed}s): {function_name}")
 
 
+# ┌── 函数 def _run_sequential_tool_execution_middleware()
+# │  作用：Run one sequential call on a worker thread under the concurrent executor's deadline.
+# │  参数：agent, function_name: str, function_args: dict, effective_task_id: str, tool_call_id: str, execute, scope_block: str | None = ..., display_index: int | None = ...  …共 9 个
+# │  返回：_ManagedToolResult
+# └──────────────────────────────────────────────────────────────
 def _run_sequential_tool_execution_middleware(
     agent,
     *,
@@ -841,6 +1161,7 @@ def _run_sequential_tool_execution_middleware(
     ref = _ToolCallRef(function_name, function_args, effective_task_id, tool_call_id, middleware_trace)
     kwargs = dict(ref.middleware_kwargs(), execute=execute, scope_block=scope_block, display_index=display_index)
     if function_name in _NEVER_PARALLEL_TOOLS:
+        # ⤷ 出口 return：返回 _run_agent_tool_execution_middleware(agent, **kwargs)
         return _run_agent_tool_execution_middleware(agent, **kwargs)
 
     from tools.daemon_pool import DaemonThreadPoolExecutor
@@ -851,6 +1172,7 @@ def _run_sequential_tool_execution_middleware(
     def _run() -> _ManagedToolResult:
         with _registered_tool_worker(agent) as tid:
             worker_tid.append(tid)
+            # ⤷ 出口 return：返回 _run_agent_tool_execution_middleware(agent, authorization_ga…
             return _run_agent_tool_execution_middleware(agent, authorization_gate=authorization_gate, **kwargs)
 
     if ref.trace is None:
@@ -860,9 +1182,11 @@ def _run_sequential_tool_execution_middleware(
     deadline = time.monotonic() + timeout_s if timeout_s is not None else None
     started = time.monotonic()
     abandoned = False
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         state, result = _poll_sequential_future(agent, future, function_name, deadline, started, authorization_gate)
         if state == "done":
+            # ⤷ 出口 return：返回 result
             return result
         if state == "interrupted":
             # interrupt() already fanned out to tracked tids, but this worker may have
@@ -870,6 +1194,7 @@ def _run_sequential_tool_execution_middleware(
             _interrupt_worker_tids(agent, worker_tid, reason=getattr(agent, "_tool_interrupt_reason", None))
             concurrent.futures.wait([future], timeout=3.0)
             if future.done() and not future.cancelled():
+                # ⤷ 出口 return：返回 future.result()
                 return future.result()
             interrupt_reason = getattr(agent, "_tool_interrupt_reason", None) or "interrupt requested"
             message = f"[Tool execution cancelled — {function_name} was abandoned: {interrupt_reason}]"
@@ -892,22 +1217,34 @@ def _run_sequential_tool_execution_middleware(
         future.cancel()
         if state == "timeout":
             _interrupt_worker_tids(agent, worker_tid)
+        # ⤷ 出口 return：返回 _abandoned_sequential_result(agent, ref, message, result_cls…
         return _abandoned_sequential_result(agent, ref, message, result_cls, **outcome)
     finally:
         # Never join a wedged worker (daemon pool also keeps it out of the atexit join).
         executor.shutdown(wait=not abandoned, cancel_futures=abandoned)
 
 
+# ┌── 函数 def _safe_callback()
+# │  作用：Invoke a UI/bridge callback if set; a failing callback is logged, never fatal.
+# │  参数：callback, label: str, *args, **kwargs
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _safe_callback(callback, label: str, *args, **kwargs) -> None:
     """Invoke a UI/bridge callback if set; a failing callback is logged, never fatal."""
     if not callback:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         callback(*args, **kwargs)
     except Exception as callback_error:
         logging.debug("%s callback error: %s", label, callback_error)
 
 
+# ┌── 函数 def _begin_tool_execution()
+# │  作用：Run user-visible and checkpoint preflight on final tool arguments.
+# │  参数：agent, ref: _ToolCallRef, display_index: int | None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _begin_tool_execution(agent, ref: _ToolCallRef, display_index: int | None) -> None:
     """Run user-visible and checkpoint preflight on final tool arguments."""
     function_name, function_args, effective_task_id, tool_call_id = ref.name, ref.args, ref.task_id, ref.call_id
@@ -925,6 +1262,7 @@ def _begin_tool_execution(agent, ref: _ToolCallRef, display_index: int | None) -
     _set_worker_activity_callback(agent)
 
     if agent.tool_progress_callback:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             preview = _build_tool_preview(function_name, display_args)
         except Exception as callback_error:
@@ -946,9 +1284,15 @@ def _begin_tool_execution(agent, ref: _ToolCallRef, display_index: int | None) -
                 agent._checkpoint_mgr.ensure_checkpoint(cwd, f"before terminal: {command[:60]}")
 
 
+# ┌── 函数 def _emit_tool_complete_and_risk()
+# │  作用：Fire ``tool_complete_callback`` (unless blocked) then the ``tool.output_risk`` projection.
+# │  参数：agent, ref: _ToolCallRef, result, risk_metadata, blocked: bool
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _emit_tool_complete_and_risk(agent, ref: _ToolCallRef, result, risk_metadata, blocked: bool) -> None:
     """Fire ``tool_complete_callback`` (unless blocked) then the ``tool.output_risk`` projection."""
     if not blocked and agent.tool_complete_callback:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             display_args = _redact_tool_args_for_display(ref.name, ref.args) or ref.args
         except Exception as cb_err:
@@ -962,6 +1306,11 @@ def _emit_tool_complete_and_risk(agent, ref: _ToolCallRef, result, risk_metadata
         )
 
 
+# ┌── 函数 def _commit_tool_result()
+# │  作用：Observe (``observed`` results only) and log the outcome; mark the tool done; persist/
+# │  参数：agent, messages: list, ref: _ToolCallRef, function_result, budget: BudgetConfig, tool_duration: float, is_error: bool, blocked: bool  …共 13 个
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _commit_tool_result(
     agent,
     messages: list,
@@ -997,6 +1346,7 @@ def _commit_tool_result(
         elif success_log_chars is not None:
             logger.info("tool %s completed (%.2fs, %d chars)", function_name, tool_duration, success_log_chars)
         if not blocked:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 agent._record_file_mutation_result(function_name, function_args, function_result, is_error)
             except Exception as _ver_err:
@@ -1035,6 +1385,7 @@ def _commit_tool_result(
     tool_message = make_tool_result_message(function_name, _tool_content, tool_call_id, effect_disposition=effect_disposition)
     messages.append(tool_message)
     if not _flush_session_db_after_tool_progress(agent, messages, stage=f"tool result {function_name}"):
+        # ⤷ 出口 return：返回 None
         return None
 
     if not blocked:
@@ -1044,9 +1395,15 @@ def _commit_tool_result(
             agent.tool_progress_callback, "Tool progress",
             "tool.completed", function_name, None, None, duration=tool_duration, is_error=is_error, result=function_result,
         )
+    # ⤷ 出口 return：返回 (persisted_result, function_result, tool_message.get('_tool_…
     return persisted_result, function_result, tool_message.get("_tool_output_risk")
 
 
+# ┌── 函数 def _finalize_tool_batch()
+# │  作用：Per-turn aggregate budget enforcement, then /steer injection — in that order, so the
+# │  参数：agent, messages: list, effective_task_id: str, num_tools: int, budget: BudgetConfig
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _finalize_tool_batch(agent, messages: list, effective_task_id: str, num_tools: int, budget: BudgetConfig) -> None:
     """Per-turn aggregate budget enforcement, then /steer injection — in that order, so the
     steer marker is never truncated/discarded when enforcement replaces a result."""
@@ -1056,14 +1413,31 @@ def _finalize_tool_batch(agent, messages: list, effective_task_id: str, num_tool
     agent._apply_pending_steer_to_tool_results(messages, num_tools)
 
 
+# ┌── 函数 def _tool_progress_enabled()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _tool_progress_enabled(agent) -> bool:
+    # ⤷ 出口 return：返回 not agent.quiet_mode and getattr(agent, 'tool_progress_mode'…
     return not agent.quiet_mode and getattr(agent, "tool_progress_mode", "all") != "off"
 
 
+# ┌── 函数 def _preview()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：text: str, limit: int
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _preview(text: str, limit: int) -> str:
+    # ⤷ 出口 return：返回 text[:limit] + '...' if len(text) > limit else text
     return text[:limit] + "..." if len(text) > limit else text
 
 
+# ┌── 函数 def _print_tool_completed()
+# │  作用：Non-quiet ``✅ Tool N completed`` line (full result under verbose logging).
+# │  参数：agent, index: int, tool_duration: float, result
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_tool_completed(agent, index: int, tool_duration: float, result) -> None:
     """Non-quiet ``✅ Tool N completed`` line (full result under verbose logging)."""
     if agent.verbose_logging:
@@ -1076,6 +1450,10 @@ def _print_tool_completed(agent, index: int, tool_duration: float, result) -> No
 # ── Concurrent batch machinery ──────────────────────────────────────────────
 
 
+# ┌── 类 class _ToolOutcome
+# │  说明：One finished worker slot of a concurrent batch (``ref`` holds the final name/args/trace).
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _ToolOutcome:
     """One finished worker slot of a concurrent batch (``ref`` holds the final name/args/trace)."""
@@ -1087,29 +1465,55 @@ class _ToolOutcome:
     blocked: bool
 
 
+# ┌── 函数 def _start_order_gate_timeout()
+# │  作用：The gate bound must sit UNDER the batch deadline, else parked workers are falsely
+# │  参数：batch_timeout: float | None
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _start_order_gate_timeout(batch_timeout: float | None) -> float:
     """The gate bound must sit UNDER the batch deadline, else parked workers are falsely
     reported timed out without starting. A disabled deadline keeps the stock bound."""
     if batch_timeout is None:
+        # ⤷ 出口 return：返回 _START_ORDER_GATE_TIMEOUT_S
         return _START_ORDER_GATE_TIMEOUT_S
+    # ⤷ 出口 return：返回 min(_START_ORDER_GATE_TIMEOUT_S, batch_timeout / 2)
     return min(_START_ORDER_GATE_TIMEOUT_S, batch_timeout / 2)
 
 
+# ┌── 类 class _StartOrderGate
+# │  说明：Serialize worker dispatch by submit order (prompts appear in call order); ``abandon()``
+# │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _StartOrderGate:
     """Serialize worker dispatch by submit order (prompts appear in call order); ``abandon()``
     releases every parked worker so none dispatches a tool the turn already gave up on."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, timeout: float
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, timeout: float) -> None:
         self._condition = threading.Condition()
         self._next_order = 0
         self._timeout = timeout
         self.abandoned = threading.Event()
 
+    # ┌── 函数 def abandon()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def abandon(self) -> None:
         self.abandoned.set()
         with self._condition:
             self._condition.notify_all()
 
+    # ┌── 函数 def begin_in_order()
+    # │  作用：Wait for ``order``, run ``callback``, advance. Returns False if abandoned.
+    # │  参数：self, order: int, callback = None, tool_name: str = ...
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def begin_in_order(self, order: int, callback=None, *, tool_name: str = "") -> bool:
         """Wait for ``order``, run ``callback``, advance. Returns False if abandoned."""
         with self._condition:
@@ -1120,40 +1524,67 @@ class _StartOrderGate:
                 lambda: self._next_order >= order or self.abandoned.is_set(), timeout=self._timeout,
             )
             if self.abandoned.is_set():
+                # ⤷ 出口 return：返回 False
                 return False  # the turn already synthesized this result; don't advance
             if not in_order:
                 logger.warning(
                     "start-order gate timed out for %s (order=%d next=%d); proceeding out of order",
                     tool_name or "tool", order, self._next_order,
                 )
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
                 if callback is not None:
                     callback()
             finally:
                 self._next_order = max(self._next_order, order + 1)
                 self._condition.notify_all()
+        # ⤷ 出口 return：返回 True
         return True
 
 
+# ┌── 类 class _WorkerStartOnce
+# │  说明：One worker's handle on the start-order gate: advances at most once, raising
+# │  成员：共 2 个方法；对外可用 1 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _WorkerStartOnce:
     """One worker's handle on the start-order gate: advances at most once, raising
     ``_BatchAbandoned`` (instead of dispatching late) when the batch was abandoned."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, gate: _StartOrderGate, order: int, tool_name: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, gate: _StartOrderGate, order: int, tool_name: str) -> None:
         self._gate, self._order, self._tool_name, self._advanced = gate, order, tool_name, False
 
+    # ┌── 函数 def advance()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, callback = None
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def advance(self, callback=None) -> None:
         if self._advanced:
             return
         self._advanced = True
         if not self._gate.begin_in_order(self._order, callback, tool_name=self._tool_name):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise _BatchAbandoned(self._tool_name)
 
 
+# ┌── 类 class _ConcurrentBatch
+# │  说明：Shared state of one concurrent tool batch: per-slot results, the start-order and
+# │  成员：共 7 个方法；对外可用 4 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _ConcurrentBatch:
     """Shared state of one concurrent tool batch: per-slot results, the start-order and
     authorization gates, and the deadline bookkeeping the wait loop needs."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, agent, messages: list, effective_task_id: str, parsed_calls: list[_ParsedCall], timeout_s: float | None
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, agent, messages: list, effective_task_id: str, parsed_calls: list[_ParsedCall], timeout_s: float | None) -> None:
         self.agent = agent
         self.messages = messages
@@ -1168,6 +1599,11 @@ class _ConcurrentBatch:
         self.authorization_gate = _ConcurrentToolAuthorizationGate()
         self.timed_out_indices: set[int] = set()
 
+    # ┌── 函数 def _dispatch_worker()
+    # │  作用：Run one call through the middleware and synthesize its slot outcome; ``None`` when
+    # │  参数：self, index: int, ref: _ToolCallRef, scope_block, start_gate: _WorkerStartOnce
+    # │  返回：Optional[_ToolOutcome]
+    # └──────────────────────────────────────────────────────────────
     def _dispatch_worker(self, index: int, ref: _ToolCallRef, scope_block, start_gate: _WorkerStartOnce) -> Optional[_ToolOutcome]:
         """Run one call through the middleware and synthesize its slot outcome; ``None`` when
         abandoned at the gate (the main thread already wrote this slot; emitting would
@@ -1177,6 +1613,7 @@ class _ConcurrentBatch:
         # propagate_context_to_thread() at the submit site below (GHSA-qg5c-hvr5-hjgr, #13617).
         start = time.time()
         blocked = dispatched = False
+        # ⤷ 关键分支 try/except：捕获 _BatchAbandoned、KeyboardInterrupt、Exception，出错走兜底而不是崩溃。
         try:
             managed = _run_agent_tool_execution_middleware(
                 agent,
@@ -1198,6 +1635,7 @@ class _ConcurrentBatch:
             blocked, dispatched = managed.blocked, managed.dispatched
         except _BatchAbandoned:
             logger.info("tool %s abandoned at start-order gate; skipping dispatch", ref.name)
+            # ⤷ 出口 return：返回 None
             return None
         except KeyboardInterrupt:
             with contextlib.suppress(Exception):
@@ -1205,6 +1643,7 @@ class _ConcurrentBatch:
             result = ref.emit_cancelled(agent, start)
             duration = time.time() - start
             logger.info("tool %s cancelled (%.2fs)", ref.name, duration)
+            # ⤷ 出口 return：返回 _ToolOutcome(ref, result, duration, True, False)
             return _ToolOutcome(ref, result, duration, True, False)
         except Exception as tool_error:
             result = f"Error executing tool '{ref.name}': {tool_error}"
@@ -1217,8 +1656,14 @@ class _ConcurrentBatch:
             logger.info("tool %s failed (%.2fs): %s", ref.name, duration, result[:200])
         else:
             logger.info("tool %s completed (%.2fs, %d chars)", ref.name, duration, len(result))
+        # ⤷ 出口 return：返回 _ToolOutcome(ref, result, duration, is_error, blocked)
         return _ToolOutcome(ref, result, duration, is_error, blocked)
 
+    # ┌── 函数 def run_worker()
+    # │  作用：Worker function executed in a thread.
+    # │  参数：self, index: int, start_order: int
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def run_worker(self, index: int, start_order: int) -> None:
         """Worker function executed in a thread."""
         agent, pc = self.agent, self.parsed_calls[index]
@@ -1228,6 +1673,7 @@ class _ConcurrentBatch:
                 _interrupt_worker_tids(agent, [_worker_tid], reason=getattr(agent, "_tool_interrupt_reason", None))
             _set_worker_activity_callback(agent)
             start_gate = _WorkerStartOnce(self.gate, start_order, pc.name)
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
                 outcome = self._dispatch_worker(index, pc.ref(self.effective_task_id), pc.scope_block, start_gate)
                 if outcome is not None:
@@ -1236,6 +1682,11 @@ class _ConcurrentBatch:
                 with contextlib.suppress(_BatchAbandoned):
                     start_gate.advance()  # keep later-ordered workers moving
 
+    # ┌── 函数 def submit_all()
+    # │  作用：Submit every runnable slot; on interpreter shutdown, synthesize error results
+    # │  参数：self, executor, runnable: list[int]
+    # │  返回：tuple[list, dict]
+    # └──────────────────────────────────────────────────────────────
     def submit_all(self, executor, runnable: list[int]) -> tuple[list, dict]:
         """Submit every runnable slot; on interpreter shutdown, synthesize error results
         for the unsubmitted remainder instead of raising. ``propagate_context_to_thread``
@@ -1243,10 +1694,12 @@ class _ConcurrentBatch:
         futures = []
         future_to_index = {}
         for submit_index, i in enumerate(runnable):
+            # ⤷ 关键分支 try/except：捕获 RuntimeError，出错走兜底而不是崩溃。
             try:
                 f = executor.submit(propagate_context_to_thread(self.run_worker), i, submit_index)
             except RuntimeError as submit_error:
                 if not _is_interpreter_shutdown_submit_error(submit_error):
+                    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                     raise
                 skipped = runnable[submit_index:]
                 logger.warning(
@@ -1260,11 +1713,23 @@ class _ConcurrentBatch:
                 break
             futures.append(f)
             future_to_index[f] = i
+        # ⤷ 出口 return：返回 (futures, future_to_index)
         return futures, future_to_index
 
+    # ┌── 函数 def _running_names()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, not_done, future_to_index
+    # │  返回：list[str]
+    # └──────────────────────────────────────────────────────────────
     def _running_names(self, not_done, future_to_index) -> list[str]:
+        # ⤷ 出口 return：返回 [self.parsed_calls[future_to_index[f]].name for f in not_don…
         return [self.parsed_calls[future_to_index[f]].name for f in not_done if f in future_to_index]
 
+    # ┌── 函数 def await_completion()
+    # │  作用：Wait with periodic heartbeats and interrupt checks; True when the batch was
+    # │  参数：self, futures, future_to_index, deadline: float | None
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def await_completion(self, futures, future_to_index, deadline: float | None) -> bool:
         """Wait with periodic heartbeats and interrupt checks; True when the batch was
         abandoned (deadline or interrupt) and the executor must not join its workers."""
@@ -1281,6 +1746,7 @@ class _ConcurrentBatch:
             if deadline is None or remaining > 0:
                 _done, not_done = concurrent.futures.wait(futures, timeout=wait_timeout)
             if not not_done:
+                # ⤷ 出口 return：返回 False
                 return False
 
             timed_out = deadline is not None and time.monotonic() >= deadline + self.authorization_gate.excluded_seconds()
@@ -1321,8 +1787,14 @@ class _ConcurrentBatch:
             else:
                 # Give running tools a moment to notice the per-thread interrupt and exit gracefully.
                 concurrent.futures.wait(not_done, timeout=3.0)
+            # ⤷ 出口 return：返回 True
             return True
 
+    # ┌── 函数 def run()
+    # │  作用：Dispatch the runnable calls on a daemon pool and wait for the batch.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def run(self) -> None:
         """Dispatch the runnable calls on a daemon pool and wait for the batch."""
         runnable = [i for i, pc in enumerate(self.parsed_calls) if pc.parse_error is None]
@@ -1334,6 +1806,7 @@ class _ConcurrentBatch:
         from tools.daemon_pool import DaemonThreadPoolExecutor
         executor = DaemonThreadPoolExecutor(max_workers=max_workers)
         abandon_executor = False
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             futures, future_to_index = self.submit_all(executor, runnable)
             abandon_executor = self.await_completion(futures, future_to_index, deadline)
@@ -1345,6 +1818,11 @@ class _ConcurrentBatch:
             executor.shutdown(wait=not abandon_executor, cancel_futures=abandon_executor)
 
 
+# ┌── 函数 def _unfinished_tool_result()
+# │  作用：Synthesize the result for a slot no worker filled (deadline, interrupt, or a thread
+# │  参数：agent, ref: _ToolCallRef, timed_out: bool, timeout_s: float | None
+# │  返回：tuple[str, float, Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _unfinished_tool_result(agent, ref: _ToolCallRef, *, timed_out: bool, timeout_s: float | None) -> tuple[str, float, Optional[str]]:
     """Synthesize the result for a slot no worker filled (deadline, interrupt, or a thread
     that never returned), emit its terminal post_tool_call, and return
@@ -1363,9 +1841,15 @@ def _unfinished_tool_result(agent, ref: _ToolCallRef, *, timed_out: bool, timeou
         outcome = dict(status="error", error_type="thread_missing_result", error_message=function_result)
         tool_duration, effect_disposition = 0.0, None
     ref.emit_post(agent, function_result, **outcome)
+    # ⤷ 出口 return：返回 (function_result, tool_duration, effect_disposition)
     return function_result, tool_duration, effect_disposition
 
 
+# ┌── 函数 def _append_batch_results()
+# │  作用：Append every slot's result in original call order; returns False at the first
+# │  参数：agent, messages: list, effective_task_id: str, batch: _ConcurrentBatch, budget: BudgetConfig
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _append_batch_results(agent, messages: list, effective_task_id: str, batch: _ConcurrentBatch, budget: BudgetConfig) -> bool:
     """Append every slot's result in original call order; returns False at the first
     failed flush (the caller must stop the batch)."""
@@ -1390,6 +1874,7 @@ def _append_batch_results(agent, messages: list, effective_task_id: str, batch: 
             error_preview=lambda res: _multimodal_text_summary(res)[:200],
         )
         if committed is None:
+            # ⤷ 出口 return：返回 False
             return False
         _persisted, display_function_result, risk_metadata = committed
 
@@ -1400,9 +1885,15 @@ def _append_batch_results(agent, messages: list, effective_task_id: str, batch: 
             _print_tool_completed(agent, i + 1, tool_duration, _multimodal_text_summary(display_function_result))
 
         _emit_tool_complete_and_risk(agent, ref, display_function_result, risk_metadata, blocked)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def execute_tool_calls_concurrent()
+# │  作用：Execute tool calls concurrently; results are appended in original call order.
+# │  参数：agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, finalize: bool = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, *, finalize: bool = True) -> None:
     """Execute tool calls concurrently; results are appended in original call order.
     ``finalize=False`` skips end-of-batch budget enforcement and /steer injection (the
@@ -1435,6 +1926,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
     agent._touch_activity(f"executing {num_tools} tools concurrently: {tool_names_str}")
 
     spinner = _start_quiet_tool_spinner(agent, "", {}, label=f"⚡ running {num_tools} tools concurrently")
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         batch.run()
     finally:
@@ -1451,10 +1943,16 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
 # ── Sequential dispatch ─────────────────────────────────────────────────────
 
 
+# ┌── 函数 def _start_quiet_tool_spinner()
+# │  作用：Start the quiet-mode kawaii spinner for one tool call, or return None; ``gate=False``
+# │  参数：agent, function_name: str, function_args: dict, gate: bool = ..., label: Optional[str] = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _start_quiet_tool_spinner(agent, function_name: str, function_args: dict, *, gate: bool = True, label: Optional[str] = None):
     """Start the quiet-mode kawaii spinner for one tool call, or return None; ``gate=False``
     skips ``_should_start_quiet_spinner`` (context-engine tools always spin)."""
     if not agent._should_emit_quiet_tool_messages() or (gate and not agent._should_start_quiet_spinner()):
+        # ⤷ 出口 return：返回 None
         return None
     face = random.choice(KawaiiSpinner.get_waiting_faces())
     if label is None:
@@ -1462,9 +1960,15 @@ def _start_quiet_tool_spinner(agent, function_name: str, function_args: dict, *,
         label = f"{_get_tool_emoji(function_name)} {_build_tool_label(function_name, display_args) or function_name}"
     spinner = KawaiiSpinner(f"{face} {label}", spinner_type='dots', print_fn=agent._print_fn)
     spinner.start()
+    # ⤷ 出口 return：返回 spinner
     return spinner
 
 
+# ┌── 函数 def _finish_quiet_tool_spinner()
+# │  作用：Stop the spinner with the cute completion line, or print it when no spinner ran.
+# │  参数：agent, spinner, function_name: str, function_args: dict, tool_duration: float, result
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _finish_quiet_tool_spinner(agent, spinner, function_name: str, function_args: dict, tool_duration: float, result) -> None:
     """Stop the spinner with the cute completion line, or print it when no spinner ran."""
     if spinner or agent._should_emit_quiet_tool_messages():
@@ -1472,17 +1976,29 @@ def _finish_quiet_tool_spinner(agent, spinner, function_name: str, function_args
         spinner.stop(cute) if spinner else agent._vprint(f"  {cute}")
 
 
+# ┌── 函数 def _delegate_spinner_label()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：function_args: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _delegate_spinner_label(function_args: dict) -> str:
     action = str(function_args.get("action") or "").strip().lower()
     tasks = function_args.get("tasks")
     if action in ("list", "steer", "stop"):
+        # ⤷ 出口 return：返回 f'🔀 subagent {action}'
         return f"🔀 subagent {action}"
     if tasks and isinstance(tasks, list):
+        # ⤷ 出口 return：返回 f'🔀 delegating {len(tasks)} tasks · (/agents to monitor)'
         return f"🔀 delegating {len(tasks)} tasks · (/agents to monitor)"
     goal_preview = (function_args.get("goal") or "")[:30]
+    # ⤷ 出口 return：返回 f'🔀 {goal_preview} · (/agents to monitor)' if goal_preview e…
     return f"🔀 {goal_preview} · (/agents to monitor)" if goal_preview else "🔀 delegating · (/agents to monitor)"
 
 
+# ┌── 类 class _SequentialDispatch
+# │  说明：How one sequential call executes: the callable plus its spinner/error policy.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _SequentialDispatch:
     """How one sequential call executes: the callable plus its spinner/error policy."""
@@ -1498,6 +2014,11 @@ class _SequentialDispatch:
     finish_in_finally: bool = True  # inline tools print their completion line only on success
 
 
+# ┌── 函数 def _resolve_sequential_dispatch()
+# │  作用：Pick the execute callable for one sequential call and start its spinner. Precedence:
+# │  参数：agent, ref: _ToolCallRef, messages: list
+# │  返回：_SequentialDispatch
+# └──────────────────────────────────────────────────────────────
 def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _SequentialDispatch:
     """Pick the execute callable for one sequential call and start its spinner. Precedence:
     inline agent-level tools, delegate_task, context-engine tools, memory-provider tools,
@@ -1509,12 +2030,15 @@ def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _S
         # Agent-level tools that need live AIAgent state; table shared with invoke_tool.
         inline_executor = INLINE_TOOL_EXECUTORS[function_name]
         inline_ctx = InlineToolContext(effective_task_id=effective_task_id, tool_call_id=tool_call_id, messages=messages)
+        # ⤷ 出口 return：返回 _SequentialDispatch(lambda next_args: inline_executor(agent,…
         return _SequentialDispatch(lambda next_args: inline_executor(agent, next_args, inline_ctx), finish_in_finally=False)
     if function_name == "delegate_task":
         spinner = _start_quiet_tool_spinner(agent, function_name, function_args, label=_delegate_spinner_label(function_args))
         agent._delegate_spinner = spinner
+        # ⤷ 出口 return：返回 _SequentialDispatch(agent._dispatch_delegate_task, spinner=s…
         return _SequentialDispatch(agent._dispatch_delegate_task, spinner=spinner, is_delegate=True)
     if agent._context_engine_tool_names and function_name in agent._context_engine_tool_names:
+        # ⤷ 出口 return：返回 _SequentialDispatch(execute=lambda next_args: agent.context_…
         return _SequentialDispatch(
             execute=lambda next_args: agent.context_compressor.handle_tool_call(function_name, next_args, messages=messages),
             spinner=_start_quiet_tool_spinner(agent, function_name, function_args, gate=False),
@@ -1523,6 +2047,7 @@ def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _S
         )
     if agent._memory_manager and agent._memory_manager.has_tool(function_name):
         # Memory-provider tools (hindsight_retain, honcho_search, ...) are not in the registry.
+        # ⤷ 出口 return：返回 _SequentialDispatch(execute=lambda next_args: agent._memory_…
         return _SequentialDispatch(
             execute=lambda next_args: agent._memory_manager.handle_tool_call(function_name, next_args),
             spinner=_start_quiet_tool_spinner(agent, function_name, function_args),
@@ -1535,6 +2060,7 @@ def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _S
         import model_tools
 
         with model_tools.suppress_post_tool_call_hook():
+            # ⤷ 出口 return：返回 model_tools.handle_function_call(function_name, next_args, e…
             return model_tools.handle_function_call(
                 function_name,
                 next_args,
@@ -1552,6 +2078,7 @@ def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _S
                 disabled_toolsets=getattr(agent, "disabled_toolsets", None),
             )
 
+    # ⤷ 出口 return：返回 _SequentialDispatch(execute=_execute, spinner=_start_quiet_t…
     return _SequentialDispatch(
         execute=_execute,
         spinner=_start_quiet_tool_spinner(agent, function_name, function_args) if agent.quiet_mode else None,
@@ -1563,20 +2090,37 @@ def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _S
     )
 
 
+# ┌── 函数 def _skip_remaining_sequential()
+# │  作用：Announce an interrupt and append one skipped result per unstarted call; False when
+# │  参数：agent, messages: list, remaining, effective_task_id: str, notice: str, **skip_kwargs
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _skip_remaining_sequential(agent, messages: list, remaining, effective_task_id: str, *, notice: str, **skip_kwargs) -> bool:
     """Announce an interrupt and append one skipped result per unstarted call; False when
     a flush failed (the caller must stop the batch)."""
     agent._vprint(f"{agent.log_prefix}⚡ Interrupt: skipping {len(remaining)} {notice}", force=True)
+    # ⤷ 出口 return：返回 _append_skipped_tool_results(agent, messages, remaining, eff…
     return _append_skipped_tool_results(agent, messages, remaining, effective_task_id, **skip_kwargs)
 
 
+# ┌── 函数 def _append_invalid_arguments_result()
+# │  作用：Emit + append the parse-error result for a call whose arguments were not a JSON object.
+# │  参数：agent, messages: list, ref: _ToolCallRef, parse_error: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _append_invalid_arguments_result(agent, messages: list, ref: _ToolCallRef, parse_error: str) -> bool:
     """Emit + append the parse-error result for a call whose arguments were not a JSON object."""
     ref.emit_invalid_arguments(agent, parse_error)
     messages.append(make_tool_result_message(ref.name, parse_error, ref.call_id))
+    # ⤷ 出口 return：返回 _flush_session_db_after_tool_progress(agent, messages, stage…
     return _flush_session_db_after_tool_progress(agent, messages, stage=f"invalid tool arguments {ref.name}")
 
 
+# ┌── 函数 def _run_sequential_call()
+# │  作用：Run one sequential call with its spinner/error policy; returns ``(managed, duration)``.
+# │  参数：agent, dispatch: _SequentialDispatch, ref: _ToolCallRef, scope_block: Optional[str], messages: list, remaining_calls, display_index: int, tool_start_time: float
+# │  返回：tuple[_ManagedToolResult, float]
+# └──────────────────────────────────────────────────────────────
 def _run_sequential_call(
     agent,
     dispatch: _SequentialDispatch,
@@ -1592,6 +2136,7 @@ def _run_sequential_call(
     KeyboardInterrupt (registry tools only) emits results for THIS and every remaining call
     before re-raising so the tool-call turn keeps matching results (alternation)."""
     _spinner_result = None
+    # ⤷ 关键分支 try/except：捕获 KeyboardInterrupt、Exception，出错走兜底而不是崩溃。
     try:
         managed = _run_sequential_tool_execution_middleware(
             agent,
@@ -1604,6 +2149,7 @@ def _run_sequential_call(
         _spinner_result = managed.result
     except KeyboardInterrupt:
         if not dispatch.handles_keyboard_interrupt:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         _spinner_result = ref.emit_cancelled(agent, tool_start_time)
         with contextlib.suppress(Exception):
@@ -1612,9 +2158,11 @@ def _run_sequential_call(
             agent, messages, remaining_calls, ref.task_id,
             content="[Tool execution cancelled — {name} was skipped due to keyboard interrupt]",
         )
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
     except Exception as tool_error:
         if dispatch.error_result is None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         function_result = dispatch.error_result(tool_error)
         logger.error(dispatch.error_log, ref.name, tool_error, exc_info=True)
@@ -1627,9 +2175,15 @@ def _run_sequential_call(
             _finish_quiet_tool_spinner(agent, dispatch.spinner, ref.name, ref.args, tool_duration, _spinner_result)
     if dispatch.finish_spinner and not dispatch.finish_in_finally:
         _finish_quiet_tool_spinner(agent, dispatch.spinner, ref.name, ref.args, tool_duration, _spinner_result)
+    # ⤷ 出口 return：返回 (managed, tool_duration)
     return managed, tool_duration
 
 
+# ┌── 函数 def _publish_sequential_result()
+# │  作用：Terminal hook → observe → commit → completion callbacks/print for one sequential
+# │  参数：agent, messages: list, ref: _ToolCallRef, managed: _ManagedToolResult, tool_duration: float, index: int, budget: BudgetConfig
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _publish_sequential_result(agent, messages: list, ref: _ToolCallRef, managed: _ManagedToolResult, *, tool_duration: float, index: int, budget: BudgetConfig) -> bool:
     """Terminal hook → observe → commit → completion callbacks/print for one sequential
     result; False when the incremental flush failed (the caller must stop the batch)."""
@@ -1652,15 +2206,22 @@ def _publish_sequential_result(agent, messages: list, ref: _ToolCallRef, managed
         verbose_text=_multimodal_text_summary,
     )
     if committed is None:
+        # ⤷ 出口 return：返回 False
         return False
     function_result, display_function_result, risk_metadata = committed
 
     _emit_tool_complete_and_risk(agent, ref, display_function_result, risk_metadata, managed.blocked)
     if _tool_progress_enabled(agent):
         _print_tool_completed(agent, index, tool_duration, function_result)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def execute_tool_calls_sequential()
+# │  作用：Execute tool calls sequentially (single calls or interactive tools). ``finalize=False``
+# │  参数：agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, finalize: bool = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def execute_tool_calls_sequential(agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, *, finalize: bool = True) -> None:
     """Execute tool calls sequentially (single calls or interactive tools). ``finalize=False``
     skips end-of-batch budget enforcement and /steer injection (the segmented dispatcher
@@ -1718,6 +2279,11 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
         _finalize_tool_batch(agent, messages, effective_task_id, len(tool_calls), _tool_budget)
 
 
+# ┌── 函数 def execute_tool_calls_segmented()
+# │  作用：Execute a mixed batch as ordered parallel/sequential segments (the ``(kind, calls)``
+# │  参数：agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, segments = None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def execute_tool_calls_segmented(agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, segments=None) -> None:
     """Execute a mixed batch as ordered parallel/sequential segments (the ``(kind, calls)``
     plan from ``_plan_tool_batch_segments``), preserving per-call result order and barrier

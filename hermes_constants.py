@@ -2,6 +2,27 @@
 
 Import-safe, stdlib-only — importable from anywhere without circular-import risk.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：hermes_constants.py（约 1293 行）
+# 地位：全局常量 + 路径/环境相关的取值函数。
+#
+# 设计要点：只用标准库，不 import 项目内任何模块，所以「任何地方都能安全 import 它，不会造成循环导入」。
+#   这是大型项目里很常见的一条纪律：常量模块必须是最底层的依赖。
+#
+# 主要内容：
+#   - Hermes 的家目录在哪：get_hermes_home() / get_default_hermes_root() / display_hermes_home()
+#   - 多 profile（配置档）支持：named_profile_home / profile_name_for_home / mark_named_profile_deleted
+#   - Node.js 运行时管理：bootstrap_hermes_managed_node / find_node_executable
+#     （这个项目部分能力依赖 Node，所以它自己会下载并管理一个 Node）
+#   - 环境判断：is_termux() / is_wsl() / is_container()
+#   - 推理强度配置解析：parse_reasoning_effort / resolve_reasoning_config
+#   - 虚拟环境路径：venv_bin_dir / venv_python_path
+#
+# 阅读建议：不用通读。当你在别的文件看到 get_hermes_home() 之类的调用时，回来查一下即可。
+# ==========================================================================
+#
 
 import contextlib
 import os
@@ -22,35 +43,64 @@ INDICATOR_STYLES: tuple[str, ...] = ("ascii", "emoji", "kaomoji", "unicode")
 DEFAULT_INDICATOR_STYLE: str = "kaomoji"
 
 
+# ┌── 函数 def set_hermes_home_override()
+# │  作用：Set a context-local Hermes home override and return its reset token.
+# │  参数：path: str | Path | None
+# │  返回：Token
+# └──────────────────────────────────────────────────────────────
 def set_hermes_home_override(path: str | Path | None) -> Token:
     """Set a context-local Hermes home override and return its reset token.
 
     Deliberately does not mutate ``os.environ`` (shared by every thread in the process).
     """
     value: str | object = _UNSET if path is None else str(path)
+    # ⤷ 出口 return：返回 _HERMES_HOME_OVERRIDE.set(value)
     return _HERMES_HOME_OVERRIDE.set(value)
 
 
+# ┌── 函数 def reset_hermes_home_override()
+# │  作用：Restore the previous context-local Hermes home override.
+# │  参数：token: Token
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def reset_hermes_home_override(token: Token) -> None:
     """Restore the previous context-local Hermes home override."""
     _HERMES_HOME_OVERRIDE.reset(token)
 
 
+# ┌── 函数 def get_hermes_home_override()
+# │  作用：Return the active context-local Hermes home override, if any.
+# │  参数：无
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def get_hermes_home_override() -> str | None:
     """Return the active context-local Hermes home override, if any."""
     override = _HERMES_HOME_OVERRIDE.get()
+    # ⤷ 出口 return：返回 str(override) if override is not _UNSET and override else No…
     return str(override) if override is not _UNSET and override else None
 
 
+# ┌── 函数 def _get_platform_default_hermes_home()
+# │  作用：Return the platform-native default Hermes home path.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _get_platform_default_hermes_home() -> Path:
     """Return the platform-native default Hermes home path."""
     if sys.platform == "win32":
         local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
         base = Path(local_appdata) if local_appdata else Path.home() / "AppData" / "Local"
+        # ⤷ 出口 return：返回 base / 'hermes'
         return base / "hermes"
+    # ⤷ 出口 return：返回 Path.home() / '.hermes'
     return Path.home() / ".hermes"
 
 
+# ┌── 函数 def sudo_invoker_default_home()
+# │  作用：The invoking user's native ``~/.hermes`` when this process is root under ``sudo``, else None.
+# │  参数：无
+# │  返回：Path | None
+# └──────────────────────────────────────────────────────────────
 def sudo_invoker_default_home() -> Path | None:
     """The invoking user's native ``~/.hermes`` when this process is root under ``sudo``, else None.
 
@@ -58,23 +108,35 @@ def sudo_invoker_default_home() -> Path | None:
     store and the system service being operated on belong to SUDO_USER.
     """
     if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        # ⤷ 出口 return：返回 None
         return None
     sudo_user = os.environ.get("SUDO_USER", "").strip()
     if not sudo_user or sudo_user == "root":
+        # ⤷ 出口 return：返回 None
         return None
     import pwd
 
+    # ⤷ 关键分支 try/except：捕获 KeyError，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 Path(pwd.getpwnam(sudo_user).pw_dir) / '.hermes'
         return Path(pwd.getpwnam(sudo_user).pw_dir) / ".hermes"
     except KeyError:  # SUDO_USER not in passwd (chroot/container)
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _warn_profile_fallback_once()
+# │  作用：Warn once when HERMES_HOME is unset but a non-default profile is sticky-active (wrong fallback).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _warn_profile_fallback_once() -> None:
     """Warn once when HERMES_HOME is unset but a non-default profile is sticky-active (wrong fallback)."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _profile_fallback_warned
     if _profile_fallback_warned:
         return
+    # ⤷ 关键分支 try/except：捕获 (UnicodeDecodeError, OSError)，出错走兜底而不是崩溃。
     try:
         fallback_home = _get_platform_default_hermes_home()
         active_path = fallback_home / "active_profile"
@@ -98,13 +160,20 @@ def _warn_profile_fallback_once() -> None:
             sys.stderr.flush()
 
 
+# ┌── 函数 def get_hermes_home()
+# │  作用：Hermes home: context-local override → ``HERMES_HOME`` env var → platform default.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_hermes_home() -> Path:
     """Hermes home: context-local override → ``HERMES_HOME`` env var → platform default."""
     override = get_hermes_home_override()
     if override:
+        # ⤷ 出口 return：返回 Path(override)
         return Path(override)
     if not os.environ.get("HERMES_HOME", "").strip():
         _warn_profile_fallback_once()
+    # ⤷ 出口 return：返回 get_process_hermes_home()
     return get_process_hermes_home()
 
 
@@ -116,6 +185,11 @@ def get_hermes_home() -> Path:
 _HOME_KEY_CACHE: dict[str, str] = {}
 
 
+# ┌── 函数 def hermes_home_key()
+# │  作用：Stable registry key for a Hermes home/profile dir.
+# │  参数：path: str | Path | None = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def hermes_home_key(path: str | Path | None = None) -> str:
     """Stable registry key for a Hermes home/profile dir.
 
@@ -129,24 +203,38 @@ def hermes_home_key(path: str | Path | None = None) -> str:
     raw = str(candidate)
     cached = _HOME_KEY_CACHE.get(raw)
     if cached is not None:
+        # ⤷ 出口 return：返回 cached
         return cached
     expanded = candidate.expanduser()
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         resolved = expanded.resolve(strict=True)
     except OSError:
         # Not on disk yet: lenient resolve, not stored, so the real answer is
         # picked up once the directory appears.
+        # ⤷ 出口 return：返回 os.path.normcase(str(expanded.resolve(strict=False)))
         return os.path.normcase(str(expanded.resolve(strict=False)))
     key = os.path.normcase(str(resolved))
     _HOME_KEY_CACHE[raw] = key
+    # ⤷ 出口 return：返回 key
     return key
 
 
+# ┌── 函数 def reset_hermes_home_key_cache()
+# │  作用：Forget every remembered home key (for tests that move a home dir on disk).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def reset_hermes_home_key_cache() -> None:
     """Forget every remembered home key (for tests that move a home dir on disk)."""
     _HOME_KEY_CACHE.clear()
 
 
+# ┌── 函数 def get_process_hermes_home()
+# │  作用：Hermes home of the running process, ignoring task overrides.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_process_hermes_home() -> Path:
     """Hermes home of the running process, ignoring task overrides.
 
@@ -154,6 +242,7 @@ def get_process_hermes_home() -> Path:
     request is scoped to another profile (e.g. embedded ``/chat`` under ``--open-profile``).
     """
     val = os.environ.get("HERMES_HOME", "").strip()
+    # ⤷ 出口 return：返回 Path(val) if val else _get_platform_default_hermes_home()
     return Path(val) if val else _get_platform_default_hermes_home()
 
 
@@ -162,22 +251,31 @@ def get_process_hermes_home() -> Path:
 _default_hermes_root_memo: "tuple[str, str, Path] | None" = None
 
 
+# ┌── 函数 def get_default_hermes_root()
+# │  作用：Root Hermes dir for profile-level ops: ``<root>`` when ``HERMES_HOME=<root>/profiles/<name>``.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_default_hermes_root() -> Path:
     """Root Hermes dir for profile-level ops: ``<root>`` when ``HERMES_HOME=<root>/profiles/<name>``."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _default_hermes_root_memo
     native_home = _get_platform_default_hermes_home()
     env_home = os.environ.get("HERMES_HOME", "")
     memo = _default_hermes_root_memo
     if memo is not None and memo[:2] == (str(native_home), env_home):
+        # ⤷ 出口 return：返回 memo[2]
         return memo[2]
     result = native_home
     if env_home:
         env_path = Path(env_home)
+        # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
         try:
             env_path.resolve().relative_to(native_home.resolve())  # under ~/.hermes (normal or profile mode)
         except ValueError:  # Docker/custom root: <root>/profiles/<name> -> <root>, else HERMES_HOME itself
             result = env_path.parent.parent if env_path.parent.name == "profiles" else env_path
     _default_hermes_root_memo = (str(native_home), env_home, result)
+    # ⤷ 出口 return：返回 result
     return result
 
 
@@ -187,6 +285,11 @@ _DELETED_PROFILES_DIR = ".deleted"
 _HERMES_HOME_MARKERS = ("config.yaml", ".env", "state.db")
 
 
+# ┌── 函数 def _is_hermes_profiles_root()
+# │  作用：True when *profiles_dir* is provably ``<hermes-home>/profiles``.
+# │  参数：profiles_dir: Path
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_hermes_profiles_root(profiles_dir: Path) -> bool:
     """True when *profiles_dir* is provably ``<hermes-home>/profiles``.
 
@@ -195,20 +298,31 @@ def _is_hermes_profiles_root(profiles_dir: Path) -> bool:
     """
     root = profiles_dir.parent
     if root.name == ".hermes":
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         if (profiles_dir / _DELETED_PROFILES_DIR).is_dir() or any(
             (root / marker).exists() for marker in _HERMES_HOME_MARKERS
         ):
+            # ⤷ 出口 return：返回 True
             return True
     except OSError:
         pass
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 root.resolve(strict=False) == get_default_hermes_root().reso…
         return root.resolve(strict=False) == get_default_hermes_root().resolve(strict=False)
     except OSError:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def named_profile_home()
+# │  作用：Return ``<root>/profiles/<name>`` when *path* is that home or under it.
+# │  参数：path: str | Path
+# │  返回：Path | None
+# └──────────────────────────────────────────────────────────────
 def named_profile_home(path: str | Path) -> Path | None:
     """Return ``<root>/profiles/<name>`` when *path* is that home or under it.
 
@@ -219,12 +333,20 @@ def named_profile_home(path: str | Path) -> Path | None:
     for candidate in (current, *current.parents):
         if (candidate.parent.name == "profiles" and not candidate.name.startswith(".")
                 and _is_hermes_profiles_root(candidate.parent)):
+            # ⤷ 出口 return：返回 candidate
             return candidate
         if candidate.name == ".hermes":  # default home: a coincidental profiles/ ancestor is not a root
+            # ⤷ 出口 return：返回 None
             return None
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def profile_name_for_home()
+# │  作用：Return the canonical profile id owning *path*, or ``None`` when it is not a profile home.
+# │  参数：path: str | Path | None
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def profile_name_for_home(path: str | Path | None) -> str | None:
     """Return the canonical profile id owning *path*, or ``None`` when it is not a profile home.
 
@@ -232,61 +354,106 @@ def profile_name_for_home(path: str | Path | None) -> str | None:
     on POSIX and commonly ``hermes`` on Windows), not the profile id ``default``.
     """
     if path is None or not str(path).strip():
+        # ⤷ 出口 return：返回 None
         return None
     current = Path(path).expanduser()
+    # ⤷ 关键分支 try/except：捕获 (OSError, RuntimeError, ValueError)，出错走兜底而不是崩溃。
     try:
         default_root = get_default_hermes_root()
         for candidate in (current, current.resolve(strict=False)):
             if candidate == default_root or candidate == default_root.resolve(strict=False):
+                # ⤷ 出口 return：返回 'default'
                 return "default"
             named = named_profile_home(candidate)
             if named is not None:
+                # ⤷ 出口 return：返回 named.name
                 return named.name
             # A stored profile home is authoritative: its owner already resolved it, so the
             # <root>/profiles/<name> shape names the profile even when <root> carries no markers.
             if candidate.parent.name == "profiles" and not candidate.name.startswith("."):
                 return candidate.name
     except (OSError, RuntimeError, ValueError):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def profile_tombstone_path()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：profile_home: Path
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def profile_tombstone_path(profile_home: Path) -> Path:
+    # ⤷ 出口 return：返回 profile_home.parent / _DELETED_PROFILES_DIR / profile_home.n…
     return profile_home.parent / _DELETED_PROFILES_DIR / profile_home.name
 
 
+# ┌── 函数 def named_profile_is_deleted()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：profile_home: str | Path
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def named_profile_is_deleted(profile_home: str | Path) -> bool:
+    # ⤷ 出口 return：返回 profile_tombstone_path(Path(profile_home)).exists()
     return profile_tombstone_path(Path(profile_home)).exists()
 
 
+# ┌── 函数 def mark_named_profile_deleted()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：profile_home: str | Path
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def mark_named_profile_deleted(profile_home: str | Path) -> None:
     marker = profile_tombstone_path(Path(profile_home))
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text("deleted\n", encoding="utf-8")
 
 
+# ┌── 函数 def clear_named_profile_deleted()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：profile_home: str | Path
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def clear_named_profile_deleted(profile_home: str | Path) -> None:
     profile_tombstone_path(Path(profile_home)).unlink(missing_ok=True)
 
 
+# ┌── 函数 def assert_named_profile_home_live()
+# │  作用：Refuse missing or tombstoned named profile homes.
+# │  参数：path: str | Path
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def assert_named_profile_home_live(path: str | Path) -> None:
     """Refuse missing or tombstoned named profile homes."""
     home = named_profile_home(path)
     if home is not None and (named_profile_is_deleted(home) or not home.exists()):
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise FileNotFoundError(
             f"Named profile home does not exist: {home}. "
             "Create the profile explicitly before using it."
         )
 
 
+# ┌── 函数 def mkdir_under_hermes_home()
+# │  作用：Create *path*, but never materialize a deleted/missing named profile.
+# │  参数：path: str | Path
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def mkdir_under_hermes_home(path: str | Path) -> Path:
     """Create *path*, but never materialize a deleted/missing named profile."""
     target = Path(path)
     assert_named_profile_home_live(target)
     target.mkdir(parents=True, exist_ok=True)
+    # ⤷ 出口 return：返回 target
     return target
 
 
+# ┌── 函数 def _packaged_dir()
+# │  作用：Resolve a package-manager-relocatable directory.
+# │  参数：env_var: str, default: Path | None, subdir: str
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _packaged_dir(env_var: str, default: Path | None, subdir: str) -> Path:
     """Resolve a package-manager-relocatable directory.
 
@@ -294,24 +461,48 @@ def _packaged_dir(env_var: str, default: Path | None, subdir: str) -> Path:
     ``<HERMES_HOME>/<subdir>``.
     """
     override = os.getenv(env_var, "").strip()
+    # ⤷ 出口 return：返回 Path(override) if override else default if default is not No…
     return Path(override) if override else default if default is not None else get_hermes_home() / subdir
 
 
+# ┌── 函数 def get_optional_skills_dir()
+# │  作用：Return the optional-skills directory, honoring package-manager wrappers.
+# │  参数：default: Path | None = None
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_optional_skills_dir(default: Path | None = None) -> Path:
     """Return the optional-skills directory, honoring package-manager wrappers."""
+    # ⤷ 出口 return：返回 _packaged_dir('HERMES_OPTIONAL_SKILLS', default, 'optional-s…
     return _packaged_dir("HERMES_OPTIONAL_SKILLS", default, "optional-skills")
 
 
+# ┌── 函数 def get_optional_mcps_dir()
+# │  作用：Return the optional-mcps directory, honoring package-manager wrappers (``HERMES_OPTIONAL_MCPS``).
+# │  参数：default: Path | None = None
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_optional_mcps_dir(default: Path | None = None) -> Path:
     """Return the optional-mcps directory, honoring package-manager wrappers (``HERMES_OPTIONAL_MCPS``)."""
+    # ⤷ 出口 return：返回 _packaged_dir('HERMES_OPTIONAL_MCPS', default, 'optional-mcp…
     return _packaged_dir("HERMES_OPTIONAL_MCPS", default, "optional-mcps")
 
 
+# ┌── 函数 def get_bundled_skills_dir()
+# │  作用：Return the bundled skills directory, honoring package-manager wrappers (``HERMES_BUNDLED_SKILLS``).
+# │  参数：default: Path | None = None
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_bundled_skills_dir(default: Path | None = None) -> Path:
     """Return the bundled skills directory, honoring package-manager wrappers (``HERMES_BUNDLED_SKILLS``)."""
+    # ⤷ 出口 return：返回 _packaged_dir('HERMES_BUNDLED_SKILLS', default, 'skills')
     return _packaged_dir("HERMES_BUNDLED_SKILLS", default, "skills")
 
 
+# ┌── 函数 def get_hermes_dir()
+# │  作用：Resolve a Hermes subdirectory, honouring a populated legacy ``<old_name>/`` (no migration).
+# │  参数：new_subpath: str, old_name: str, home: Path | None = ...
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_hermes_dir(new_subpath: str, old_name: str, *, home: Path | None = None) -> Path:
     """Resolve a Hermes subdirectory, honouring a populated legacy ``<old_name>/`` (no migration).
 
@@ -324,15 +515,22 @@ def get_hermes_dir(new_subpath: str, old_name: str, *, home: Path | None = None)
     """
     home = home or get_hermes_home()
     old_path = home / old_name
+    # ⤷ 出口 return：返回 old_path if _legacy_path_has_content(old_path) else home / n…
     return old_path if _legacy_path_has_content(old_path) else home / new_subpath
 
 
+# ┌── 函数 def iter_hermes_node_dirs()
+# │  作用：Hermes-managed Node dirs in lookup order; both Windows and POSIX shapes so migrated installs work.
+# │  参数：home: Path | None = None
+# │  返回：list[Path]
+# └──────────────────────────────────────────────────────────────
 def iter_hermes_node_dirs(home: Path | None = None) -> list[Path]:
     """Hermes-managed Node dirs in lookup order; both Windows and POSIX shapes so migrated installs work.
 
     Keep in sync with hermesManagedNodePathEntries() in apps/desktop/electron/backend-env.ts.
     """
     node_dir = (home or get_hermes_home()) / "node"
+    # ⤷ 出口 return：返回 [node_dir, node_dir / 'bin'] if sys.platform == 'win32' else…
     return [node_dir, node_dir / "bin"] if sys.platform == "win32" else [node_dir / "bin", node_dir]
 
 
@@ -341,48 +539,82 @@ _WINDOWS_NODE_SHIMS = {
 }
 
 
+# ┌── 函数 def _candidate_node_command_names()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：command: str
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _candidate_node_command_names(command: str) -> list[str]:
     base = Path(command).name
     if sys.platform != "win32" or "." in base:
+        # ⤷ 出口 return：返回 [base]
         return [base]
     # Prefer npm.cmd: PowerShell may block npm.ps1 by policy; CreateProcess cannot launch a bare .ps1.
+    # ⤷ 出口 return：返回 _WINDOWS_NODE_SHIMS.get(base.lower(), [f'{base}.cmd', f'{bas…
     return _WINDOWS_NODE_SHIMS.get(base.lower(), [f"{base}.cmd", f"{base}.exe", base])
 
 
+# ┌── 函数 def _iter_managed_node_candidates()
+# │  作用：Yield existing (and on POSIX, executable) ``<node-dir>/<name>`` files.
+# │  参数：names: list[str], home: Path | None = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _iter_managed_node_candidates(names: list[str], home: Path | None = None):
     """Yield existing (and on POSIX, executable) ``<node-dir>/<name>`` files."""
     for directory in iter_hermes_node_dirs(home):
         for name in names:
             candidate = directory / name
             if candidate.is_file() and (sys.platform == "win32" or os.access(candidate, os.X_OK)):
+                # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
                 yield candidate
 
 
+# ┌── 函数 def _first_runnable_managed()
+# │  作用：Return ``(first runnable candidate, saw a broken one)``.
+# │  参数：names: list[str]
+# │  返回：tuple[str | None, bool]
+# └──────────────────────────────────────────────────────────────
 def _first_runnable_managed(names: list[str]) -> tuple[str | None, bool]:
     """Return ``(first runnable candidate, saw a broken one)``."""
     broken = False
     for candidate in map(str, _iter_managed_node_candidates(names)):
         if node_tool_runnable(candidate):
+            # ⤷ 出口 return：返回 (candidate, broken)
             return candidate, broken
         broken = True
+    # ⤷ 出口 return：返回 (None, broken)
     return None, broken
 
 
+# ┌── 函数 def _run_version_probe()
+# │  作用：Run a hidden ``--version`` probe; ``None`` when it cannot run.
+# │  参数：argv: list[str], **kwargs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _run_version_probe(argv: list[str], **kwargs):
     """Run a hidden ``--version`` probe; ``None`` when it cannot run."""
     import subprocess
+    # ⤷ 关键分支 try/except：捕获 (OSError, subprocess.TimeoutExpired, ValueError)，出错走兜底而不是崩溃。
     try:
         from hermes_cli._subprocess_compat import windows_hide_flags
+        # ⤷ 出口 return：返回 subprocess.run(argv, capture_output=True, timeout=10, creati…
         return subprocess.run(
             argv, capture_output=True, timeout=10, creationflags=windows_hide_flags(), **kwargs
         )
     except (OSError, subprocess.TimeoutExpired, ValueError):
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _version_probe_ok()
+# │  作用：True when ``<path> --version`` exits 0 under the Hermes-managed Node PATH.
+# │  参数：path: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _version_probe_ok(path: str) -> bool:
     """True when ``<path> --version`` exits 0 under the Hermes-managed Node PATH."""
     result = _run_version_probe([path, "--version"], env=with_hermes_node_path())
+    # ⤷ 出口 return：返回 result is not None and result.returncode == 0
     return result is not None and result.returncode == 0
 
 
@@ -396,25 +628,49 @@ _NODE_BOOTSTRAP_SCRIPT = Path(__file__).resolve().parent / "scripts" / "lib" / "
 _INSTALL_ROOT = Path(__file__).resolve().parent
 
 
+# ┌── 函数 def _is_executable_file()
+# │  作用：``exists()`` follows symlinks, so a dangling link never spawns a probe.
+# │  参数：path: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_executable_file(path: str) -> bool:
     """``exists()`` follows symlinks, so a dangling link never spawns a probe."""
+    # ⤷ 出口 return：返回 os.path.exists(path) and os.access(path, os.X_OK)
     return os.path.exists(path) and os.access(path, os.X_OK)
 
 
+# ┌── 函数 def node_tool_runnable()
+# │  作用：True only when *path* is a Node/npm/npx binary that actually runs (``--version`` probe).
+# │  参数：path: str | None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def node_tool_runnable(path: str | None) -> bool:
     """True only when *path* is a Node/npm/npx binary that actually runs (``--version`` probe)."""
     if not path:
+        # ⤷ 出口 return：返回 False
         return False
     present = Path(path).is_file() if sys.platform == "win32" else _is_executable_file(path)
+    # ⤷ 出口 return：返回 present and _version_probe_ok(path)
     return present and _version_probe_ok(path)
 
 
+# ┌── 函数 def hermes_managed_node_tree_present()
+# │  作用：Return True when any Hermes-managed node/npm/npx shim exists on disk.
+# │  参数：home: Path | None = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def hermes_managed_node_tree_present(home: Path | None = None) -> bool:
     """Return True when any Hermes-managed node/npm/npx shim exists on disk."""
     names = [n for c in ("node", "npm", "npx") for n in _candidate_node_command_names(c)]
+    # ⤷ 出口 return：返回 next(_iter_managed_node_candidates(names, home), None) is no…
     return next(_iter_managed_node_candidates(names, home), None) is not None
 
 
+# ┌── 函数 def _path_under_any()
+# │  作用：True when *path* sits inside one of *roots* (same drive).
+# │  参数：path: str, roots: list[str]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _path_under_any(path: str, roots: list[str]) -> bool:
     """True when *path* sits inside one of *roots* (same drive).
 
@@ -423,14 +679,22 @@ def _path_under_any(path: str, roots: list[str]) -> bool:
     path_norm = os.path.normcase(os.path.normpath(path))
     for root in roots:
         root_norm = os.path.normcase(os.path.normpath(root))
+        # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
         try:
             if os.path.commonpath([path_norm, root_norm]) == root_norm:
+                # ⤷ 出口 return：返回 True
                 return True
         except ValueError:  # different drives on Windows
             continue
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def managed_node_tree_in_use()
+# │  作用：True when a running process executes from the managed Node tree.
+# │  参数：home: Path | None = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def managed_node_tree_in_use(home: Path | None = None) -> bool:
     """True when a running process executes from the managed Node tree.
 
@@ -440,19 +704,24 @@ def managed_node_tree_in_use(home: Path | None = None) -> bool:
     Always ``False`` on POSIX, which has no equivalent lock semantics. See #80926.
     """
     if sys.platform != "win32":
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import psutil
     except Exception:
         return False
     dirs: list[str] = []
     for directory in iter_hermes_node_dirs(home):
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             dirs.append(str(Path(directory).resolve()))
         except OSError:
             continue
     if not dirs:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         procs = psutil.process_iter(["exe", "cmdline"])
     except Exception:
@@ -470,14 +739,21 @@ def managed_node_tree_in_use(home: Path | None = None) -> bool:
                 exe = str(exe)
         if any(_path_under_any(p, dirs) for p in ([exe] if exe else []) + list(info.get("cmdline") or [])):
             return True
+    # ⤷ 出口 return：返回 False
     return False
 
 
 _managed_node_in_use_notice_printed = False
 
 
+# ┌── 函数 def _print_managed_node_in_use_notice()
+# │  作用：Print the managed-Node deferral notice once per process.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_managed_node_in_use_notice() -> None:
     """Print the managed-Node deferral notice once per process."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _managed_node_in_use_notice_printed
     if _managed_node_in_use_notice_printed:
         return
@@ -488,16 +764,29 @@ def _print_managed_node_in_use_notice() -> None:
     )
 
 
+# ┌── 函数 def _fetch_url()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：url: str, timeout: int
+# │  返回：bytes | None
+# └──────────────────────────────────────────────────────────────
 def _fetch_url(url: str, timeout: int) -> bytes | None:
     import urllib.request
 
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
+            # ⤷ 出口 return：返回 response.read()
             return response.read()
     except OSError:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _stage_windows_node_zip()
+# │  作用：Download the target-major portable Node zip into a sibling ``node.new-*`` dir.
+# │  参数：home: Path, node_arch: str
+# │  返回：Path | None
+# └──────────────────────────────────────────────────────────────
 def _stage_windows_node_zip(home: Path, node_arch: str) -> Path | None:
     """Download the target-major portable Node zip into a sibling ``node.new-*`` dir.
 
@@ -510,16 +799,20 @@ def _stage_windows_node_zip(home: Path, node_arch: str) -> Path | None:
     index_url = f"https://nodejs.org/dist/latest-v{_HERMES_NODE_TARGET_MAJOR}.x/"
     index_bytes = _fetch_url(index_url, 60)
     if index_bytes is None:
+        # ⤷ 出口 return：返回 None
         return None
     pattern = rf"node-v{_HERMES_NODE_TARGET_MAJOR}\.\d+\.\d+-win-{node_arch}\.zip"
     match = re.search(pattern, index_bytes.decode("utf-8", errors="replace"))
     if not match:
+        # ⤷ 出口 return：返回 None
         return None
     zip_name = match.group(0)
     zip_bytes = _fetch_url(f"{index_url}{zip_name}", 300)
     if zip_bytes is None:
+        # ⤷ 出口 return：返回 None
         return None
     staged = home / f"node.new-{uuid.uuid4().hex[:8]}"
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -533,10 +826,17 @@ def _stage_windows_node_zip(home: Path, node_arch: str) -> Path | None:
                 return None
             shutil.move(str(extracted), str(staged))
     except OSError:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 staged
     return staged
 
 
+# ┌── 函数 def _swap_node_tree()
+# │  作用：Rename the live tree aside (``node.old-*``) and *staged* into place.
+# │  参数：target: Path, staged: Path
+# │  返回：bool | None
+# └──────────────────────────────────────────────────────────────
 def _swap_node_tree(target: Path, staged: Path) -> bool | None:
     """Rename the live tree aside (``node.old-*``) and *staged* into place.
 
@@ -546,16 +846,19 @@ def _swap_node_tree(target: Path, staged: Path) -> bool | None:
     backup = target.parent / f"node.old-{staged.name.removeprefix('node.new-')}"
     had_live = target.exists()
     if had_live:
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             os.replace(str(target), str(backup))
         except OSError:
             _print_managed_node_in_use_notice()
             shutil.rmtree(staged, ignore_errors=True)
+            # ⤷ 出口 return：返回 None
             return None
         # Rename preserves mtime: touch the backup (best-effort) so a concurrent heal's
         # litter sweep never removes it mid-swap.
         with contextlib.suppress(OSError):
             os.utime(backup, None)
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         os.replace(str(staged), str(target))
     except OSError:
@@ -563,13 +866,20 @@ def _swap_node_tree(target: Path, staged: Path) -> bool | None:
             with contextlib.suppress(OSError):
                 os.replace(str(backup), str(target))
         shutil.rmtree(staged, ignore_errors=True)
+        # ⤷ 出口 return：返回 False
         return False
     if had_live:
         # Locked files may keep the old tree on disk until the next heal; safe.
         shutil.rmtree(backup, ignore_errors=True)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _heal_managed_node_windows()
+# │  作用：Redownload the portable Node zip into ``%HERMES_HOME%\node`` on Windows.
+# │  参数：home: Path | None = None
+# │  返回：bool | None
+# └──────────────────────────────────────────────────────────────
 def _heal_managed_node_windows(home: Path | None = None) -> bool | None:
     """Redownload the portable Node zip into ``%HERMES_HOME%\\node`` on Windows.
 
@@ -591,16 +901,19 @@ def _heal_managed_node_windows(home: Path | None = None) -> bool | None:
     arch = (os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ.get("PROCESSOR_ARCHITECTURE", "")).lower()
     node_arch = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "x86": "x86"}.get(arch)
     if node_arch is None:
+        # ⤷ 出口 return：返回 False
         return False
     home = home or get_hermes_home()
     target = home / "node"
     # Cheap pre-check; the rename-based swap is the authoritative guard.
     if managed_node_tree_in_use(home):
         _print_managed_node_in_use_notice()
+        # ⤷ 出口 return：返回 None
         return None
     # Sweep litter from interrupted runs; only dirs >10 min old so a concurrent in-flight swap survives.
     cutoff = time.time() - 600
     for stale in (*home.glob("node.old-*"), *home.glob("node.new-*")):
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             if stale.stat().st_mtime < cutoff:
                 shutil.rmtree(stale, ignore_errors=True)
@@ -608,15 +921,24 @@ def _heal_managed_node_windows(home: Path | None = None) -> bool | None:
             continue
     staged = _stage_windows_node_zip(home, node_arch)
     if staged is None:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 _swap_node_tree(target, staged) and node_tool_runnable(str(t…
     return _swap_node_tree(target, staged) and node_tool_runnable(str(target / "node.exe"))
 
 
+# ┌── 函数 def _run_node_bootstrap()
+# │  作用：Source ``scripts/lib/node-bootstrap.sh`` and run shell function *func*.
+# │  参数：func: str, timeout: int, **extra_env
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _run_node_bootstrap(func: str, *, timeout: int, **extra_env: str) -> bool:
     """Source ``scripts/lib/node-bootstrap.sh`` and run shell function *func*."""
     if not _NODE_BOOTSTRAP_SCRIPT.is_file():
+        # ⤷ 出口 return：返回 False
         return False
     import subprocess
+    # ⤷ 关键分支 try/except：捕获 (OSError, subprocess.SubprocessError)，出错走兜底而不是崩溃。
     try:
         result = subprocess.run(
             ["bash", "-c", f'source "{_NODE_BOOTSTRAP_SCRIPT}" && {func}'],
@@ -624,10 +946,17 @@ def _run_node_bootstrap(func: str, *, timeout: int, **extra_env: str) -> bool:
             capture_output=True, timeout=timeout, check=False,
         )
     except (OSError, subprocess.SubprocessError):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 result.returncode == 0
     return result.returncode == 0
 
 
+# ┌── 函数 def bootstrap_hermes_managed_node()
+# │  作用：Install a Hermes-managed Node tree under ``$HERMES_HOME/node`` and return its npm path.
+# │  参数：无
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def bootstrap_hermes_managed_node() -> str | None:
     """Install a Hermes-managed Node tree under ``$HERMES_HOME/node`` and return its npm path.
 
@@ -635,6 +964,7 @@ def bootstrap_hermes_managed_node() -> str | None:
     """
     existing = find_hermes_node_executable("npm")
     if existing:
+        # ⤷ 出口 return：返回 existing
         return existing
     if sys.platform == "win32":
         ok = _heal_managed_node_windows()
@@ -642,10 +972,17 @@ def bootstrap_hermes_managed_node() -> str | None:
         # HERMES_NODE_SKIP_LINKS=1 keeps node/npm/npx out of ~/.local/bin: never shadow the user toolchain.
         ok = _run_node_bootstrap("_nb_install_bundled_node", timeout=600, HERMES_NODE_SKIP_LINKS="1")
     if not ok:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 _first_runnable_managed(_candidate_node_command_names('npm')…
     return _first_runnable_managed(_candidate_node_command_names("npm"))[0]
 
 
+# ┌── 函数 def heal_hermes_managed_node()
+# │  作用：Redownload Hermes-managed Node when the tree exists but is broken; at most once per process.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def heal_hermes_managed_node() -> bool:
     """Redownload Hermes-managed Node when the tree exists but is broken; at most once per process.
 
@@ -654,38 +991,58 @@ def heal_hermes_managed_node() -> bool:
     POSIX installs shell out to ``heal_managed_node`` in ``scripts/lib/node-bootstrap.sh``; Windows
     downloads the portable zip directly (same source as ``install.ps1``). See #80926.
     """
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _managed_node_heal_attempted
     if _managed_node_heal_attempted or not hermes_managed_node_tree_present():
+        # ⤷ 出口 return：返回 False
         return False
     if sys.platform == "win32":
         result = _heal_managed_node_windows()
     else:
         result = _run_node_bootstrap("heal_managed_node", timeout=300)
     if result is None:  # in-use deferral: leave the attempt flag clear
+        # ⤷ 出口 return：返回 False
         return False
     _managed_node_heal_attempted = True
+    # ⤷ 出口 return：返回 bool(result)
     return bool(result)
 
 
+# ┌── 函数 def _managed_node_tree_outdated()
+# │  作用：True when the managed node runs but is below the target major (heals like a broken tree).
+# │  参数：home: Path | None = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _managed_node_tree_outdated(home: Path | None = None) -> bool:
     """True when the managed node runs but is below the target major (heals like a broken tree)."""
     for candidate in _iter_managed_node_candidates(_candidate_node_command_names("node"), home):
         result = _run_version_probe([str(candidate), "--version"])
         if result is None:
+            # ⤷ 出口 return：返回 False
             return False  # broken, not outdated — the runnable probe handles it
+        # ⤷ 关键分支 try/except：捕获 (ValueError, IndexError)，出错走兜底而不是崩溃。
         try:
             version = result.stdout.decode().strip().lstrip("v")
             major = int(version.split(".")[0])
         except (ValueError, IndexError):
+            # ⤷ 出口 return：返回 False
             return False
         # A pre-release is outdated whatever its major: nodejs.org publishes headers only for
         # final releases, so node-gyp cannot build node-pty. Mirrors node_satisfies_build() in install.sh.
         if "-" in version:
+            # ⤷ 出口 return：返回 True
             return True
+        # ⤷ 出口 return：返回 major < _HERMES_NODE_TARGET_MAJOR
         return major < _HERMES_NODE_TARGET_MAJOR
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def find_hermes_node_executable()
+# │  作用：Hermes-managed Node/npm path, healing broken/outdated trees; heal failure still returns old Node.
+# │  参数：command: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def find_hermes_node_executable(command: str) -> str | None:
     """Hermes-managed Node/npm path, healing broken/outdated trees; heal failure still returns old Node."""
     names = _candidate_node_command_names(command)
@@ -694,25 +1051,41 @@ def find_hermes_node_executable(command: str) -> str | None:
     if needs_heal and heal_hermes_managed_node():
         healed, _ = _first_runnable_managed(names)
         if healed:
+            # ⤷ 出口 return：返回 healed
             return healed
+    # ⤷ 出口 return：返回 resolved
     return resolved
 
 
+# ┌── 函数 def find_node_executable_on_path()
+# │  作用：Node/npm from PATH; on Windows prefer ``.cmd``/``.exe`` (CreateProcess cannot run the bare shim).
+# │  参数：command: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def find_node_executable_on_path(command: str) -> str | None:
     """Node/npm from PATH; on Windows prefer ``.cmd``/``.exe`` (CreateProcess cannot run the bare shim)."""
     if sys.platform != "win32":
+        # ⤷ 出口 return：返回 shutil.which(command)
         return shutil.which(command)
     command_str = str(command)
     if any(sep and sep in command_str for sep in (os.sep, os.altsep, "/", "\\")):
+        # ⤷ 出口 return：返回 command_str if Path(command_str).is_file() else None
         return command_str if Path(command_str).is_file() else None
     directories = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d]
     for name in _candidate_node_command_names(command_str):
         for directory in directories:
             if (Path(directory) / name).is_file():
+                # ⤷ 出口 return：返回 str(Path(directory) / name)
                 return str(Path(directory) / name)
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def find_node_executable()
+# │  作用：Resolve a Node command, preferring a healthy managed install.
+# │  参数：command: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def find_node_executable(command: str) -> str | None:
     """Resolve a Node command, preferring a healthy managed install.
 
@@ -720,12 +1093,20 @@ def find_node_executable(command: str) -> str | None:
     """
     managed = find_hermes_node_executable(command)
     if managed:
+        # ⤷ 出口 return：返回 managed
         return managed
     if hermes_managed_node_tree_present():
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 find_node_executable_on_path(command)
     return find_node_executable_on_path(command)
 
 
+# ┌── 函数 def with_hermes_node_path()
+# │  作用：Return *env* with Hermes-managed Node directories prepended to PATH.
+# │  参数：env: dict[str, str] | None = None
+# │  返回：dict[str, str]
+# └──────────────────────────────────────────────────────────────
 def with_hermes_node_path(env: dict[str, str] | None = None) -> dict[str, str]:
     """Return *env* with Hermes-managed Node directories prepended to PATH."""
     merged = dict(os.environ if env is None else env)
@@ -734,9 +1115,15 @@ def with_hermes_node_path(env: dict[str, str] | None = None) -> dict[str, str]:
         if entry not in parts:
             parts.insert(0, entry)
     merged["PATH"] = os.pathsep.join(parts)
+    # ⤷ 出口 return：返回 merged
     return merged
 
 
+# ┌── 函数 def agent_browser_runnable()
+# │  作用：True when *path* is an agent-browser CLI that runs (``--version`` exits 0) or the npx fallback.
+# │  参数：path: str | None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def agent_browser_runnable(path: str | None) -> bool:
     """True when *path* is an agent-browser CLI that runs (``--version`` exits 0) or the npx fallback.
 
@@ -749,56 +1136,89 @@ def agent_browser_runnable(path: str | None) -> bool:
     #48521). Callers that trust such a path silently break every browser tool.
     """
     if not path:
+        # ⤷ 出口 return：返回 False
         return False
     # The npx fallback is a two-token command string, not a path; npx validates at run time.
     if " " in path and path.split()[0].endswith("npx"):
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 _is_executable_file(path) and _version_probe_ok(path)
     return _is_executable_file(path) and _version_probe_ok(path)
 
 
+# ┌── 函数 def _legacy_path_has_content()
+# │  作用：True iff *path* is a non-directory file or a populated directory.
+# │  参数：path: Path
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _legacy_path_has_content(path: Path) -> bool:
     """True iff *path* is a non-directory file or a populated directory.
 
     Non-not-found ``OSError`` means "assume occupied" (never orphan legacy data). Symlinks are
     judged on their target; a dangling one does NOT count.
     """
+    # ⤷ 关键分支 try/except：捕获 FileNotFoundError、OSError，出错走兜底而不是崩溃。
     try:
         st = path.lstat()
         if stat.S_ISLNK(st.st_mode):
             st = path.stat()  # judge a symlink on its target; dangling → FileNotFoundError
     except FileNotFoundError:
+        # ⤷ 出口 return：返回 False
         return False
     except OSError:  # e.g. PermissionError on a parent: assume occupied
+        # ⤷ 出口 return：返回 True
         return True
     if not stat.S_ISDIR(st.st_mode):
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 关键分支 try/except：捕获 StopIteration、OSError，出错走兜底而不是崩溃。
     try:
         next(path.iterdir())
     except StopIteration:
         return False
     except OSError:
         pass
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def display_hermes_home()
+# │  作用：User-facing ``~/`` display string for HERMES_HOME (``~/.hermes/profiles/coder``).
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def display_hermes_home() -> str:
     """User-facing ``~/`` display string for HERMES_HOME (``~/.hermes/profiles/coder``)."""
     home = get_hermes_home()
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:  # as_posix(): str() on Windows yields chimeras like ~/AppData\Local\hermes/skills/
+        # ⤷ 出口 return：返回 '~/' + home.relative_to(Path.home()).as_posix()
         return "~/" + home.relative_to(Path.home()).as_posix()
     except ValueError:
+        # ⤷ 出口 return：返回 str(home)
         return str(home)
 
 
+# ┌── 函数 def profile_cli_selector()
+# │  作用：``-p <name> `` (trailing space) pinning copy-pasteable ``hermes ...`` guidance to the
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def profile_cli_selector() -> str:
     """``-p <name> `` (trailing space) pinning copy-pasteable ``hermes ...`` guidance to the
     active NAMED profile, else ``""``: a bare ``hermes`` follows the sticky ``active_profile``
     file, which can name a different database than the one that failed (#105887). A custom
     home outside the profile tree has no selector (only HERMES_HOME names it)."""
     name = profile_name_for_home(get_hermes_home())
+    # ⤷ 出口 return：返回 f'-p {name} ' if name and name != 'default' else ''
     return f"-p {name} " if name and name != "default" else ""
 
 
+# ┌── 函数 def secure_parent_dir()
+# │  作用：Chmod ``0o700`` on *path*'s parent, refusing ``/`` and top-level dirs (misresolved HERMES_HOME).
+# │  参数：path: Path
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def secure_parent_dir(path: Path) -> None:
     """Chmod ``0o700`` on *path*'s parent, refusing ``/`` and top-level dirs (misresolved HERMES_HOME)."""
     parent = path.parent.resolve()
@@ -820,35 +1240,68 @@ def secure_parent_dir(path: Path) -> None:
         os.chmod(parent, 0o700)
 
 
+# ┌── 函数 def _norm_home_path()
+# │  作用：Return a comparable absolute path string, or ``""`` for empty input.
+# │  参数：path: str | None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _norm_home_path(path: str | None) -> str:
     """Return a comparable absolute path string, or ``""`` for empty input."""
     raw = (path or "").strip()
     if not raw:
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 os.path.normcase(os.path.abspath(os.path.expanduser(raw)))
         return os.path.normcase(os.path.abspath(os.path.expanduser(raw)))
     except Exception:
+        # ⤷ 出口 return：返回 os.path.normcase(raw)
         return os.path.normcase(raw)
 
 
+# ┌── 函数 def _profile_home_path()
+# │  作用：Return ``{HERMES_HOME}/home`` when the profile-home directory exists.
+# │  参数：env: dict[str, str] | None = None
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _profile_home_path(env: dict[str, str] | None = None) -> str | None:
     """Return ``{HERMES_HOME}/home`` when the profile-home directory exists."""
     hermes_home = get_hermes_home_override() or (env or {}).get("HERMES_HOME") or os.getenv("HERMES_HOME")
     if not hermes_home:
+        # ⤷ 出口 return：返回 None
         return None
     profile_home = os.path.join(hermes_home, "home")
+    # ⤷ 出口 return：返回 profile_home if os.path.isdir(profile_home) else None
     return profile_home if os.path.isdir(profile_home) else None
 
 
+# ┌── 函数 def _is_profile_home()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：candidate: str | None, profile_home: str | None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_profile_home(candidate: str | None, profile_home: str | None) -> bool:
+    # ⤷ 出口 return：返回 bool(candidate and profile_home and (_norm_home_path(candida…
     return bool(candidate and profile_home and _norm_home_path(candidate) == _norm_home_path(profile_home))
 
 
+# ┌── 函数 def _env_get()
+# │  作用：Stripped *key* from *env*, falling back to the process environment.
+# │  参数：env: dict[str, str], key: str, default: str = ''
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _env_get(env: dict[str, str], key: str, default: str = "") -> str:
     """Stripped *key* from *env*, falling back to the process environment."""
+    # ⤷ 出口 return：返回 str(env.get(key) or os.getenv(key, default)).strip()
     return str(env.get(key) or os.getenv(key, default)).strip()
 
 
+# ┌── 函数 def _iter_real_home_candidates()
+# │  作用：Return likely OS-user home candidates in trust order.
+# │  参数：env: dict[str, str] | None = None
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _iter_real_home_candidates(env: dict[str, str] | None = None) -> list[str]:
     """Return likely OS-user home candidates in trust order."""
     env = env or {}
@@ -863,9 +1316,15 @@ def _iter_real_home_candidates(env: dict[str, str] | None = None) -> list[str]:
     expanded = os.path.expanduser("~")
     if expanded != "~":
         candidates.append(expanded)
+    # ⤷ 出口 return：返回 [c for c in candidates if c]
     return [c for c in candidates if c]
 
 
+# ┌── 函数 def get_real_home()
+# │  作用：The OS user's real home, avoiding the Hermes profile HOME.
+# │  参数：env: dict[str, str] | None = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def get_real_home(env: dict[str, str] | None = None) -> str:
     """The OS user's real home, avoiding the Hermes profile HOME.
 
@@ -880,7 +1339,9 @@ def get_real_home(env: dict[str, str] | None = None) -> str:
             continue
         seen.add(key)
         if not _is_profile_home(candidate, profile_home):
+            # ⤷ 出口 return：返回 candidate
             return candidate
+    # ⤷ 出口 return：返回 '/tmp'
     return "/tmp"
 
 
@@ -888,6 +1349,11 @@ _HOME_MODE_ALIASES = {"isolated": "profile", "profile_home": "profile", "profile
                       "host": "real", "user": "real", "real_home": "real", "real-home": "real"}
 
 
+# ┌── 函数 def get_subprocess_home()
+# │  作用：Subprocess ``HOME`` override, or ``None``.
+# │  参数：env: dict[str, str] | None = None
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def get_subprocess_home(env: dict[str, str] | None = None) -> str | None:
     """Subprocess ``HOME`` override, or ``None``.
 
@@ -900,20 +1366,30 @@ def get_subprocess_home(env: dict[str, str] | None = None) -> str | None:
     mode = _HOME_MODE_ALIASES.get(mode, mode)
 
     if mode == "profile":
+        # ⤷ 出口 return：返回 profile_home
         return profile_home
     real_home = get_real_home(env)
     current_home = _env_get(env, "HOME")
     repaired = real_home if _norm_home_path(real_home) != _norm_home_path(current_home) else None
     if mode == "real":
+        # ⤷ 出口 return：返回 repaired
         return repaired
 
     if profile_home and is_container():
+        # ⤷ 出口 return：返回 profile_home
         return profile_home
     if _is_profile_home(current_home, profile_home):
+        # ⤷ 出口 return：返回 repaired
         return repaired
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def apply_subprocess_home_env()
+# │  作用：Apply Hermes' subprocess HOME contract to *env* in-place.
+# │  参数：env: dict[str, str]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def apply_subprocess_home_env(env: dict[str, str]) -> None:
     """Apply Hermes' subprocess HOME contract to *env* in-place."""
     real_home = get_real_home(env)
@@ -927,6 +1403,11 @@ def apply_subprocess_home_env(env: dict[str, str]) -> None:
 VALID_REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 
 
+# ┌── 函数 def parse_reasoning_effort()
+# │  作用：Parse a reasoning effort level into a config dict.
+# │  参数：effort
+# │  返回：dict | None
+# └──────────────────────────────────────────────────────────────
 def parse_reasoning_effort(effort) -> dict | None:
     """Parse a reasoning effort level into a config dict.
 
@@ -934,15 +1415,24 @@ def parse_reasoning_effort(effort) -> dict | None:
     "none"/"false"/"disabled"/YAML False — ``reasoning_effort: false`` must mean disabled.
     """
     if effort is None or effort is True:
+        # ⤷ 出口 return：返回 None
         return None
     effort = str(effort).strip().lower()  # False -> "false" -> disabled; "" matches neither set
     if effort in {"none", "false", "disabled"}:
+        # ⤷ 出口 return：返回 {'enabled': False}
         return {"enabled": False}
     if effort in VALID_REASONING_EFFORTS:
+        # ⤷ 出口 return：返回 {'enabled': True, 'effort': effort}
         return {"enabled": True, "effort": effort}
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _canonical_model_variants()
+# │  作用：Spelling variants for tolerant override matching, exact first, deduped in order.
+# │  参数：model: str
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _canonical_model_variants(model: str) -> list[str]:
     """Spelling variants for tolerant override matching, exact first, deduped in order.
 
@@ -977,37 +1467,59 @@ def _canonical_model_variants(model: str) -> list[str]:
     known_aggregators = ('openrouter', 'opencode', 'fireworks', 'groq', 'together')
     for v in [v for v in variants if v.count('/') == 1]:
         _add(*(f"{agg}/{v}" for agg in known_aggregators))
+    # ⤷ 出口 return：返回 variants
     return variants
 
 
+# ┌── 函数 def resolve_per_model_reasoning_effort()
+# │  作用：Per-model reasoning_effort override with spelling tolerance; first non-None parse wins.
+# │  参数：model: str, overrides: dict | None
+# │  返回：dict | None
+# └──────────────────────────────────────────────────────────────
 def resolve_per_model_reasoning_effort(model: str, overrides: dict | None) -> dict | None:
     """Per-model reasoning_effort override with spelling tolerance; first non-None parse wins.
 
     Order: exact → dots↔dashes → provider stripped → aggregator stripped → known prefixes added.
     """
     if not overrides or not isinstance(overrides, dict) or not model:
+        # ⤷ 出口 return：返回 None
         return None
     for variant in _canonical_model_variants(model):
         if variant in overrides:
             result = parse_reasoning_effort(overrides[variant])
             if result is not None:
+                # ⤷ 出口 return：返回 result
                 return result
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def resolve_per_model_provider_routing()
+# │  作用：``provider_routing.models.<id>`` entry for *model*, spelling-tolerant like
+# │  参数：model: str, models: dict | None
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def resolve_per_model_provider_routing(model: str, models: dict | None) -> dict:
     """``provider_routing.models.<id>`` entry for *model*, spelling-tolerant like
     ``reasoning_overrides``; ``{}`` when none matches. Only the keys a user sets per model
     are returned so unset ones fall through to the flat ``provider_routing`` values."""
     if not model or not isinstance(models, dict):
+        # ⤷ 出口 return：返回 {}
         return {}
     for variant in _canonical_model_variants(model):
         entry = models.get(variant)
         if isinstance(entry, dict):
+            # ⤷ 出口 return：返回 entry
             return entry
+    # ⤷ 出口 return：返回 {}
     return {}
 
 
+# ┌── 函数 def resolve_reasoning_config()
+# │  作用：Effective reasoning config for *model*: per-model override, then global ``agent.reasoning_effort``.
+# │  参数：cfg: dict | None, model: str = ''
+# │  返回：dict | None
+# └──────────────────────────────────────────────────────────────
 def resolve_reasoning_config(cfg: dict | None, model: str = "") -> dict | None:
     """Effective reasoning config for *model*: per-model override, then global ``agent.reasoning_effort``.
 
@@ -1023,6 +1535,7 @@ def resolve_reasoning_config(cfg: dict | None, model: str = "") -> dict | None:
         model = model_cfg.strip() if isinstance(model_cfg, str) else ""
     per_model = resolve_per_model_reasoning_effort(model, agent_cfg.get("reasoning_overrides") or {})
     if per_model is not None:
+        # ⤷ 出口 return：返回 per_model
         return per_model
 
     # Keep the raw value: ``or ""`` would turn a YAML False into "" and silently re-enable thinking.
@@ -1031,84 +1544,145 @@ def resolve_reasoning_config(cfg: dict | None, model: str = "") -> dict | None:
     if effort and str(effort).strip() and result is None:
         import logging
         logging.getLogger(__name__).warning("Unknown reasoning_effort '%s', using default (medium)", effort)
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def is_termux()
+# │  作用：True inside Termux (Android): ``TERMUX_VERSION`` or the Termux-specific ``PREFIX`` path.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_termux() -> bool:
     """True inside Termux (Android): ``TERMUX_VERSION`` or the Termux-specific ``PREFIX`` path."""
     prefix = os.getenv("PREFIX", "")
+    # ⤷ 出口 return：返回 bool(os.getenv('TERMUX_VERSION') or 'com.termux/files/usr' i…
     return bool(os.getenv("TERMUX_VERSION") or "com.termux/files/usr" in prefix)
 
 
 _wsl_detected: bool | None = None
 
 
+# ┌── 函数 def is_wsl()
+# │  作用：True inside WSL1/WSL2 (``microsoft`` marker in ``/proc/version``); cached per process.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_wsl() -> bool:
     """True inside WSL1/WSL2 (``microsoft`` marker in ``/proc/version``); cached per process."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _wsl_detected
     if _wsl_detected is None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             with open("/proc/version", "r", encoding="utf-8") as f:
                 _wsl_detected = "microsoft" in f.read().lower()
         except Exception:
             _wsl_detected = False
+    # ⤷ 出口 return：返回 _wsl_detected
     return _wsl_detected
 
 
+# ┌── 函数 def windows_path_to_wsl()
+# │  作用：Convert a Windows drive path (``C:\...``) to its ``/mnt/<drive>/...`` form.
+# │  参数：path: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def windows_path_to_wsl(path: str) -> str | None:
     """Convert a Windows drive path (``C:\\...``) to its ``/mnt/<drive>/...`` form."""
     match = re.match(r"^([A-Za-z]):[\\/](.*)$", str(path or "").strip())
+    # ⤷ 出口 return：返回 f"/mnt/{match.group(1).lower()}/{match.group(2).replace(chr(…
     return f"/mnt/{match.group(1).lower()}/{match.group(2).replace(chr(92), '/')}" if match else None
 
 
+# ┌── 函数 def wsl_unc_path_to_posix()
+# │  作用：Convert a ``\\wsl.localhost\<distro>\...`` (or legacy ``\\wsl$``) UNC path to POSIX.
+# │  参数：path: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def wsl_unc_path_to_posix(path: str) -> str | None:
     """Convert a ``\\\\wsl.localhost\\<distro>\\...`` (or legacy ``\\\\wsl$``) UNC path to POSIX."""
     normalized = str(path or "").strip().replace("/", "\\")
     match = re.match(r"^\\\\wsl(?:\.localhost|\$)\\[^\\]+\\(.*)$", normalized, re.IGNORECASE)
+    # ⤷ 出口 return：返回 '/' + match.group(1).replace('\\', '/') if match else None
     return "/" + match.group(1).replace("\\", "/") if match else None
 
 
+# ┌── 函数 def translate_cwd_for_wsl_backend()
+# │  作用：Map a Windows-host cwd (drive path or ``\\wsl.localhost\`` UNC) to POSIX when Hermes runs in WSL.
+# │  参数：cwd: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def translate_cwd_for_wsl_backend(cwd: str) -> str:
     """Map a Windows-host cwd (drive path or ``\\\\wsl.localhost\\`` UNC) to POSIX when Hermes runs in WSL.
 
     No-op off WSL and for paths already POSIX.
     """
     if not is_wsl():
+        # ⤷ 出口 return：返回 cwd
         return cwd
     for translator in (wsl_unc_path_to_posix, windows_path_to_wsl):
         translated = translator(cwd)
         if translated is not None:
+            # ⤷ 出口 return：返回 translated
             return translated
+    # ⤷ 出口 return：返回 cwd
     return cwd
 
 
 _container_detected: bool | None = None
 
 
+# ┌── 函数 def is_container()
+# │  作用：True inside a container (Docker/Podman/LXC/Kubernetes markers); cached per process.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_container() -> bool:
     """True inside a container (Docker/Podman/LXC/Kubernetes markers); cached per process.
 
     See: NousResearch/hermes-agent#47111
     """
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _container_detected
     if _container_detected is None:
         _container_detected = _detect_container()
+    # ⤷ 出口 return：返回 _container_detected
     return _container_detected
 
 
+# ┌── 函数 def _read_proc()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：path: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _read_proc(path: str) -> str:
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         with open(path, "r", encoding="utf-8") as f:
+            # ⤷ 出口 return：返回 f.read()
             return f.read()
     except OSError:
+        # ⤷ 出口 return：返回 ''
         return ""
 
 
+# ┌── 函数 def _proc_file_has_marker()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：path: str, markers: tuple[str, ...]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _proc_file_has_marker(path: str, markers: tuple[str, ...]) -> bool:
     content = _read_proc(path)
+    # ⤷ 出口 return：返回 any((marker in content for marker in markers))
     return any(marker in content for marker in markers)
 
 
+# ┌── 函数 def _detect_container()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _detect_container() -> bool:
     if (
         os.path.exists("/.dockerenv")
@@ -1116,35 +1690,66 @@ def _detect_container() -> bool:
         or os.environ.get("KUBERNETES_SERVICE_HOST")
         or _proc_file_has_marker("/proc/1/cgroup", ("docker", "podman", "/lxc/", "kubepods", "containerd", "crio"))
     ):
+        # ⤷ 出口 return：返回 True
         return True
     # cgroup v2: /proc/1/cgroup is just "0::/"; the runtime still shows in mountinfo — but ONLY on
     # the root ("/") mount line. A host that merely *runs* containers exposes every container's
     # overlay lowerdir (``lowerdir=/var/lib/containerd/...``) at non-root mount points, which a
     # whole-file scan misread as "inside a container" and flipped subprocess HOME (#58135).
+    # ⤷ 出口 return：返回 _root_mount_has_marker('/proc/self/mountinfo', ('kubepods', …
     return _root_mount_has_marker("/proc/self/mountinfo", ("kubepods", "containerd", "crio"))
 
 
+# ┌── 函数 def _root_mount_has_marker()
+# │  作用：mountinfo field 5 (index 4) is the mount point; only the root ("/") line is the process's own rootfs.
+# │  参数：path: str, markers: tuple[str, ...]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _root_mount_has_marker(path: str, markers: tuple[str, ...]) -> bool:
     """mountinfo field 5 (index 4) is the mount point; only the root ("/") line is the process's own rootfs."""
     root_lines = [line for line in _read_proc(path).splitlines() if len(f := line.split()) >= 5 and f[4] == "/"]
+    # ⤷ 出口 return：返回 any((marker in line for line in root_lines for marker in mar…
     return any(marker in line for line in root_lines for marker in markers)
 
 
+# ┌── 函数 def get_config_path()
+# │  作用：Return the path to ``config.yaml`` under HERMES_HOME.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_config_path() -> Path:
     """Return the path to ``config.yaml`` under HERMES_HOME."""
+    # ⤷ 出口 return：返回 get_hermes_home() / 'config.yaml'
     return get_hermes_home() / "config.yaml"
 
 
+# ┌── 函数 def get_skills_dir()
+# │  作用：Return the path to the skills directory under HERMES_HOME.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_skills_dir() -> Path:
     """Return the path to the skills directory under HERMES_HOME."""
+    # ⤷ 出口 return：返回 get_hermes_home() / 'skills'
     return get_hermes_home() / "skills"
 
 
+# ┌── 函数 def get_env_path()
+# │  作用：Return the path to the ``.env`` file under HERMES_HOME.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def get_env_path() -> Path:
     """Return the path to the ``.env`` file under HERMES_HOME."""
+    # ⤷ 出口 return：返回 get_hermes_home() / '.env'
     return get_hermes_home() / ".env"
 
 
+# ┌── 函数 def apply_ipv4_preference()
+# │  作用：Monkey-patch ``socket.getaddrinfo`` to prefer IPv4 when *force* is True.
+# │  参数：force: bool = False
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def apply_ipv4_preference(force: bool = False) -> None:
     """Monkey-patch ``socket.getaddrinfo`` to prefer IPv4 when *force* is True.
 
@@ -1162,10 +1767,14 @@ def apply_ipv4_preference(force: bool = False) -> None:
 
     def _ipv4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
         if family == 0:  # AF_UNSPEC — caller didn't request a specific family
+            # ⤷ 关键分支 try/except：捕获 socket.gaierror，出错走兜底而不是崩溃。
             try:
+                # ⤷ 出口 return：返回 _original_getaddrinfo(host, port, socket.AF_INET, type, prot…
                 return _original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
             except socket.gaierror:  # no A record — pure-IPv6 host
+                # ⤷ 出口 return：返回 _original_getaddrinfo(host, port, family, type, proto, flags…
                 return _original_getaddrinfo(host, port, family, type, proto, flags)
+        # ⤷ 出口 return：返回 _original_getaddrinfo(host, port, family, type, proto, flags…
         return _original_getaddrinfo(host, port, family, type, proto, flags)
     _ipv4_getaddrinfo._hermes_ipv4_patched = True  # type: ignore[attr-defined]
     socket.getaddrinfo = _ipv4_getaddrinfo  # type: ignore[assignment]
@@ -1192,6 +1801,11 @@ OPENROUTER_VARIANT_SUFFIXES: frozenset[str] = frozenset(
 )
 
 
+# ┌── 函数 def openrouter_variant_base()
+# │  作用：Return the base model id when ``model_id`` carries a recognized
+# │  参数：model_id: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def openrouter_variant_base(model_id: str) -> str | None:
     """Return the base model id when ``model_id`` carries a recognized
     OpenRouter routing-variant suffix (e.g. ``x-ai/grok-4:nitro`` →
@@ -1210,15 +1824,23 @@ def openrouter_variant_base(model_id: str) -> str | None:
     """
     base, sep, suffix = (model_id or "").rpartition(":")
     if not sep or not base:
+        # ⤷ 出口 return：返回 None
         return None
     if suffix.lower() in OPENROUTER_VARIANT_SUFFIXES:
+        # ⤷ 出口 return：返回 base
         return base
+    # ⤷ 出口 return：返回 None
     return None
 
 
 AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1"
 
 
+# ┌── 函数 def venv_bin_dir()
+# │  作用：Venv executable dir (``Scripts``/``bin``); *windows* lets tests exercise Windows paths on Linux.
+# │  参数：venv_dir, windows: bool | None = ...
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def venv_bin_dir(venv_dir, *, windows: bool | None = None) -> Path:
     """Venv executable dir (``Scripts``/``bin``); *windows* lets tests exercise Windows paths on Linux.
 
@@ -1232,9 +1854,15 @@ def venv_bin_dir(venv_dir, *, windows: bool | None = None) -> Path:
     it — convert them as they are touched.
     """
     windows = sys.platform == "win32" if windows is None else windows
+    # ⤷ 出口 return：返回 Path(venv_dir) / ('Scripts' if windows else 'bin')
     return Path(venv_dir) / ("Scripts" if windows else "bin")
 
 
+# ┌── 函数 def project_venv_dir()
+# │  作用：The project's ``venv`` or ``.venv`` dir when one exists (``uv venv`` defaults to ``.venv``).
+# │  参数：project_root
+# │  返回：Path | None
+# └──────────────────────────────────────────────────────────────
 def project_venv_dir(project_root) -> Path | None:
     """The project's ``venv`` or ``.venv`` dir when one exists (``uv venv`` defaults to ``.venv``).
 
@@ -1244,12 +1872,19 @@ def project_venv_dir(project_root) -> Path | None:
     what the installers write.
     """
     root = Path(project_root)
+    # ⤷ 出口 return：返回 next((root / n for n in ('venv', '.venv') if (root / n).is_d…
     return next((root / n for n in ("venv", ".venv") if (root / n).is_dir()), None)
 
 
+# ┌── 函数 def venv_python_path()
+# │  作用：Path to the Python interpreter inside *venv_dir* (may not exist).
+# │  参数：venv_dir, windows: bool | None = ...
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def venv_python_path(venv_dir, *, windows: bool | None = None) -> Path:
     """Path to the Python interpreter inside *venv_dir* (may not exist)."""
     bin_dir = venv_bin_dir(venv_dir, windows=windows)
+    # ⤷ 出口 return：返回 bin_dir / ('python.exe' if bin_dir.name == 'Scripts' else 'p…
     return bin_dir / ("python.exe" if bin_dir.name == "Scripts" else "python")
 
 
@@ -1261,18 +1896,31 @@ FIRST_PARTY_MODULE_ROOTS = frozenset({
 })
 
 
+# ┌── 函数 def is_first_party_module()
+# │  作用：True when *name* ships with Hermes (exact first segment; ``startswith`` would claim ``agentops``).
+# │  参数：name: str | None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_first_party_module(name: str | None) -> bool:
     """True when *name* ships with Hermes (exact first segment; ``startswith`` would claim ``agentops``)."""
     root = str(name).split(".")[0] if name else ""
+    # ⤷ 出口 return：返回 bool(root) and (root in FIRST_PARTY_MODULE_ROOTS or root.sta…
     return bool(root) and (root in FIRST_PARTY_MODULE_ROOTS or root.startswith("hermes_"))
 
 
+# ┌── 函数 def partial_update_hint()
+# │  作用：Recovery guidance lines when *exc* looks like a half-updated tree, else ``[]``.
+# │  参数：exc: BaseException
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def partial_update_hint(exc: BaseException) -> list[str]:
     """Recovery guidance lines when *exc* looks like a half-updated tree, else ``[]``."""
     # A missing third-party dep (bad venv, missing extra) is a different problem.
     if (not isinstance(exc, ImportError) or isinstance(exc, ModuleNotFoundError)
             or not is_first_party_module(getattr(exc, "name", None))):
+        # ⤷ 出口 return：返回 []
         return []
+    # ⤷ 出口 return：返回 ['', 'This looks like a partially-updated install: one modul…
     return [
         "",
         "This looks like a partially-updated install: one module was refreshed "
@@ -1283,11 +1931,18 @@ def partial_update_hint(exc: BaseException) -> list[str]:
     ]
 
 
+# ┌── 函数 def emit_partial_update_hint()
+# │  作用：Print recovery guidance for a half-updated tree.
+# │  参数：exc: BaseException, file = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def emit_partial_update_hint(exc: BaseException, *, file=None) -> bool:
     """Print recovery guidance for a half-updated tree."""
     lines = partial_update_hint(exc)
     if not lines:
+        # ⤷ 出口 return：返回 False
         return False
     for line in (f"Error: {exc}", *lines):
         print(line, file=sys.stderr if file is None else file)
+    # ⤷ 出口 return：返回 True
     return True

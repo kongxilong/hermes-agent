@@ -3,6 +3,29 @@
 All functions are stateless; AIAgent._build_system_prompt() combines the pieces
 with memory and ephemeral prompts.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/prompt_builder.py（约 1640 行）
+# 地位：系统提示词（system prompt）的组装工厂。
+#
+# 它做什么：把「身份设定 + 平台提示 + 技能清单 + 项目上下文文件」拼成一段给模型看的系统提示词。
+#   这里所有函数都是无状态的（stateless）：给什么输入就返回什么字符串，不依赖 AIAgent 实例。
+#
+# 你会在这里看到 Agent 工程的一个关键实践：
+#   build_memory_guidance()         记忆系统的使用说明（告诉模型怎么用 memory 工具）
+#   execution_guidance_text()       执行规范（告诉模型怎么调工具、怎么避免死循环）
+#   build_skills_system_prompt()    扫描 skills 目录，把可用技能列成索引给模型看
+#   build_context_files_prompt()    读取项目里的 SOUL.md / AGENTS.md / CLAUDE.md / .cursorrules
+#                                   （这些是「项目级指令文件」，业界通用做法）
+#   build_environment_hints()       告诉模型当前运行环境是什么（本地？docker？ssh？）
+#
+# 有意思的细节：
+#   - 技能清单会做快照缓存（_load_skills_snapshot / _skills_prompt_snapshot_path），避免每次都扫盘。
+#   - 上下文文件有字符预算（_dynamic_context_file_max_chars），模型上下文越大才允许塞越多内容。
+#   - 读取文件带超时（_read_text_with_timeout），防止某个文件卡住整个启动。
+# ==========================================================================
+#
 
 import contextvars
 import json
@@ -41,14 +64,26 @@ logger = logging.getLogger(__name__)
 _CONTEXT_FILE_READ_TIMEOUT_SECS = 5.0
 
 
+# ┌── 函数 def _get_context_file_read_timeout()
+# │  作用：``context_file_read_timeout`` from config.yaml, else the 5s default.
+# │  参数：无
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _get_context_file_read_timeout() -> float:
     """``context_file_read_timeout`` from config.yaml, else the 5s default."""
     val = _config_readonly("context_file_read_timeout").get("context_file_read_timeout")
     if isinstance(val, (int, float)) and val > 0:
+        # ⤷ 出口 return：返回 float(val)
         return float(val)
+    # ⤷ 出口 return：返回 _CONTEXT_FILE_READ_TIMEOUT_SECS
     return _CONTEXT_FILE_READ_TIMEOUT_SECS
 
 
+# ┌── 函数 def _read_text_with_timeout()
+# │  作用：``path.read_text()`` on a daemon thread so a slow file can't stall startup.
+# │  参数：path: Path, timeout: Optional[float] = None
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _read_text_with_timeout(path: Path, timeout: Optional[float] = None) -> Optional[str]:
     """``path.read_text()`` on a daemon thread so a slow file can't stall startup.
 
@@ -62,22 +97,32 @@ def _read_text_with_timeout(path: Path, timeout: Optional[float] = None) -> Opti
     result: "queue.Queue[tuple[bool, object]]" = queue.Queue(maxsize=1)
 
     def _reader() -> None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             result.put((True, path.read_text(encoding="utf-8")))
         except Exception as exc:  # re-raised on the caller thread
             result.put((False, exc))
 
     threading.Thread(target=_reader, daemon=True, name=f"context-read:{path.name}").start()
+    # ⤷ 关键分支 try/except：捕获 queue.Empty，出错走兜底而不是崩溃。
     try:
         ok, value = result.get(timeout=timeout)
     except queue.Empty:
         logger.warning("Context file %s read timed out after %.1fs; skipping", path, timeout)
+        # ⤷ 出口 return：返回 None
         return None
     if ok:
+        # ⤷ 出口 return：返回 value
         return value  # type: ignore[return-value]
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise value  # type: ignore[misc]
 
 
+# ┌── 函数 def _scan_context_content()
+# │  作用：Scan a context file (AGENTS.md, .cursorrules, SOUL.md) for injection; matches are BLOCKED.
+# │  参数：content: str, filename: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _scan_context_content(content: str, filename: str) -> str:
     """Scan a context file (AGENTS.md, .cursorrules, SOUL.md) for injection; matches are BLOCKED.
 
@@ -90,24 +135,45 @@ def _scan_context_content(content: str, filename: str) -> str:
     findings = _scan_for_threats(content, scope="context")
     if findings:
         logger.warning("Context file %s blocked: %s", filename, ", ".join(findings))
+        # ⤷ 出口 return：返回 f"[BLOCKED: {filename} contained potential prompt injection …
         return f"[BLOCKED: {filename} contained potential prompt injection ({', '.join(findings)}). Content not loaded.]"
+    # ⤷ 出口 return：返回 content
     return content
 
 
+# ┌── 函数 def _find_git_root()
+# │  作用：Nearest ancestor (or *start* itself) containing ``.git``, else None.
+# │  参数：start: Path
+# │  返回：Optional[Path]
+# └──────────────────────────────────────────────────────────────
 def _find_git_root(start: Path) -> Optional[Path]:
     """Nearest ancestor (or *start* itself) containing ``.git``, else None."""
     current = start.resolve()
     # A parent the process may not stat (locked-down /home on shared hosts) is "no .git here", not a crash.
+    # ⤷ 出口 return：返回 next((p for p in (current, *current.parents) if _exists_or_d…
     return next((p for p in (current, *current.parents) if _exists_or_denied(p / ".git")), None)
 
 
+# ┌── 函数 def _exists_or_denied()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：path: Path
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _exists_or_denied(path: Path) -> bool:
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 path.exists()
         return path.exists()
     except OSError:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _find_hermes_md()
+# │  作用：Nearest ``.hermes.md`` / ``HERMES.md`` from *cwd* up to the git root, else None.
+# │  参数：cwd: Path
+# │  返回：Optional[Path]
+# └──────────────────────────────────────────────────────────────
 def _find_hermes_md(cwd: Path) -> Optional[Path]:
     """Nearest ``.hermes.md`` / ``HERMES.md`` from *cwd* up to the git root, else None."""
     stop_at = _find_git_root(cwd)
@@ -116,14 +182,22 @@ def _find_hermes_md(cwd: Path) -> Optional[Path]:
     for directory in [current, *current.parents] if stop_at else [current]:
         found = next((directory / n for n in (".hermes.md", "HERMES.md") if (directory / n).is_file()), None)
         if found or directory == stop_at:
+            # ⤷ 出口 return：返回 found
             return found
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _strip_yaml_frontmatter()
+# │  作用：Drop optional ``---`` YAML frontmatter so only the markdown body is injected.
+# │  参数：content: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _strip_yaml_frontmatter(content: str) -> str:
     """Drop optional ``---`` YAML frontmatter so only the markdown body is injected."""
     content = content.lstrip("\ufeff")
     end = content.find("\n---", 3) if content.startswith("---") else -1
+    # ⤷ 出口 return：返回 content[end + 4:].lstrip('\n') or content if end != -1 else …
     return (content[end + 4:].lstrip("\n") or content) if end != -1 else content
 
 
@@ -160,11 +234,17 @@ HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS = (
 
 
 # Keep the every-session memory scope even when task knowledge cannot be saved as a skill.
+# ┌── 函数 def build_memory_guidance()
+# │  作用：Adapt store and skill-write guidance without widening what belongs in memory.
+# │  参数：memory_enabled: bool = True, profile_enabled: bool = True, skill_manage_available: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def build_memory_guidance(
     memory_enabled: bool = True, profile_enabled: bool = True, *, skill_manage_available: bool = True,
 ) -> str:
     """Adapt store and skill-write guidance without widening what belongs in memory."""
     if not memory_enabled and not profile_enabled:
+        # ⤷ 出口 return：返回 ''
         return ""
     if memory_enabled:
         frame = (
@@ -187,6 +267,7 @@ def build_memory_guidance(
         "and corrections for that kind of work — belongs in skills, not in memory, "
         "even when skill writing is unavailable. "
     )
+    # ⤷ 出口 return：返回 frame + skill_routing + "Memory is the narrow exception for …
     return frame + skill_routing + (
         "Memory is the narrow exception for facts that apply to EVERY "
         "session regardless of task (who the user is, environment facts, "
@@ -466,6 +547,11 @@ OPENAI_MODEL_EXECUTION_GUIDANCE = (
 )
 
 
+# ┌── 函数 def execution_guidance_text()
+# │  作用：OPENAI_MODEL_EXECUTION_GUIDANCE for the session's toolset (cache-safe: the toolset is fixed per session).
+# │  参数：valid_tool_names = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def execution_guidance_text(valid_tool_names=None) -> str:
     """OPENAI_MODEL_EXECUTION_GUIDANCE for the session's toolset (cache-safe: the toolset is fixed per session).
 
@@ -475,6 +561,7 @@ def execution_guidance_text(valid_tool_names=None) -> str:
     if valid_tool_names is not None and "web_search" not in valid_tool_names:
         text = text.replace("- Current facts (weather, news, versions) → use web_search\n", "")
         text = text.replace("(search_files, web_search, read_file, etc.)", "(search_files, read_file, etc.)")
+    # ⤷ 出口 return：返回 text
     return text
 
 
@@ -512,19 +599,31 @@ STEER_MARKER_OPEN = (
 STEER_MARKER_CLOSE = "[/OUT-OF-BAND USER MESSAGE]"
 
 
+# ┌── 函数 def format_steer_marker()
+# │  作用：Wrap a mid-turn steer in the self-describing marker (see note above).
+# │  参数：steer_text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def format_steer_marker(steer_text: str) -> str:
     """Wrap a mid-turn steer in the self-describing marker (see note above)."""
+    # ⤷ 出口 return：返回 f'\n\n{STEER_MARKER_OPEN}\n{steer_text}\n{STEER_MARKER_CLOSE…
     return f"\n\n{STEER_MARKER_OPEN}\n{steer_text}\n{STEER_MARKER_CLOSE}"
 
 
 STEER_DISPLAY_KIND = "steer"
 
 
+# ┌── 函数 def steer_user_row()
+# │  作用：The standalone ``role:user`` row a mid-turn /steer is delivered as (after the newest tool
+# │  参数：steer_text: str
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def steer_user_row(steer_text: str) -> Dict[str, Any]:
     """The standalone ``role:user`` row a mid-turn /steer is delivered as (after the newest tool
     result). Its own row — never smeared onto the already-persisted tool row, which append-only
     persistence would leave divergent from the live request — and typed so the alternation repair
     never merges the next real prompt into it and history renderers can label it."""
+    # ⤷ 出口 return：返回 {'role': 'user', 'content': format_steer_marker(steer_text).…
     return {"role": "user", "content": format_steer_marker(steer_text).lstrip(),
             "display_kind": STEER_DISPLAY_KIND}
 
@@ -548,6 +647,11 @@ STEER_CHANNEL_NOTE = (
 )
 
 
+# ┌── 函数 def hud_surface_note()
+# │  作用：Per-turn note for a message typed into the desktop's floating HUD ("this"/"here" = the app behind it).
+# │  参数：valid_tool_names: 'set[str] | None' = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def hud_surface_note(valid_tool_names: "set[str] | None" = None) -> str:
     """Per-turn note for a message typed into the desktop's floating HUD ("this"/"here" = the app behind it).
 
@@ -557,6 +661,7 @@ def hud_surface_note(valid_tool_names: "set[str] | None" = None) -> str:
     """
     names = valid_tool_names or set()
     if "read_window_below" not in names:
+        # ⤷ 出口 return：返回 ''
         return ""
     gated = (
         (True,
@@ -576,6 +681,7 @@ def hud_surface_note(valid_tool_names: "set[str] | None" = None) -> str:
          "user's browser rather than opening yours with browser_navigate."),
         (True, "This is a prior, not a rule: when the request names its own target, follow the request.]"),
     )
+    # ⤷ 出口 return：返回 ' '.join((text for ok, text in gated if ok))
     return " ".join(text for ok, text in gated if ok)
 
 
@@ -805,21 +911,40 @@ _BACKEND_FALLBACK_DESCRIPTIONS: dict[str, str] = {
 _BACKEND_PROBE_CACHE: dict[tuple[str, str, str], str] = {}
 
 
+# ┌── 函数 def _plugin_backend_attr()
+# │  作用：*attr* of a plugin-registered terminal backend, fail-soft (unknown backend / raising plugin -> *default*).
+# │  参数：backend: str, attr: str, default = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _plugin_backend_attr(backend: str, attr: str, default=None):
     """*attr* of a plugin-registered terminal backend, fail-soft (unknown backend / raising plugin -> *default*)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.terminal_env_registry import provider_flag
+        # ⤷ 出口 return：返回 provider_flag(backend, attr, default)
         return provider_flag(backend, attr, default)
     except Exception:
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def _plugin_backend_is_remote()
+# │  作用：Whether a plugin-registered terminal backend runs commands remotely (unknown names are local).
+# │  参数：backend: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _plugin_backend_is_remote(backend: str) -> bool:
     """Whether a plugin-registered terminal backend runs commands remotely (unknown names are local)."""
+    # ⤷ 出口 return：返回 bool(backend and backend != 'local' and (backend not in _REM…
     return bool(backend and backend != "local" and backend not in _REMOTE_TERMINAL_BACKENDS
                 and _plugin_backend_attr(backend, "is_remote", False))
 
 
+# ┌── 函数 def _windows_marketing_version()
+# │  作用："10"/"11" (``platform.release()`` says 10 for both; 11 is build >= 22000).
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _windows_marketing_version() -> str:
     """"10"/"11" (``platform.release()`` says 10 for both; 11 is build >= 22000).
 
@@ -828,10 +953,13 @@ def _windows_marketing_version() -> str:
     Windows 11 is distinguished by build number: >= 22000 is 11. Falls back to ``platform.release()`` on any
     lookup failure.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 '11' if sys.getwindowsversion().build >= 22000 else '10'
         return "11" if sys.getwindowsversion().build >= 22000 else "10"  # type: ignore[attr-defined]
     except Exception:
         import platform
+        # ⤷ 出口 return：返回 platform.release()
         return platform.release()
 
 
@@ -852,14 +980,22 @@ _WINDOWS_BASH_SHELL_HINT = (
 )
 
 
+# ┌── 函数 def _tenv_read()
+# │  作用：Scope-aware TERMINAL_* read: the multiplexing gateway's per-turn scope carries
+# │  参数：name: str, default: str = ''
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _tenv_read(name: str, default: str = "") -> str:
     """Scope-aware TERMINAL_* read: the multiplexing gateway's per-turn scope carries
     the active profile's settings (raw os.getenv could read a previous profile's value).
     Only an import failure falls back — an active refusal scope must raise."""
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         from tools.terminal_scope import terminal_env
     except ImportError:
+        # ⤷ 出口 return：返回 os.getenv(name, default)
         return os.getenv(name, default)
+    # ⤷ 出口 return：返回 terminal_env(name, default)
     return terminal_env(name, default)
 
 
@@ -873,6 +1009,11 @@ _BACKEND_PROBE_CMD = (
 )
 
 
+# ┌── 函数 def _run_backend_probe()
+# │  作用：Execute the probe command inside a freshly built backend; "" when it yields nothing.
+# │  参数：env_type: str, terminal_tool
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _run_backend_probe(env_type: str, terminal_tool) -> str:
     """Execute the probe command inside a freshly built backend; "" when it yields nothing."""
     from tools.terminal_tool_backends import _container_config_from_config, _create_environment, _ssh_config_from_config
@@ -893,21 +1034,30 @@ def _run_backend_probe(env_type: str, terminal_tool) -> str:
         # and its later __del__ would sync_back() and close the master shared with the agent's own env.
         probe_only=True,
     )
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         result = env.execute(_BACKEND_PROBE_CMD, timeout=4)
     finally:
         # One-shot `uname`; without teardown the backend leaves a second idle sandbox
         # (task_id="prompt-backend-probe") running for the whole process next to the agent's own.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _cleanup_env(env, force_remove=True)
         except Exception:
             logger.debug("Backend probe cleanup failed", exc_info=True)
     if result.get("returncode") != 0:
         logger.debug("Backend probe returned non-zero: %r", result)
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 出口 return：返回 (result.get('output') or '').strip()
     return (result.get("output") or "").strip()
 
 
+# ┌── 函数 def _format_backend_probe()
+# │  作用：Render the probe's key=value lines as an indented summary ("" if nothing usable).
+# │  参数：output: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _format_backend_probe(output: str) -> str:
     """Render the probe's key=value lines as an indented summary ("" if nothing usable)."""
     parsed = {k.strip(): v.strip() for k, _, v in (line.partition("=") for line in output.splitlines() if "=" in line)}
@@ -916,9 +1066,15 @@ def _format_backend_probe(output: str) -> str:
         ("OS", " ".join(x for x in (known("os"), known("kernel")) if x)),
         ("User", known("user")), ("Home", parsed.get("home")), ("Working directory", parsed.get("cwd")),
     )
+    # ⤷ 出口 return：返回 '\n'.join((f'  {label}: {value}' for label, value in fields …
     return "\n".join(f"  {label}: {value}" for label, value in fields if value)
 
 
+# ┌── 函数 def _probe_remote_backend()
+# │  作用：Describe the active non-local backend via a live probe; None if it failed (cached, failures included).
+# │  参数：env_type: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _probe_remote_backend(env_type: str) -> str | None:
     """Describe the active non-local backend via a live probe; None if it failed (cached, failures included)."""
     from hermes_constants import hermes_home_key
@@ -926,24 +1082,37 @@ def _probe_remote_backend(env_type: str) -> str | None:
     formatted = _BACKEND_PROBE_CACHE.get(cache_key)
     if formatted is None:
         formatted = ""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             import tools.terminal_tool as terminal_tool  # heavy; only needed for non-local backends
         except Exception as e:
             logger.debug("Backend probe unavailable (import failed): %s", e)
         else:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 formatted = _format_backend_probe(_run_backend_probe(env_type, terminal_tool))
             except Exception as e:
                 logger.debug("Backend probe failed: %s", e)
         _BACKEND_PROBE_CACHE[cache_key] = formatted
+    # ⤷ 出口 return：返回 formatted or None
     return formatted or None
 
 
+# ┌── 函数 def _clear_backend_probe_cache()
+# │  作用：Test helper — drop the backend probe cache so monkeypatched backends take effect.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _clear_backend_probe_cache() -> None:
     """Test helper — drop the backend probe cache so monkeypatched backends take effect."""
     _BACKEND_PROBE_CACHE.clear()
 
 
+# ┌── 函数 def _local_host_hints()
+# │  作用：Host OS / home / cwd block for a local terminal backend (tools run on this host).
+# │  参数：无
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _local_host_hints() -> list[str]:
     """Host OS / home / cwd block for a local terminal backend (tools run on this host)."""
     import platform
@@ -955,26 +1124,35 @@ def _local_host_hints() -> list[str]:
         else f"{platform.system()} ({platform.release()})"
     )
     host_lines = [f"Host: {host}", f"User home directory: {os.path.expanduser('~')}"]
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         host_lines.append(f"Current working directory: {resolve_agent_cwd()}")
     except OSError:
         pass
     if not (sys.platform == "win32" and not is_wsl()):
+        # ⤷ 出口 return：返回 ['\n'.join(host_lines)]
         return ["\n".join(host_lines)]
     host_lines.append(
         "Note: on Windows, the machine hostname (e.g. from `hostname` or uname) is NOT the username. "
         "Use the 'User home directory' above to construct paths under C:\\Users\\<user>\\, never the hostname."
     )
     # Windows-local terminal runs bash, not PowerShell — without this the model issues PowerShell syntax.
+    # ⤷ 出口 return：返回 ['\n'.join(host_lines), _WINDOWS_BASH_SHELL_HINT]
     return ["\n".join(host_lines), _WINDOWS_BASH_SHELL_HINT]
 
 
+# ┌── 函数 def _remote_backend_hint()
+# │  作用：Backend-only block for remote/sandbox backends (host info deliberately suppressed).
+# │  参数：backend: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _remote_backend_hint(backend: str) -> str:
     """Backend-only block for remote/sandbox backends (host info deliberately suppressed)."""
     lead = (f"Terminal backend: {backend}. Your `terminal`, `read_file`, `write_file`, `patch`, and "
             f"`search_files` tools all operate inside ")
     probe = _probe_remote_backend(backend)
     if probe:
+        # ⤷ 出口 return：返回 lead + f'this {backend} environment — NOT on the machine whe…
         return lead + (
             f"this {backend} environment — NOT on the machine where Hermes itself is running. The host OS, "
             f"home, and cwd of the Hermes process are irrelevant; only the following backend state matters:\n{probe}"
@@ -984,6 +1162,7 @@ def _remote_backend_hint(backend: str) -> str:
         or _plugin_backend_attr(backend, "env_description")
         or f"a {backend} environment (likely Linux)"
     )
+    # ⤷ 出口 return：返回 lead + f"{description} — NOT on the machine where Hermes its…
     return lead + (
         f"{description} — NOT on the machine where Hermes itself runs. The backend probe didn't respond at "
         f"prompt-build time, so the sandbox's current user, $HOME, and working directory are unknown from here. "
@@ -991,23 +1170,42 @@ def _remote_backend_hint(backend: str) -> str:
     )
 
 
+# ┌── 函数 def _config_readonly()
+# │  作用：config.yaml as a dict, or {} when unreadable (logged at debug with *what* for context).
+# │  参数：what: str
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _config_readonly(what: str) -> dict:
     """config.yaml as a dict, or {} when unreadable (logged at debug with *what* for context)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config_readonly
+        # ⤷ 出口 return：返回 load_config_readonly()
         return load_config_readonly()
     except Exception as e:
         logger.debug("Could not read %s from config: %s", what, e)
+        # ⤷ 出口 return：返回 {}
         return {}
 
 
+# ┌── 函数 def _embedder_environment_hint()
+# │  作用：Embedder-supplied environment description: HERMES_ENVIRONMENT_HINT (container ENV)
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _embedder_environment_hint() -> str:
     """Embedder-supplied environment description: HERMES_ENVIRONMENT_HINT (container ENV)
     wins over config.yaml ``agent.environment_hint``. Read once at prompt-build time."""
+    # ⤷ 出口 return：返回 (os.getenv('HERMES_ENVIRONMENT_HINT') or '').strip() or str(…
     return (os.getenv("HERMES_ENVIRONMENT_HINT") or "").strip() or str(
         (_config_readonly("agent.environment_hint").get("agent", {}) or {}).get("environment_hint", "")).strip()
 
 
+# ┌── 函数 def build_environment_hints()
+# │  作用：Execution-environment block: local backends get host OS/home/cwd; remote/sandbox
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def build_environment_hints() -> str:
     """Execution-environment block: local backends get host OS/home/cwd; remote/sandbox
     backends get ONLY the backend's own state (the agent's tools cannot touch the host).
@@ -1016,6 +1214,7 @@ def build_environment_hints() -> str:
     is_remote_backend = backend in _REMOTE_TERMINAL_BACKENDS or _plugin_backend_is_remote(backend)
     hints = [_remote_backend_hint(backend)] if is_remote_backend else _local_host_hints()
     hints += [WSL_ENVIRONMENT_HINT] if is_wsl() else []
+    # ⤷ 出口 return：返回 '\n\n'.join((h for h in (*hints, _embedder_environment_hint(…
     return "\n\n".join(h for h in (*hints, _embedder_environment_hint()) if h)
 
 
@@ -1033,17 +1232,30 @@ _CONTEXT_FILE_WINDOW_FRACTION = 0.06
 _CONTEXT_FILE_DYNAMIC_CEILING = 500_000
 
 
+# ┌── 函数 def _dynamic_context_file_max_chars()
+# │  作用：Char cap from the model's window, clamped to [20K floor, 500K ceiling]; flat default when unknown.
+# │  参数：context_length: Optional[int]
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _dynamic_context_file_max_chars(context_length: Optional[int]) -> int:
     """Char cap from the model's window, clamped to [20K floor, 500K ceiling]; flat default when unknown."""
     if not isinstance(context_length, int) or context_length <= 0:
+        # ⤷ 出口 return：返回 CONTEXT_FILE_MAX_CHARS
         return CONTEXT_FILE_MAX_CHARS
     budget = int(context_length * CHARS_PER_TOKEN * _CONTEXT_FILE_WINDOW_FRACTION)
+    # ⤷ 出口 return：返回 max(CONTEXT_FILE_MAX_CHARS, min(budget, _CONTEXT_FILE_DYNAMI…
     return max(CONTEXT_FILE_MAX_CHARS, min(budget, _CONTEXT_FILE_DYNAMIC_CEILING))
 
 
+# ┌── 函数 def _get_context_file_max_chars()
+# │  作用：Context-file truncation limit: explicit config.yaml ``context_file_max_chars`` wins, else the dynamic cap.
+# │  参数：context_length: Optional[int] = None
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _get_context_file_max_chars(context_length: Optional[int] = None) -> int:
     """Context-file truncation limit: explicit config.yaml ``context_file_max_chars`` wins, else the dynamic cap."""
     val = _config_readonly("context_file_max_chars").get("context_file_max_chars")
+    # ⤷ 出口 return：返回 int(val) if isinstance(val, (int, float)) and val > 0 else _…
     return int(val) if isinstance(val, (int, float)) and val > 0 else _dynamic_context_file_max_chars(context_length)
 
 
@@ -1054,11 +1266,17 @@ _truncation_warnings: "contextvars.ContextVar[Optional[list]]" = contextvars.Con
 )
 
 
+# ┌── 函数 def drain_truncation_warnings()
+# │  作用：Return and clear any truncation warnings accumulated in this context.
+# │  参数：无
+# │  返回：list
+# └──────────────────────────────────────────────────────────────
 def drain_truncation_warnings() -> list:
     """Return and clear any truncation warnings accumulated in this context."""
     warnings = _truncation_warnings.get() or []
     drained = list(warnings)
     warnings.clear()
+    # ⤷ 出口 return：返回 drained
     return drained
 
 
@@ -1074,14 +1292,26 @@ _SKILLS_PROMPT_CACHE_LOCK = threading.Lock()
 _SKILLS_SNAPSHOT_VERSION = 2
 
 
+# ┌── 函数 def _skills_prompt_snapshot_path()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _skills_prompt_snapshot_path() -> Path:
+    # ⤷ 出口 return：返回 get_hermes_home() / '.skills_prompt_snapshot.json'
     return get_hermes_home() / ".skills_prompt_snapshot.json"
 
 
+# ┌── 函数 def clear_skills_system_prompt_cache()
+# │  作用：Drop the in-process skills prompt cache (and optionally the disk snapshot).
+# │  参数：clear_snapshot: bool = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
     """Drop the in-process skills prompt cache (and optionally the disk snapshot)."""
     with _SKILLS_PROMPT_CACHE_LOCK:
         _SKILLS_PROMPT_CACHE.clear()
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         if clear_snapshot:
             _skills_prompt_snapshot_path().unlink(missing_ok=True)
@@ -1089,6 +1319,11 @@ def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
         logger.debug("Could not remove skills prompt snapshot: %s", e)
 
 
+# ┌── 函数 def _build_skills_manifest()
+# │  作用：mtime/size manifest of every SKILL.md and DESCRIPTION.md; only the ACTIVE org mirror participates, and
+# │  参数：skills_dir: Path
+# │  返回：dict[str, list[int]]
+# └──────────────────────────────────────────────────────────────
 def _build_skills_manifest(skills_dir: Path) -> dict[str, list[int]]:
     """mtime/size manifest of every SKILL.md and DESCRIPTION.md; only the ACTIVE org mirror participates, and
     the ``.active_org`` marker is included so switching/leaving an org invalidates the snapshot by itself."""
@@ -1097,6 +1332,7 @@ def _build_skills_manifest(skills_dir: Path) -> dict[str, list[int]]:
     prefix_len = len(os.path.join(skills_dir_str, ""))
     active_org = read_active_org_id(skills_dir)
     org_root = os.path.join(skills_dir_str, ORG_MIRROR_DIR_NAME)
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         st = os.stat(os.path.join(org_root, ORG_ACTIVE_MARKER))
         manifest[ORG_MIRROR_DIR_NAME + "/" + ORG_ACTIVE_MARKER] = [int(st.st_mtime), int(st.st_size)]
@@ -1111,27 +1347,43 @@ def _build_skills_manifest(skills_dir: Path) -> dict[str, list[int]]:
         dirs[:] = [d for d in dirs if d not in EXCLUDED_SKILL_DIRS and not (has_skill_md and d in SKILL_SUPPORT_DIRS)]
         for filename in ("SKILL.md", "DESCRIPTION.md"):
             path = os.path.join(root, filename)
+            # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
             try:
                 if filename in files:
                     st = os.stat(path)
                     manifest[path[prefix_len:]] = [st.st_mtime_ns, st.st_size]
             except OSError:
                 pass
+    # ⤷ 出口 return：返回 manifest
     return manifest
 
 
+# ┌── 函数 def _load_skills_snapshot()
+# │  作用：The disk snapshot if it exists, is current-version, and its manifest still matches.
+# │  参数：skills_dir: Path
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _load_skills_snapshot(skills_dir: Path) -> Optional[dict]:
     """The disk snapshot if it exists, is current-version, and its manifest still matches."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         snapshot = json.loads(_skills_prompt_snapshot_path().read_text(encoding="utf-8"))
     except Exception:  # missing, unreadable or corrupt -> rebuild
+        # ⤷ 出口 return：返回 None
         return None
     if (isinstance(snapshot, dict) and snapshot.get("version") == _SKILLS_SNAPSHOT_VERSION
             and snapshot.get("manifest") == _build_skills_manifest(skills_dir)):
+        # ⤷ 出口 return：返回 snapshot
         return snapshot
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _build_snapshot_entry()
+# │  作用：Serialisable metadata dict for one skill.
+# │  参数：skill_file: Path, skills_dir: Path, frontmatter: dict, description: str
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _build_snapshot_entry(skill_file: Path, skills_dir: Path, frontmatter: dict, description: str) -> dict:
     """Serialisable metadata dict for one skill."""
     parts = skill_file.relative_to(skills_dir).parts
@@ -1150,27 +1402,43 @@ def _build_snapshot_entry(skill_file: Path, skills_dir: Path, frontmatter: dict,
     }
     if org_id:
         entry["org_id"] = org_id
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:  # author from the pull-time provenance sidecar; best-effort
             prov = json.loads((skills_dir / ORG_MIRROR_DIR_NAME / org_id / ORG_PROVENANCE_FILE).read_text(encoding="utf-8"))
             entry["org_author"] = str(prov.get("author_device") or "") or str(prov.get("author_user_id") or "")
         except Exception:
             entry["org_author"] = ""
+    # ⤷ 出口 return：返回 entry
     return entry
 
 
+# ┌── 函数 def _parse_skill_file()
+# │  作用：Read a SKILL.md once -> (is_compatible, frontmatter, description); errors yield (True, {}, "").
+# │  参数：skill_file: Path
+# │  返回：tuple[bool, dict, str]
+# └──────────────────────────────────────────────────────────────
 def _parse_skill_file(skill_file: Path) -> tuple[bool, dict, str]:
     """Read a SKILL.md once -> (is_compatible, frontmatter, description); errors yield (True, {}, "")."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         frontmatter, _ = parse_frontmatter(skill_file.read_text(encoding="utf-8"))
         # Host-platform / runtime-environment gates are offer-time only; explicit loads bypass them.
         if not skill_matches_platform(frontmatter) or not skill_matches_environment(frontmatter):
+            # ⤷ 出口 return：返回 (False, frontmatter, '')
             return False, frontmatter, ""
+        # ⤷ 出口 return：返回 (True, frontmatter, extract_skill_description(frontmatter))
         return True, frontmatter, extract_skill_description(frontmatter)
     except Exception as e:
         logger.warning("Failed to parse skill file %s: %s", skill_file, e)
+        # ⤷ 出口 return：返回 (True, {}, '')
         return True, {}, ""
 
 
+# ┌── 函数 def _skill_should_show()
+# │  作用：False if the skill's conditional activation rules exclude it.
+# │  参数：conditions: dict, available_tools: 'set[str] | None', available_toolsets: 'set[str] | None', session_platform: 'str | None' = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _skill_should_show(
     conditions: dict, available_tools: "set[str] | None", available_toolsets: "set[str] | None",
     session_platform: "str | None" = None,
@@ -1179,11 +1447,14 @@ def _skill_should_show(
     # Gateway-channel gate runs regardless of tool info; fails open when the platform is unknown.
     wanted_platforms = [str(p).strip().lower() for p in (conditions.get("session_platforms") or []) if str(p).strip()]
     if wanted_platforms and session_platform and session_platform.strip().lower() not in wanted_platforms:
+        # ⤷ 出口 return：返回 False
         return False
     if available_tools is None and available_toolsets is None:
+        # ⤷ 出口 return：返回 True
         return True  # no filtering info — show everything
     at, ats = available_tools or set(), available_toolsets or set()
     # fallback_for: hide when the primary IS available; requires: hide when a requirement is NOT.
+    # ⤷ 出口 return：返回 not (any((ts in ats for ts in conditions.get('fallback_for_t…
     return not (
         any(ts in ats for ts in conditions.get("fallback_for_toolsets", []))
         or any(t in at for t in conditions.get("fallback_for_tools", []))
@@ -1192,18 +1463,32 @@ def _skill_should_show(
     )
 
 
+# ┌── 函数 def _current_session_platform_hint()
+# │  作用：Active platform without importing the gateway package on CLI startup.
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _current_session_platform_hint() -> str:
     """Active platform without importing the gateway package on CLI startup."""
     platform = os.environ.get("HERMES_PLATFORM") or os.environ.get("HERMES_SESSION_PLATFORM")
     if platform:
+        # ⤷ 出口 return：返回 platform
         return platform
     get_session_env = getattr(sys.modules.get("gateway.session_context"), "get_session_env", None)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 (get_session_env('HERMES_SESSION_PLATFORM') if get_session_e…
         return (get_session_env("HERMES_SESSION_PLATFORM") if get_session_env else "") or ""
     except Exception:
+        # ⤷ 出口 return：返回 ''
         return ""
 
 
+# ┌── 函数 def build_skills_system_prompt()
+# │  作用：Compact skill index for the system prompt.
+# │  参数：available_tools: 'set[str] | None' = None, available_toolsets: 'set[str] | None' = None, compact_categories: 'frozenset[str] | None' = None, skills_dir_override: 'Path | None' = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def build_skills_system_prompt(
     available_tools: "set[str] | None" = None, available_toolsets: "set[str] | None" = None,
     compact_categories: "frozenset[str] | None" = None, skills_dir_override: "Path | None" = None,
@@ -1221,13 +1506,16 @@ def build_skills_system_prompt(
         _home_token = set_hermes_home_override(str(skills_dir.parent))
     else:
         skills_dir = get_skills_dir()
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         external_dirs = get_all_skills_dirs()[1:]  # skip local (index 0)
         # Trusted project-local dirs — highest-precedence tier; cwd/trust are session-stable, so byte-stable.
         from agent.skill_utils import get_project_skills_dirs
         project_dirs = get_project_skills_dirs()
         if not skills_dir.exists() and not external_dirs and not project_dirs:
+            # ⤷ 出口 return：返回 ''
             return ""
+        # ⤷ 出口 return：返回 _build_skills_system_prompt_inner(skills_dir, external_dirs,…
         return _build_skills_system_prompt_inner(
             skills_dir, external_dirs, available_tools, available_toolsets, compact_categories, project_dirs)
     finally:
@@ -1235,14 +1523,26 @@ def build_skills_system_prompt(
             reset_hermes_home_override(_home_token)
 
 
+# ┌── 函数 def _entry_name()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：entry: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _entry_name(entry: dict) -> str:
+    # ⤷ 出口 return：返回 entry.get('frontmatter_name') or entry.get('skill_name') or …
     return entry.get("frontmatter_name") or entry.get("skill_name") or ""
 
 
+# ┌── 函数 def _read_category_descriptions()
+# │  作用：``description`` from every DESCRIPTION.md under *root*, keyed by category path.
+# │  参数：root: Path, log_fmt: str
+# │  返回：dict[str, str]
+# └──────────────────────────────────────────────────────────────
 def _read_category_descriptions(root: Path, log_fmt: str) -> dict[str, str]:
     """``description`` from every DESCRIPTION.md under *root*, keyed by category path."""
     found: dict[str, str] = {}
     for desc_file in iter_skill_index_files(root, "DESCRIPTION.md"):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             cat_desc = parse_frontmatter(desc_file.read_text(encoding="utf-8"))[0].get("description")
             if cat_desc:
@@ -1250,15 +1550,22 @@ def _read_category_descriptions(root: Path, log_fmt: str) -> dict[str, str]:
                 found["/".join(rel.parts[:-1]) if len(rel.parts) > 1 else "general"] = str(cat_desc).strip().strip("'\"")
         except Exception as e:
             logger.debug(log_fmt, desc_file, e)
+    # ⤷ 出口 return：返回 found
     return found
 
 
+# ┌── 函数 def _collect_extra_skills()
+# │  作用：Add visible skills from a project/external dir; names already in *claimed* are skipped.
+# │  参数：root: Path, skill_files, hides, claimed: set[str], skills_by_category: dict[str, list[tuple[str, str]]], desc_prefix: str, log_fmt: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _collect_extra_skills(
     root: Path, skill_files, hides, claimed: set[str], skills_by_category: dict[str, list[tuple[str, str]]],
     *, desc_prefix: str, log_fmt: str,
 ) -> None:
     """Add visible skills from a project/external dir; names already in *claimed* are skipped."""
     for skill_file in skill_files:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             is_compatible, frontmatter, desc = _parse_skill_file(skill_file)
             entry = _build_snapshot_entry(skill_file, root, frontmatter, desc) if is_compatible else None
@@ -1271,6 +1578,11 @@ def _collect_extra_skills(
             logger.debug(log_fmt, skill_file, e)
 
 
+# ┌── 函数 def _label_visible_entries()
+# │  作用：Org labeling + FAIL-LOUD collisions: a personal/org name clash flags BOTH
+# │  参数：visible_entries: list[dict], skills_by_category: dict[str, list[tuple[str, str]]]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _label_visible_entries(visible_entries: list[dict], skills_by_category: dict[str, list[tuple[str, str]]]) -> None:
     """Org labeling + FAIL-LOUD collisions: a personal/org name clash flags BOTH
     entries (neither silently wins) and skill_view refuses the bare name."""
@@ -1288,12 +1600,18 @@ def _label_visible_entries(visible_entries: list[dict], skills_by_category: dict
         skills_by_category.setdefault(category, []).append((fm, desc))
 
 
+# ┌── 函数 def _render_skills_index()
+# │  作用：Render the ## Skills block; "" when there is nothing to list.
+# │  参数：skills_by_category: dict[str, list[tuple[str, str]]], category_descriptions: dict[str, str], compact_categories: 'frozenset[str] | None', available_tools: 'set[str] | None'
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _render_skills_index(
     skills_by_category: dict[str, list[tuple[str, str]]], category_descriptions: dict[str, str],
     compact_categories: "frozenset[str] | None", available_tools: "set[str] | None",
 ) -> str:
     """Render the ## Skills block; "" when there is nothing to list."""
     if not skills_by_category:
+        # ⤷ 出口 return：返回 ''
         return ""
     # Demoted categories collapse to one names-only line. NEVER drop entries — agent-created skills are the
     # model's project memory and it won't rediscover them via skills_list. Nested categories follow their parent.
@@ -1318,6 +1636,7 @@ def _render_skills_index(
             if name not in seen:
                 seen.add(name)
                 index_lines.append(f"    - {name}: {desc}" if desc else f"    - {name}")
+    # ⤷ 出口 return：返回 f"## Skills\nBefore replying, scan the skills below. If a sk…
     return (
         "## Skills\n"
         "Before replying, scan the skills below. If a skill matches or is even partially relevant to your "
@@ -1341,6 +1660,11 @@ def _render_skills_index(
     )
 
 
+# ┌── 函数 def _build_skills_system_prompt_inner()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：skills_dir: 'Path', external_dirs: 'list[Path]', available_tools: 'set[str] | None', available_toolsets: 'set[str] | None', compact_categories: 'frozenset[str] | None', project_dirs: 'list[Path] | None' = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _build_skills_system_prompt_inner(
     skills_dir: "Path", external_dirs: "list[Path]", available_tools: "set[str] | None",
     available_toolsets: "set[str] | None", compact_categories: "frozenset[str] | None",
@@ -1360,10 +1684,12 @@ def _build_skills_system_prompt_inner(
         cached = _SKILLS_PROMPT_CACHE.get(cache_key)
         if cached is not None:
             _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
+            # ⤷ 出口 return：返回 cached
             return cached
 
     def hides(frontmatter_name: str, skill_name: str, conditions: dict) -> bool:
         """Per-build visibility rule shared by every skill source (snapshot, scan, project, external)."""
+        # ⤷ 出口 return：返回 frontmatter_name in disabled or skill_name in disabled or (n…
         return (frontmatter_name in disabled or skill_name in disabled
                 or not _skill_should_show(conditions, available_tools, available_toolsets, _platform_hint or None))
 
@@ -1396,6 +1722,7 @@ def _build_skills_system_prompt_inner(
     _label_visible_entries([e for e in visible_entries if _entry_name(e) not in project_names], skills_by_category)
     if snapshot is None:  # persist for fast cold-start reuse (best-effort)
         category_descriptions.update(_read_category_descriptions(skills_dir, "Could not read skill description %s: %s"))
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             atomic_json_write(_skills_prompt_snapshot_path(), {
                 "version": _SKILLS_SNAPSHOT_VERSION, "manifest": _build_skills_manifest(skills_dir),
@@ -1418,9 +1745,15 @@ def _build_skills_system_prompt_inner(
         _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
         while len(_SKILLS_PROMPT_CACHE) > _SKILLS_PROMPT_CACHE_MAX:
             _SKILLS_PROMPT_CACHE.popitem(last=False)
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def _truncate_content()
+# │  作用：Head/tail truncation with a marker in the middle; ``read_path`` (default ``filename``) is what the
+# │  参数：content: str, filename: str, max_chars: Optional[int] = None, context_length: Optional[int] = None, read_path: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _truncate_content(
     content: str, filename: str, max_chars: Optional[int] = None, context_length: Optional[int] = None,
     read_path: Optional[str] = None,
@@ -1430,6 +1763,7 @@ def _truncate_content(
     if max_chars is None:
         max_chars = _get_context_file_max_chars(context_length)
     if len(content) <= max_chars:
+        # ⤷ 出口 return：返回 content
         return content
     msg = (
         f"⚠️  Context file {filename} TRUNCATED: {len(content)} chars exceeds limit of {max_chars} — "
@@ -1446,9 +1780,15 @@ def _truncate_content(
         f"omitted — if you need the full instructions, read the complete file with the read_file tool: "
         f"{read_path or filename}]\n\n"
     )
+    # ⤷ 出口 return：返回 content[:head_chars] + marker + content[-tail_chars:]
     return content[:head_chars] + marker + content[-tail_chars:]
 
 
+# ┌── 函数 def load_soul_md()
+# │  作用：SOUL.md from HERMES_HOME (identity slot #1), or None.
+# │  参数：context_length: Optional[int] = None, home_override: 'Path | None' = None
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def load_soul_md(context_length: Optional[int] = None, home_override: "Path | None" = None) -> Optional[str]:
     """SOUL.md from HERMES_HOME (identity slot #1), or None.
 
@@ -1460,6 +1800,7 @@ def load_soul_md(context_length: Optional[int] = None, home_override: "Path | No
     ContextVar falls back to the launch home and reads the wrong profile's SOUL.md (#50233, same class as
     the skills-index leak fixed in #86313).
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import ensure_hermes_home
         ensure_hermes_home()
@@ -1467,7 +1808,9 @@ def load_soul_md(context_length: Optional[int] = None, home_override: "Path | No
         logger.debug("Could not ensure HERMES_HOME before loading SOUL.md: %s", e)
     soul_path = (Path(home_override) if home_override is not None else get_hermes_home()) / "SOUL.md"
     if not soul_path.exists():
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         content = (_read_text_with_timeout(soul_path) or "").strip()
         if content:
@@ -1476,51 +1819,88 @@ def load_soul_md(context_length: Optional[int] = None, home_override: "Path | No
             from tools.bot_mode_probe import strip_legacy_protocol
             content = strip_legacy_protocol(content).strip()
         if not content:
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 _truncate_content(_scan_context_content(content, 'SOUL.md'),…
         return _truncate_content(_scan_context_content(content, "SOUL.md"), "SOUL.md", context_length=context_length,
                                  read_path=str(soul_path))
     except Exception as e:
         logger.debug("Could not read SOUL.md from %s: %s", soul_path, e)
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _read_context_file()
+# │  作用：Stripped text of *path*; "" when missing, empty or unreadable (logged at debug).
+# │  参数：path: Path
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _read_context_file(path: Path) -> str:
     """Stripped text of *path*; "" when missing, empty or unreadable (logged at debug)."""
     if not path.exists():
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 (_read_text_with_timeout(path) or '').strip()
         return (_read_text_with_timeout(path) or "").strip()
     except Exception as e:
         logger.debug("Could not read %s: %s", path, e)
+        # ⤷ 出口 return：返回 ''
         return ""
 
 
+# ┌── 函数 def _context_section()
+# │  作用：Threat-scan *content*, render it as ``## <label>``, cap it to the budget (*warn_name* labels warnings).
+# │  参数：content: str, label: str, warn_name: str, path: Path, context_length: Optional[int]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _context_section(content: str, label: str, warn_name: str, path: Path, context_length: Optional[int]) -> str:
     """Threat-scan *content*, render it as ``## <label>``, cap it to the budget (*warn_name* labels warnings)."""
     body = f"## {label}\n\n{_scan_context_content(content, label)}"
+    # ⤷ 出口 return：返回 _truncate_content(body, warn_name, context_length=context_le…
     return _truncate_content(body, warn_name, context_length=context_length, read_path=str(path))
 
 
+# ┌── 函数 def _load_hermes_md()
+# │  作用：.hermes.md / HERMES.md — nearest match walking up to the git root.
+# │  参数：cwd_path: Path, context_length: Optional[int] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _load_hermes_md(cwd_path: Path, context_length: Optional[int] = None) -> str:
     """.hermes.md / HERMES.md — nearest match walking up to the git root."""
     hermes_md_path = _find_hermes_md(cwd_path)
     content = _read_context_file(hermes_md_path) if hermes_md_path else ""
     if not content:
+        # ⤷ 出口 return：返回 ''
         return ""
     label = str(hermes_md_path.relative_to(cwd_path)) if hermes_md_path.is_relative_to(cwd_path) else hermes_md_path.name
+    # ⤷ 出口 return：返回 _context_section(_strip_yaml_frontmatter(content), label, '.…
     return _context_section(_strip_yaml_frontmatter(content), label, ".hermes.md", hermes_md_path, context_length)
 
 
+# ┌── 函数 def _agents_md_directory_chain()
+# │  作用：Directories to check for AGENTS.md: git root first, cwd last (deeper = precedence); cwd only without a root.
+# │  参数：cwd_path: Path
+# │  返回：list[Path]
+# └──────────────────────────────────────────────────────────────
 def _agents_md_directory_chain(cwd_path: Path) -> list[Path]:
     """Directories to check for AGENTS.md: git root first, cwd last (deeper = precedence); cwd only without a root."""
     current = cwd_path.resolve()
     root = _find_git_root(current)
     if root is None or root == current or not current.is_relative_to(root):
+        # ⤷ 出口 return：返回 [current]
         return [current]
     parts = current.relative_to(root).parts
+    # ⤷ 出口 return：返回 [root] + [root.joinpath(*parts[:i + 1]) for i in range(len(p…
     return [root] + [root.joinpath(*parts[: i + 1]) for i in range(len(parts))]
 
 
+# ┌── 函数 def _load_agents_md()
+# │  作用：AGENTS.md — merged directory chain from git root down to cwd.
+# │  参数：cwd_path: Path, context_length: Optional[int] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _load_agents_md(cwd_path: Path, context_length: Optional[int] = None) -> str:
     """AGENTS.md — merged directory chain from git root down to cwd.
 
@@ -1550,21 +1930,35 @@ def _load_agents_md(cwd_path: Path, context_length: Optional[int] = None) -> str
                 sections.append(_context_section(content, label, label, candidate, context_length))
             break  # first name match wins per directory
     if len(sections) <= 1:
+        # ⤷ 出口 return：返回 sections[0] if sections else ''
         return sections[0] if sections else ""
     # Per-file budgets applied above; also cap the merged chain so a deep monorepo can't multiply the budget.
+    # ⤷ 出口 return：返回 _truncate_content('\n\n'.join(sections), 'AGENTS.md (directo…
     return _truncate_content("\n\n".join(sections), "AGENTS.md (directory chain)", context_length=context_length,
                              read_path=str(cwd_resolved / "AGENTS.md"))
 
 
+# ┌── 函数 def _load_claude_md()
+# │  作用：CLAUDE.md / claude.md — cwd only.
+# │  参数：cwd_path: Path, context_length: Optional[int] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _load_claude_md(cwd_path: Path, context_length: Optional[int] = None) -> str:
     """CLAUDE.md / claude.md — cwd only."""
     for name in ("CLAUDE.md", "claude.md"):
         content = _read_context_file(cwd_path / name)
         if content:
+            # ⤷ 出口 return：返回 _context_section(content, name, 'CLAUDE.md', cwd_path / name…
             return _context_section(content, name, "CLAUDE.md", cwd_path / name, context_length)
+    # ⤷ 出口 return：返回 ''
     return ""
 
 
+# ┌── 函数 def _load_cursorrules()
+# │  作用：.cursorrules + .cursor/rules/*.mdc — cwd only, concatenated.
+# │  参数：cwd_path: Path, context_length: Optional[int] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _load_cursorrules(cwd_path: Path, context_length: Optional[int] = None) -> str:
     """.cursorrules + .cursor/rules/*.mdc — cwd only, concatenated."""
     candidates: list[tuple[Path, str]] = [(cwd_path / ".cursorrules", ".cursorrules")]
@@ -1576,11 +1970,18 @@ def _load_cursorrules(cwd_path: Path, context_length: Optional[int] = None) -> s
         for path, label in candidates if (content := _read_context_file(path))
     )
     if not cursorrules_content:
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 出口 return：返回 _truncate_content(cursorrules_content, '.cursorrules', conte…
     return _truncate_content(cursorrules_content, ".cursorrules", context_length=context_length,
                              read_path=str(cwd_path / ".cursorrules"))
 
 
+# ┌── 函数 def build_context_files_prompt()
+# │  作用：Discover and load context files for the system prompt (each capped, see ``_get_context_file_max_chars``).
+# │  参数：cwd: Optional[str] = None, skip_soul: bool = False, context_length: Optional[int] = None, allow_install_tree_fallback: bool = False, home_override: 'Path | None' = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def build_context_files_prompt(
     cwd: Optional[str] = None, skip_soul: bool = False, context_length: Optional[int] = None,
     allow_install_tree_fallback: bool = False, home_override: "Path | None" = None,
@@ -1612,7 +2013,9 @@ def build_context_files_prompt(
         sections.append(load_soul_md(context_length, home_override=home_override))
     sections = [s for s in sections if s]
     if not sections:
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 出口 return：返回 '# Project Context\n\nThe following project context files ha…
     return ("# Project Context\n\nThe following project context files have been loaded and should be followed:\n\n"
             + "\n".join(sections))
 
@@ -1629,12 +2032,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

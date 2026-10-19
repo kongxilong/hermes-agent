@@ -5,6 +5,32 @@ restore-or-build, session row, idle/preflight compaction via ``turn_context_comp
 pre_llm_call hook, prefetch, persistence), mutating ``agent`` as the loop expects, and
 returns a ``TurnContext`` with only the locals the loop reads back.
 ``build_api_messages`` builds the wire copy for one API call."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/turn_context.py（约 1168 行）
+# 地位：每一轮对话开始前的「准备工作」（对话循环的序章）。
+#
+# 核心函数 build_turn_context(...)：在一轮对话开始前把该做的杂事一次性做完，
+#   然后返回一个 TurnContext 数据对象，把循环需要用到的局部状态交给主循环。
+#
+# 它依次做这些事：
+#   - stdio 守卫、输入清洗
+#   - 恢复或构建系统提示词（_restore_or_build_system_prompt）
+#   - 确保数据库里有这一轮对应的会话行（_ensure_session_row）
+#   - 空闲/预检压缩（防止上下文一开始就爆掉）
+#   - 触发 pre_llm_call 钩子（插件可以在模型调用前插一脚）
+#   - 记忆预取（_memory_turn_start_and_prefetch）
+#   - 持久化这一轮的开始状态（_persist_turn_start）
+#
+# 另一个重要函数：build_api_messages(agent, messages)
+#   —— 把内部的消息列表转换成「真正发给 API 的那一版」。
+#   为什么要转换？因为内部消息带很多项目自己的元数据（时间戳、显示信息、平台信息...），
+#   这些不能发给模型，必须剥掉。这就是所谓的 wire copy（线上副本）。
+#
+# 概念：TurnContext 是 @dataclass，用来替代超长参数列表。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -30,11 +56,22 @@ from agent.turn_author import parse_turn_author
 logger = logging.getLogger(__name__)
 
 
+# ┌── 函数 def _str_attr()
+# │  作用：``getattr(agent, name, "") or ""`` — route facts read off partial agents/doubles.
+# │  参数：agent: Any, name: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _str_attr(agent: Any, name: str) -> str:
     """``getattr(agent, name, "") or ""`` — route facts read off partial agents/doubles."""
+    # ⤷ 出口 return：返回 getattr(agent, name, '') or ''
     return getattr(agent, name, "") or ""
 
 
+# ┌── 函数 def _preflight_request_tokens()
+# │  作用：Token estimate for automatic preflight compression: a valid provider usage anchor,
+# │  参数：agent: Any, messages: List[Dict[str, Any]], system_prompt: str
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _preflight_request_tokens(
     agent: Any, messages: List[Dict[str, Any]], system_prompt: str
 ) -> int:
@@ -43,8 +80,10 @@ def _preflight_request_tokens(
     anchored = anchored_context_tokens(messages, getattr(agent, "_usage_anchor", None))
     agent._request_pressure_anchored = anchored is not None
     if anchored is not None:
+        # ⤷ 出口 return：返回 anchored
         return anchored
     tools = getattr(agent, "tools", None) or None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.codex_responses_adapter import estimate_native_responses_preflight_tokens
 
@@ -52,6 +91,7 @@ def _preflight_request_tokens(
             agent, messages, system_prompt=system_prompt or "", tools=tools
         )
         if isinstance(native, int) and not isinstance(native, bool) and native >= 0:
+            # ⤷ 出口 return：返回 native
             return native
     except Exception:
         logger.debug(
@@ -59,25 +99,39 @@ def _preflight_request_tokens(
             "using generic transcript estimate",
             exc_info=True,
         )
+    # ⤷ 出口 return：返回 estimate_request_tokens_rough(messages, system_prompt=system…
     return estimate_request_tokens_rough(
         messages, system_prompt=system_prompt or "", tools=tools,
         charge_stale_thinking=_agent_stale_thinking_on_wire(agent),
     )
 
 
+# ┌── 函数 def _agent_stale_thinking_on_wire()
+# │  作用：Whether the active route replays stale thinking text; ``True`` (conservative full
+# │  参数：agent: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _agent_stale_thinking_on_wire(agent: Any) -> bool:
     """Whether the active route replays stale thinking text; ``True`` (conservative full
     charge) when route facts are unavailable."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.message_sanitization import stale_thinking_reaches_wire
 
+        # ⤷ 出口 return：返回 stale_thinking_reaches_wire(*(_str_attr(agent, k) for k in (…
         return stale_thinking_reaches_wire(
             *(_str_attr(agent, k) for k in ("api_mode", "provider", "model", "base_url"))
         )
     except Exception:
+        # ⤷ 出口 return：返回 True
         return True
 
 
+# ┌── 函数 def compose_user_api_content()
+# │  作用：Compose the API-bound content of the current turn's user message.
+# │  参数：content: Any, ext_prefetch_cache: str, plugin_user_context: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def compose_user_api_content(
     content: Any, ext_prefetch_cache: str, plugin_user_context: str
 ) -> Optional[str]:
@@ -86,35 +140,60 @@ def compose_user_api_content(
     Single source for the ``api_content`` sidecar and the wire bytes so they never drift
     (what turn N sends is what turn N+1 replays). ``None`` when nothing is injected."""
     if not isinstance(content, str):
+        # ⤷ 出口 return：返回 None
         return None
     fenced = build_memory_context_block(ext_prefetch_cache) if ext_prefetch_cache else ""
     injections = [part for part in (fenced, plugin_user_context) if part]
     if not injections:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 content + '\n\n' + '\n\n'.join(injections)
     return content + "\n\n" + "\n\n".join(injections)
 
 
+# ┌── 函数 def substitute_api_content()
+# │  作用：Pop the ``api_content`` sidecar and substitute it into ``content`` (keeps the
+# │  参数：api_msg: Dict[str, Any]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def substitute_api_content(api_msg: Dict[str, Any]) -> Optional[str]:
     """Pop the ``api_content`` sidecar and substitute it into ``content`` (keeps the
     prompt-cache prefix byte-stable). Returns the popped sidecar, or ``None``."""
     sidecar = api_msg.pop("api_content", None)
     if isinstance(sidecar, str) and sidecar and api_msg.get("role") in ("user", "assistant"):
         api_msg["content"] = sidecar
+    # ⤷ 出口 return：返回 sidecar
     return sidecar
 
 
+# ┌── 函数 def drop_stale_api_content()
+# │  作用：Drop the ``api_content`` sidecar from a message whose content was rewritten
+# │  参数：msg: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def drop_stale_api_content(msg: Dict[str, Any]) -> None:
     """Drop the ``api_content`` sidecar from a message whose content was rewritten
     (replaying it would resend what the rewrite removed; cost is one cache miss)."""
     msg.pop("api_content", None)
 
 
+# ┌── 函数 def extract_api_content_sidecar()
+# │  作用：Extract the ``api_content`` sidecar; ``None`` when absent/non-string.
+# │  参数：msg: Mapping[str, Any]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def extract_api_content_sidecar(msg: Mapping[str, Any]) -> Optional[str]:
     """Extract the ``api_content`` sidecar; ``None`` when absent/non-string."""
     v = msg.get("api_content")
+    # ⤷ 出口 return：返回 v if isinstance(v, str) else None
     return v if isinstance(v, str) else None
 
 
+# ┌── 函数 def _pop_turn_note()
+# │  作用：One-shot per-turn note: read and clear, so the system prompt stays byte-stable and a
+# │  参数：agent: Any, attr: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _pop_turn_note(agent: Any, attr: str) -> str:
     """One-shot per-turn note: read and clear, so the system prompt stays byte-stable and a
     cached agent never replays a stale note."""
@@ -122,28 +201,49 @@ def _pop_turn_note(agent: Any, attr: str) -> str:
     if hasattr(agent, attr):
         with suppress(Exception):
             setattr(agent, attr, "")
+    # ⤷ 出口 return：返回 note if isinstance(note, str) else ''
     return note if isinstance(note, str) else ""
 
 
+# ┌── 函数 def consume_gateway_turn_context_notes()
+# │  作用：Pop the gateway's per-turn must-deliver notes.
+# │  参数：agent: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def consume_gateway_turn_context_notes(agent: Any) -> str:
     """Pop the gateway's per-turn must-deliver notes."""
+    # ⤷ 出口 return：返回 _pop_turn_note(agent, '_gateway_turn_context_notes')
     return _pop_turn_note(agent, "_gateway_turn_context_notes")
 
 
+# ┌── 函数 def consume_surface_switch_note()
+# │  作用：Pop the surface-switch note staged by the system-prompt restore (#104414); rides the same
+# │  参数：agent: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def consume_surface_switch_note(agent: Any) -> str:
     """Pop the surface-switch note staged by the system-prompt restore (#104414); rides the same
     user-message channel as the gateway notes, behind the cached prefix."""
+    # ⤷ 出口 return：返回 _pop_turn_note(agent, '_surface_switch_note')
     return _pop_turn_note(agent, "_surface_switch_note")
 
 
+# ┌── 函数 def append_notes_to_multimodal_content()
+# │  作用：Append must-deliver notes as a durable text part on a multimodal (list) user
+# │  参数：content: Any, notes: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def append_notes_to_multimodal_content(content: Any, notes: str) -> bool:
     """Append must-deliver notes as a durable text part on a multimodal (list) user
     message (the sidecar path returns ``None`` for non-string content)."""
     if not notes or not isinstance(content, list):
+        # ⤷ 出口 return：返回 False
         return False
     with suppress(Exception):
         content.append({"type": "text", "text": notes})
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 False
     return False
 
 
@@ -152,6 +252,11 @@ def append_notes_to_multimodal_content(content: Any, notes: str) -> bool:
 _UNTITLED_PLATFORMS = frozenset({"cron", "subagent"})
 
 
+# ┌── 函数 def _maybe_title_session_at_turn_start()
+# │  作用：Kick off auto-titling for the session's first user message; never fatal.
+# │  参数：agent: Any, messages: List[Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _maybe_title_session_at_turn_start(agent: Any, messages: List[Any]) -> None:
     """Kick off auto-titling for the session's first user message; never fatal."""
     session_db = getattr(agent, "_session_db", None)
@@ -160,6 +265,7 @@ def _maybe_title_session_at_turn_start(agent: Any, messages: List[Any]) -> None:
         return
     if str(getattr(agent, "platform", "") or "").lower() in _UNTITLED_PLATFORMS:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.message_content import flatten_message_text
         from agent.title_generator import maybe_auto_title
@@ -206,6 +312,11 @@ def _maybe_title_session_at_turn_start(agent: Any, messages: List[Any]) -> None:
         logger.debug("Turn-start auto-title dispatch failed", exc_info=True)
 
 
+# ┌── 函数 def reanchor_current_turn_user_idx()
+# │  作用：Locate this turn's user message after compaction rebuilt ``messages``.
+# │  参数：messages: List[Any], user_message: Any
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def reanchor_current_turn_user_idx(messages: List[Any], user_message: Any) -> int:
     """Locate this turn's user message after compaction rebuilt ``messages``.
 
@@ -232,19 +343,27 @@ def reanchor_current_turn_user_idx(messages: List[Any], user_message: Any) -> in
         # Typed synthetic current events keep their persistence anchor when raw
         # content is unchanged; not eligible for the human-only fallback below.
         if msg.get("content") == user_message:
+            # ⤷ 出口 return：返回 i
             return i
         live_view = user_originated_turn_view(msg)
         if live_view is None:
             continue
         if live_view.get("content") == user_message:
+            # ⤷ 出口 return：返回 i
             return i
         # Prefer a real human turn over a synthetic handoff / continuation marker
         # when the exact content was rewritten by merge-into-tail.
         if fallback < 0:
             fallback = i
+    # ⤷ 出口 return：返回 fallback
     return fallback
 
 
+# ┌── 函数 def export_current_turn_boundary()
+# │  作用：Stamp ``{turn_id, current_turn_user_idx}`` on a result envelope, proven against the
+# │  参数：agent: Any, result: Any, user_message: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def export_current_turn_boundary(agent: Any, result: Any, user_message: Any) -> Any:
     """Stamp ``{turn_id, current_turn_user_idx}`` on a result envelope, proven against the
     exact ``result["messages"]`` projection it travels with.
@@ -260,16 +379,20 @@ def export_current_turn_boundary(agent: Any, result: Any, user_message: Any) -> 
     repeated prompt would resolve to its historical copy: nothing is exported there.
     """
     if not isinstance(result, dict) or result.get("turn_exit_reason") == "context_compression_timeout":
+        # ⤷ 出口 return：返回 result
         return result
     messages = result.get("messages")
     turn_id = str(getattr(agent, "_current_turn_id", "") or "")
     if not isinstance(messages, list) or not turn_id or user_message is None:
+        # ⤷ 出口 return：返回 result
         return result
     idx = reanchor_current_turn_user_idx(messages, user_message)
     if idx < 0 or idx >= len(messages):
+        # ⤷ 出口 return：返回 result
         return result
     row = messages[idx]
     if not (isinstance(row, dict) and row.get("role") == "user"):
+        # ⤷ 出口 return：返回 result
         return result
     from agent.context_compressor import user_originated_turn_view
 
@@ -277,12 +400,19 @@ def export_current_turn_boundary(agent: Any, result: Any, user_message: Any) -> 
     if row.get("content") != user_message and not (
         isinstance(live_view, dict) and live_view.get("content") == user_message
     ):
+        # ⤷ 出口 return：返回 result
         return result  # rewritten (merge-into-tail) row: not a proven boundary
     result["turn_id"] = turn_id
     result["current_turn_user_idx"] = idx
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def compression_made_progress()
+# │  作用：``True`` if a compression pass materially reduced the request: fewer rows, or a
+# │  参数：orig_len: int, new_len: int, orig_tokens: int, new_tokens: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def compression_made_progress(
     orig_len: int, new_len: int, orig_tokens: int, new_tokens: int
 ) -> bool:
@@ -298,19 +428,30 @@ def compression_made_progress(
     retry path uses (conversation_loop.py, 39550) — so a sub-5% wobble doesn't keep the multi-pass loop
     spinning. See #39550.
     """
+    # ⤷ 出口 return：返回 new_len < orig_len or (orig_tokens > 0 and new_tokens < orig…
     return new_len < orig_len or (orig_tokens > 0 and new_tokens < orig_tokens * 0.95)
 
 
+# ┌── 类 class PreflightCompressionTimedOut（继承自：RuntimeError）
+# │  说明：Raised when an oversized turn cannot safely finish preflight.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class PreflightCompressionTimedOut(RuntimeError):
     """Raised when an oversized turn cannot safely finish preflight."""
 
 
+# ┌── 函数 def _fail_closed_after_preflight_timeout()
+# │  作用：Stop an oversized turn instead of sending its unchanged provider payload.
+# │  参数：agent, request_tokens: int
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _fail_closed_after_preflight_timeout(agent, request_tokens: int) -> None:
     """Stop an oversized turn instead of sending its unchanged provider payload."""
     from agent.conversation_compression import context_compression_timed_out
 
     if not context_compression_timed_out(agent):
         return
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise PreflightCompressionTimedOut(
         "Context compression timed out before it could commit while the request "
         f"was still approximately {request_tokens:,} tokens. The provider call "
@@ -318,24 +459,41 @@ def _fail_closed_after_preflight_timeout(agent, request_tokens: int) -> None:
     )
 
 
+# ┌── 函数 def _review_fork_first_request_pending()
+# │  作用：Whether a detached review fork has yet to send its first provider request: it
+# │  参数：agent: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _review_fork_first_request_pending(agent: Any) -> bool:
     """Whether a detached review fork has yet to send its first provider request: it
     replays the parent's FULL snapshot as a warm cache read, so compaction must wait
     for that first response. Dormant without the attribute."""
+    # ⤷ 出口 return：返回 bool(getattr(agent, '_review_defer_compaction_before_first_r…
     return bool(
         getattr(agent, "_review_defer_compaction_before_first_response", False)
         and not getattr(agent, "_turn_received_provider_response", False)
     )
 
 
+# ┌── 函数 def _compression_warrants_another_preflight_pass()
+# │  作用：Another immediate summary only if still over threshold AND the previous pass cut
+# │  参数：orig_tokens: int, new_tokens: int, threshold_tokens: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _compression_warrants_another_preflight_pass(
     orig_tokens: int, new_tokens: int, threshold_tokens: int
 ) -> bool:
     """Another immediate summary only if still over threshold AND the previous pass cut
     tokens by >5%."""
+    # ⤷ 出口 return：返回 new_tokens >= threshold_tokens and orig_tokens > 0 and (new_…
     return new_tokens >= threshold_tokens and orig_tokens > 0 and new_tokens < orig_tokens * 0.95
 
 
+# ┌── 函数 def _should_run_preflight_estimate()
+# │  作用：Cheap gate for the (expensive) full preflight estimate: message count exceeds the
+# │  参数：messages: List[Dict[str, Any]], protect_first_n: int, protect_last_n: int, threshold_tokens: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_run_preflight_estimate(
     messages: List[Dict[str, Any]], protect_first_n: int, protect_last_n: int, threshold_tokens: int
 ) -> bool:
@@ -343,12 +501,18 @@ def _should_run_preflight_estimate(
     protected ranges OR a rough char-based estimate crosses the threshold (few-but-huge
     case). The estimator undercounts by design (omits system/tools) so one large base64
     image is not mistaken for ~250K tokens."""
+    # ⤷ 出口 return：返回 len(messages) > protect_first_n + protect_last_n + 1 or esti…
     return (
         len(messages) > protect_first_n + protect_last_n + 1
         or estimate_messages_tokens_rough(messages) >= threshold_tokens
     )
 
 
+# ┌── 函数 def _should_idle_compact()
+# │  作用：Pure predicate: idle compaction fires after a wall-clock gap of
+# │  参数：enabled: bool, idle_after_seconds: int, idle_gap_seconds: float, tokens: int, floor_tokens: int, cooldown_active: bool, last_compaction_tokens: int = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_idle_compact(
     *, enabled: bool, idle_after_seconds: int, idle_gap_seconds: float, tokens: int,
     floor_tokens: int, cooldown_active: bool, last_compaction_tokens: int = 0,
@@ -371,13 +535,19 @@ def _should_idle_compact(
     prompt on a slow route, reclaiming nothing (#97239).
     """
     if not enabled or idle_after_seconds <= 0 or idle_gap_seconds < idle_after_seconds or cooldown_active:
+        # ⤷ 出口 return：返回 False
         return False
     effective_floor = floor_tokens
     if last_compaction_tokens > 0:
         effective_floor = max(effective_floor, last_compaction_tokens + floor_tokens)
+    # ⤷ 出口 return：返回 tokens > effective_floor
     return tokens > effective_floor
 
 
+# ┌── 类 class TurnContext
+# │  说明：Values produced by the turn prologue and consumed by the turn loop.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class TurnContext:
     """Values produced by the turn prologue and consumed by the turn loop."""
@@ -396,11 +566,17 @@ class TurnContext:
     preflight_compression_blocked: bool = False  # immediate retry proved ineffective
 
 
+# ┌── 函数 def _persist_under_lock()
+# │  作用：Run ``fn`` under the session persist lock (when the agent has one), log-and-swallow
+# │  参数：agent: Any, fn, failure_msg: str, pending_cli_message: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _persist_under_lock(agent: Any, fn, failure_msg: str, pending_cli_message: Any) -> None:
     """Run ``fn`` under the session persist lock (when the agent has one), log-and-swallow
     failures, then drop staged CLI input — unless it is an unmarked handoff kept for a
     close retry (once ``_db_persisted`` the close path must not treat it as pre-worker
     UI input). Eager clearing keeps a preflight crash from leaking stale input."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         lock = getattr(agent, "_session_persist_lock", None)
         if lock is None:
@@ -415,6 +591,11 @@ def _persist_under_lock(agent: Any, fn, failure_msg: str, pending_cli_message: A
             agent._pending_cli_user_message = None
 
 
+# ┌── 函数 def _publish_runtime_main()
+# │  作用：Tell auxiliary_client the live main provider/model for this turn (after primary
+# │  参数：agent: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _publish_runtime_main(agent: Any) -> None:
     """Tell auxiliary_client the live main provider/model for this turn (after primary
     restoration settled the runtime). Never raises: failure loses only the scope."""
@@ -439,10 +620,16 @@ def _publish_runtime_main(agent: Any) -> None:
         )
 
 
+# ┌── 函数 def _refresh_mcp_tools_between_turns()
+# │  作用：Late-connecting MCP servers land in THIS turn's snapshot, before the first API
+# │  参数：agent: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _refresh_mcp_tools_between_turns(agent: Any) -> None:
     """Late-connecting MCP servers land in THIS turn's snapshot, before the first API
     call assembles ``tools=``. ``preserve_prefix`` keeps the tool array append-only so a
     flapping ``check_fn`` can't fork the cache."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Import-cost gate: MCP tools are only registered by code that already imported
         # ``tools.mcp_tool`` (~0.4s); not in sys.modules => nothing to do.
@@ -455,6 +642,11 @@ def _refresh_mcp_tools_between_turns(agent: Any) -> None:
         logger.debug("between-turns MCP tool refresh skipped", exc_info=True)
 
 
+# ┌── 函数 def _bind_turn_identity()
+# │  作用：Stage callback/persist overrides on the agent and bind this turn's task and turn
+# │  参数：agent: Any, task_id: Optional[str], stream_callback, persist_user_message: Any, persist_user_timestamp: Optional[float], persist_user_platform_id: Optional[str]
+# │  返回：Tuple[str, str]
+# └──────────────────────────────────────────────────────────────
 def _bind_turn_identity(
     agent: Any, task_id: Optional[str], stream_callback, persist_user_message: Any,
     persist_user_timestamp: Optional[float], persist_user_platform_id: Optional[str],
@@ -480,6 +672,7 @@ def _bind_turn_identity(
     # (concurrent turns interleave transcript writes). Cleared in _persist_session.
     from agent.agent_runtime_helpers import note_turn_start
     note_turn_start(agent, turn_id)
+    # ⤷ 出口 return：返回 (effective_task_id, turn_id)
     return effective_task_id, turn_id
 
 
@@ -498,6 +691,11 @@ _PER_TURN_RESET_STATE: Tuple[Tuple[str, Any], ...] = (
 )
 
 
+# ┌── 函数 def _reset_per_turn_agent_state()
+# │  作用：Reset retry counters, guardrails, iteration and run budgets at turn start.
+# │  参数：agent: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reset_per_turn_agent_state(agent: Any) -> None:
     """Reset retry counters, guardrails, iteration and run budgets at turn start."""
     for name, value in _PER_TURN_RESET_STATE:
@@ -540,6 +738,11 @@ def _reset_per_turn_agent_state(agent: Any) -> None:
             scrubber.reset()
 
 
+# ┌── 函数 def _stage_turn_user_message()
+# │  作用：Build this turn's user dict, reusing CLI-staged input only when its clean text
+# │  参数：agent: Any, user_message: Any, persist_user_message: Any, persist_user_timestamp: Optional[float], persist_user_platform_id: Optional[str], persist_user_display_kind: Optional[str], persist_user_display_metadata: Optional[Dict[str, Any]]
+# │  返回：Tuple[Dict[str, Any], Any]
+# └──────────────────────────────────────────────────────────────
 def _stage_turn_user_message(
     agent: Any, user_message: Any, persist_user_message: Any,
     persist_user_timestamp: Optional[float], persist_user_platform_id: Optional[str],
@@ -579,9 +782,15 @@ def _stage_turn_user_message(
     # recovery dedups via ``has_platform_message_id`` against this row.
     if persist_user_platform_id is not None:
         user_msg["platform_message_id"] = persist_user_platform_id
+    # ⤷ 出口 return：返回 (user_msg, pending_cli_message)
     return user_msg, pending_cli_message
 
 
+# ┌── 函数 def _hydrate_from_history()
+# │  作用：Hydrate process-local state from persisted history on the first resumed turn.
+# │  参数：agent: Any, conversation_history: Optional[List[Any]]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _hydrate_from_history(agent: Any, conversation_history: Optional[List[Any]]) -> None:
     """Hydrate process-local state from persisted history on the first resumed turn."""
     if not conversation_history:
@@ -603,6 +812,7 @@ def _hydrate_from_history(agent: Any, conversation_history: Optional[List[Any]])
             None,
         )
         if callable(note_checkpoint):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from agent.codex_responses_adapter import (
                     has_replayable_native_compaction_checkpoint,
@@ -624,6 +834,11 @@ def _hydrate_from_history(agent: Any, conversation_history: Optional[List[Any]])
                 agent._turns_since_memory = prior_user_turns % agent._memory_nudge_interval
 
 
+# ┌── 函数 def _tick_memory_nudge()
+# │  作用：Advance the turn-based memory nudge counter; ``True`` when the review should fire.
+# │  参数：agent: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _tick_memory_nudge(agent: Any) -> bool:
     """Advance the turn-based memory nudge counter; ``True`` when the review should fire."""
     if (agent._memory_nudge_interval > 0
@@ -632,10 +847,17 @@ def _tick_memory_nudge(agent: Any) -> bool:
         agent._turns_since_memory += 1
         if agent._turns_since_memory >= agent._memory_nudge_interval:
             agent._turns_since_memory = 0
+            # ⤷ 出口 return：返回 True
             return True
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _emit_reaction()
+# │  作用：Cosmetic side-signal: detect an affection reaction so the host can play hearts.
+# │  参数：agent: Any, original_user_message: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _emit_reaction(agent: Any, original_user_message: Any) -> None:
     """Cosmetic side-signal: detect an affection reaction so the host can play hearts.
     Token-free, never touches the conversation, never fatal."""
@@ -650,6 +872,11 @@ def _emit_reaction(agent: Any, original_user_message: Any) -> None:
             reaction_callback(kind)
 
 
+# ┌── 函数 def _ensure_session_row()
+# │  作用：Create the DB row now (system prompt populated => non-NULL) and BEFORE preflight
+# │  参数：agent: Any, pending_cli_message: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _ensure_session_row(agent: Any, pending_cli_message: Any) -> None:
     """Create the DB row now (system prompt populated => non-NULL) and BEFORE preflight
     compression: compaction/rotation INSERTs reference this row under PRAGMA
@@ -660,6 +887,11 @@ def _ensure_session_row(agent: Any, pending_cli_message: Any) -> None:
     )
 
 
+# ┌── 函数 def _collect_pre_llm_call_context()
+# │  作用：Run ``pre_llm_call`` plugins; their context is injected into the user message
+# │  参数：agent: Any, effective_task_id: str, turn_id: str, original_user_message: Any, messages: List[Any], conversation_history: Optional[List[Any]]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _collect_pre_llm_call_context(
     agent: Any, *, effective_task_id: str, turn_id: str, original_user_message: Any,
     messages: List[Any], conversation_history: Optional[List[Any]],
@@ -668,7 +900,9 @@ def _collect_pre_llm_call_context(
     (never the system prompt). Oversized per-hook context is spilled to disk so a
     runaway plugin can't inflate every subsequent turn's prompt."""
     if getattr(agent, "_persist_disabled", False):
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.lifecycle import invoke_hook as _invoke_hook
         _pre_results = _invoke_hook(
@@ -684,6 +918,7 @@ def _collect_pre_llm_call_context(
             parent_session_id=getattr(agent, "_parent_session_id", None) or "",
             sender_id=getattr(agent, "_user_id", None) or "",
         )
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Spill oversized per-hook context to disk so a runaway plugin can't inflate every subsequent
             # turn's prompt. Ported from openai/codex PR #21069 ("Spill large hook outputs from context").
@@ -703,6 +938,7 @@ def _collect_pre_llm_call_context(
             else:
                 continue
             if _spill_if_oversized is not None:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     _piece = _spill_if_oversized(
                         _piece, session_id=agent.session_id, source="plugin hook",
@@ -711,12 +947,19 @@ def _collect_pre_llm_call_context(
                 except Exception as _spill_exc:
                     logger.warning("hook context spill failed: %s", _spill_exc)
             _ctx_parts.append(_piece)
+        # ⤷ 出口 return：返回 '\n\n'.join(_ctx_parts)
         return "\n\n".join(_ctx_parts)
     except Exception as exc:
         logger.warning("pre_llm_call hook failed: %s", exc)
+    # ⤷ 出口 return：返回 ''
     return ""
 
 
+# ┌── 函数 def _merge_gateway_notes()
+# │  作用：Must-deliver per-turn notes ride the user-message injection channel (one-shot) so the
+# │  参数：agent: Any, messages: List[Any], current_turn_user_idx: int, plugin_user_context: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _merge_gateway_notes(
     agent: Any, messages: List[Any], current_turn_user_idx: int, plugin_user_context: str
 ) -> str:
@@ -729,6 +972,7 @@ def _merge_gateway_notes(
                           consume_surface_switch_note(agent)) if part
     )
     if not _turn_notes:
+        # ⤷ 出口 return：返回 plugin_user_context
         return plugin_user_context
     _gw_turn_content = (
         messages[current_turn_user_idx].get("content")
@@ -738,12 +982,19 @@ def _merge_gateway_notes(
     )
     if isinstance(_gw_turn_content, list):
         append_notes_to_multimodal_content(_gw_turn_content, _turn_notes)
+        # ⤷ 出口 return：返回 plugin_user_context
         return plugin_user_context
+    # ⤷ 出口 return：返回 plugin_user_context + '\n\n' + _turn_notes if plugin_user_co…
     return (
         plugin_user_context + "\n\n" + _turn_notes if plugin_user_context else _turn_notes
     )
 
 
+# ┌── 函数 def _bind_interrupt_scope()
+# │  作用：Record the execution thread so interrupt()/clear_interrupt() scope the tool-level
+# │  参数：agent: Any, ra
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bind_interrupt_scope(agent: Any, ra) -> None:
     """Record the execution thread so interrupt()/clear_interrupt() scope the tool-level
     signal to THIS agent's thread; clear stale state, preserving a pending interrupt."""
@@ -759,6 +1010,11 @@ def _bind_interrupt_scope(agent: Any, ra) -> None:
     agent._interrupt_thread_signal_pending = False
 
 
+# ┌── 函数 def _memory_turn_start_and_prefetch()
+# │  作用：Notify memory providers of the new turn, then prefetch external memory once
+# │  参数：agent: Any, original_user_message: Any, turn_author: Optional[Dict[str, Any]] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _memory_turn_start_and_prefetch(
     agent: Any, original_user_message: Any, turn_author: Optional[Dict[str, Any]] = None,
 ) -> str:
@@ -766,6 +1022,7 @@ def _memory_turn_start_and_prefetch(
     before the tool loop (skipped on trivial prompts with no semantic signal).
     Returns the prefetch text (``""`` when nothing was injected)."""
     if not agent._memory_manager:
+        # ⤷ 出口 return：返回 ''
         return ""
     _query = original_user_message if isinstance(original_user_message, str) else ""
     # The author rides along so a provider can attribute THIS turn, not whoever opened the session.
@@ -787,9 +1044,15 @@ def _memory_turn_start_and_prefetch(
             _recall_indicator = agent._memory_manager.describe_recall()
             if _recall_indicator:
                 agent._emit_status(_recall_indicator)
+    # ⤷ 出口 return：返回 ext_prefetch_cache
     return ext_prefetch_cache
 
 
+# ┌── 函数 def _stamp_api_content_sidecar()
+# │  作用：api_content sidecar — persist what you send: injected context lives only in the
+# │  参数：agent: Any, messages: List[Any], current_turn_user_idx: int, ext_prefetch_cache: str, plugin_user_context: str, preflight_compressed: bool
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _stamp_api_content_sidecar(
     agent: Any, messages: List[Any], current_turn_user_idx: int, ext_prefetch_cache: str,
     plugin_user_context: str, *, preflight_compressed: bool,
@@ -826,6 +1089,7 @@ def _stamp_api_content_sidecar(
         _db = getattr(agent, "_session_db", None)
         if _db is None or not (isinstance(_row_id, int) or _in_place_compacted):
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             if isinstance(_row_id, int):
                 _db.set_message_api_content(agent.session_id, _row_id, durable_content, _api_content)
@@ -837,6 +1101,11 @@ def _stamp_api_content_sidecar(
             logger.warning("api_content backfill failed for session=%s", agent.session_id or "none", exc_info=True)
 
 
+# ┌── 函数 def _persist_turn_start()
+# │  作用：Crash-resilience: persist the inbound user turn once, with final api_content,
+# │  参数：agent: Any, messages: List[Any], conversation_history: Optional[List[Any]], pending_cli_message: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _persist_turn_start(
     agent: Any, messages: List[Any], conversation_history: Optional[List[Any]],
     pending_cli_message: Any,
@@ -854,6 +1123,11 @@ def _persist_turn_start(
     )
 
 
+# ┌── 函数 def build_turn_context()
+# │  作用：Run the once-per-turn setup and return the loop's input context.
+# │  参数：agent, user_message: Any, system_message: Optional[str], conversation_history: Optional[List[Dict[str, Any]]], task_id: Optional[str], stream_callback, persist_user_message: Optional[Any], persist_user_timestamp: Optional[float] = None  …共 20 个
+# │  返回：TurnContext
+# └──────────────────────────────────────────────────────────────
 def build_turn_context(
     agent, user_message: Any, system_message: Optional[str],
     conversation_history: Optional[List[Dict[str, Any]]], task_id: Optional[str], stream_callback,
@@ -957,6 +1231,7 @@ def build_turn_context(
 
     # Bot Mode DM tool — injected ONLY into a bot's canonical "Bot Chat" session (same
     # gate as the protocol section); gate is session-stable, so cache-safe.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.bot_mode_dm import ensure_message_agent_tool
 
@@ -1007,6 +1282,7 @@ def build_turn_context(
     # so it runs concurrently with the turn. Daemon thread, no-op once titled.
     _maybe_title_session_at_turn_start(agent, messages)
 
+    # ⤷ 出口 return：返回 TurnContext(user_message=user_message, original_user_message…
     return TurnContext(
         user_message=user_message, original_user_message=original_user_message, messages=messages,
         conversation_history=conversation_history, active_system_prompt=active_system_prompt,
@@ -1017,6 +1293,11 @@ def build_turn_context(
     )
 
 
+# ┌── 函数 def _sanitize_model_for()
+# │  作用：Model name for strict-API tool-call sanitization. In MoA mode ``agent.model`` is
+# │  参数：agent: Any, moa_config: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _sanitize_model_for(agent: Any, moa_config: Any) -> Any:
     """Model name for strict-API tool-call sanitization. In MoA mode ``agent.model`` is
     the virtual preset name; use the resolved aggregator so Gemini keeps
@@ -1033,9 +1314,15 @@ def _sanitize_model_for(agent: Any, moa_config: Any) -> Any:
             _agg_slot = getattr(getattr(agent, "client", None), "last_aggregator_slot", None)
             if _agg_slot and _agg_slot.get("model"):
                 _sanitize_model = _agg_slot["model"]
+    # ⤷ 出口 return：返回 _sanitize_model
     return _sanitize_model
 
 
+# ┌── 函数 def build_api_messages()
+# │  作用：Build the wire copy of ``messages`` for one API call plus the effective system
+# │  参数：agent: Any, messages: List[Dict[str, Any]], current_turn_user_idx: Any, ext_prefetch_cache: Any, plugin_user_context: Any, moa_config: Any, active_system_prompt: Any
+# │  返回：Tuple[List[Dict[str, Any]], str]
+# └──────────────────────────────────────────────────────────────
 def build_api_messages(
     agent: Any, messages: List[Dict[str, Any]], *, current_turn_user_idx: Any,
     ext_prefetch_cache: Any, plugin_user_context: Any, moa_config: Any, active_system_prompt: Any,
@@ -1139,6 +1426,7 @@ def build_api_messages(
         effective_system = (effective_system + "\n\n" + agent.ephemeral_system_prompt).strip()
     if effective_system:
         api_messages = [{"role": "system", "content": effective_system}] + api_messages
+    # ⤷ 出口 return：返回 (api_messages, effective_system)
     return api_messages, effective_system
 
 
@@ -1157,12 +1445,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

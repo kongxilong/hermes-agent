@@ -1,6 +1,31 @@
 """Codex API runtime — App Server and Responses-API streaming paths. Every entry point takes the parent
 AIAgent first: ``run_codex_app_server_turn`` drives one ``codex app-server`` subprocess turn;
 ``run_codex_stream`` runs one streaming Codex Responses call."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/codex_runtime.py（约 1064 行）
+# 地位：Codex（OpenAI 的编码 Agent 接口）的两种接入实现。
+#
+# 两条路径：
+#   1. run_codex_app_server_turn(agent)  —— 启动一个 codex app-server 子进程，
+#      通过 JSON-RPC 跟它交互，一个函数跑完一整轮
+#   2. run_codex_stream(agent, api_kwargs, client, on_first_delta) —— 走 Codex Responses API 的流式调用
+#
+# 关键类：
+#   class _CodexResponseAssembler   把 Codex 的事件流（item_added / text_delta / function_call /
+#                                   reasoning_delta / item_done）组装成一个完整响应
+#   make_codex_app_server_event_bridge(agent)   把 Codex 的事件桥接成本项目的事件格式
+#
+# 值得注意的工程点：
+#   - 用量统计：_record_codex_app_server_usage / _queue_token_counts
+#   - 会话管理：_ensure_codex_session / _close_codex_session
+#   - 中断处理：_consume_user_interrupt
+#   - 降级：run_codex_create_stream_fallback（流式不行就退回非流式）
+#
+# 初学建议：这个文件只在你用 Codex 时才需要看，可以先跳过。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -22,16 +47,27 @@ _codex_watchdog_state_var: contextvars.ContextVar[Any | None] = contextvars.Cont
 )
 
 
+# ┌── 函数 def _call_guarded()
+# │  作用：Invoke an optional display/debug callback; a buggy hook must never tear down the turn.
+# │  参数：fn: Callable | None, fail_msg: str, *fail_args, args: tuple = ..., kwargs: dict | None = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _call_guarded(fn: Callable | None, fail_msg: str, *fail_args: Any, args: tuple = (), kwargs: dict | None = None):
     """Invoke an optional display/debug callback; a buggy hook must never tear down the turn."""
     if fn is None:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         fn(*args, **(kwargs or {}))
     except Exception:
         logger.debug(fail_msg, *fail_args, exc_info=True)
 
 
+# ┌── 函数 def _codex_request_failure_details()
+# │  作用：(serialized request bytes, exception class chain); the buffered ``httpx.Request`` content
+# │  参数：error: BaseException
+# │  返回：tuple[int | None, str]
+# └──────────────────────────────────────────────────────────────
 def _codex_request_failure_details(error: BaseException) -> tuple[int | None, str]:
     """(serialized request bytes, exception class chain); the buffered ``httpx.Request`` content
     on OpenAI connection errors gives the exact byte count without logging payloads or URLs."""
@@ -52,28 +88,45 @@ def _codex_request_failure_details(error: BaseException) -> tuple[int | None, st
                 request_body_bytes = len(content)
         implicit_chain = current.__cause__ is None and not current.__suppress_context__
         current = current.__context__ if implicit_chain else current.__cause__
+    # ⤷ 出口 return：返回 (request_body_bytes, ' <- '.join(exception_classes))
     return request_body_bytes, " <- ".join(exception_classes)
 
 
+# ┌── 函数 def _coerce_usage_int()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _coerce_usage_int(value: Any) -> int:
     if isinstance(value, bool):
+        # ⤷ 出口 return：返回 0
         return 0
     if isinstance(value, int):
+        # ⤷ 出口 return：返回 max(value, 0)
         return max(value, 0)
     if isinstance(value, float):
+        # ⤷ 出口 return：返回 max(int(value), 0)
         return max(int(value), 0)
     if isinstance(value, str):
         # Only the str->int parse is guarded; a float NaN still raises like it always has.
         with suppress(ValueError):
+            # ⤷ 出口 return：返回 max(int(value), 0)
             return max(int(value), 0)
+    # ⤷ 出口 return：返回 0
     return 0
 
 
+# ┌── 函数 def _queue_token_counts()
+# │  作用：Enqueue per-call accounting for the SessionDB background writer. ``counts`` is built
+# │  参数：agent, fail_msg: str, *fail_extra, counts: Callable[[], dict]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _queue_token_counts(agent, fail_msg: str, *fail_extra: Any, counts: Callable[[], dict]) -> None:
     """Enqueue per-call accounting for the SessionDB background writer. ``counts`` is built
     lazily inside the guarded try so a stub agent without a session DB is never touched."""
     if not (agent._session_db and agent.session_id):
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if not agent._session_db_created:
             agent._ensure_db_session()
@@ -82,6 +135,11 @@ def _queue_token_counts(agent, fail_msg: str, *fail_extra: Any, counts: Callable
         logger.debug(fail_msg, agent.session_id, *fail_extra, exc)
 
 
+# ┌── 函数 def _record_codex_app_server_usage()
+# │  作用：Translate Codex app-server token usage into Hermes accounting. Prompt bucket = uncached + cached
+# │  参数：agent, turn, messages = None
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _record_codex_app_server_usage(agent, turn, messages=None) -> dict[str, Any]:
     """Translate Codex app-server token usage into Hermes accounting. Prompt bucket = uncached + cached
     input (the protocol exposes no cache-write tokens); a turn with no usage still counts as one API call.
@@ -93,6 +151,7 @@ def _record_codex_app_server_usage(agent, turn, messages=None) -> dict[str, Any]
     compressor = getattr(agent, "context_compressor", None)
 
     def billing(**extra):
+        # ⤷ 出口 return：返回 dict(model=agent.model, billing_provider=agent.provider, bil…
         return dict(model=agent.model, billing_provider=agent.provider, billing_base_url=agent.base_url, api_call_count=1, **extra)
     if not isinstance(usage, dict) or not usage:
         if compressor is not None and getattr(compressor, "awaiting_real_usage_after_compression", False):
@@ -102,6 +161,7 @@ def _record_codex_app_server_usage(agent, turn, messages=None) -> dict[str, Any]
             compressor.note_usage_less_response()
         _queue_token_counts(agent, "Codex app-server api-call persistence failed (session=%s): %s",
                             counts=lambda: billing(billing_mode="subscription_included"))
+        # ⤷ 出口 return：返回 {}
         return {}
     from agent.usage_pricing import CanonicalUsage, estimate_usage_cost
     canonical_usage = CanonicalUsage(
@@ -116,6 +176,7 @@ def _record_codex_app_server_usage(agent, turn, messages=None) -> dict[str, Any]
     usage_dict = {"prompt_tokens": prompt_tokens, "completion_tokens": canonical_usage.output_tokens,
                   "total_tokens": total_tokens, **token_counts}
     if compressor is not None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             compressor.update_from_response(usage_dict)
             context_window = getattr(turn, "model_context_window", None)
@@ -144,13 +205,20 @@ def _record_codex_app_server_usage(agent, turn, messages=None) -> dict[str, Any]
         counts=lambda: billing(**token_counts, **cost_fields,
                                billing_mode="subscription_included" if cost_result.status == "included" else None),
     )
+    # ⤷ 出口 return：返回 {**usage_dict, 'last_prompt_tokens': prompt_tokens, **cost_f…
     return {**usage_dict, "last_prompt_tokens": prompt_tokens, **cost_fields}
 
 
+# ┌── 函数 def _record_codex_app_server_compaction()
+# │  作用：Record a Codex-native compaction boundary: the app-server owns the compacted thread,
+# │  参数：agent, turn, approx_tokens: int | None = ..., force: bool = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _record_codex_app_server_compaction(agent, turn, *, approx_tokens: int | None = None, force: bool = False) -> bool:
     """Record a Codex-native compaction boundary: the app-server owns the compacted thread,
     so local transcript rows are NOT rewritten — only session event/usage counters."""
     if not force and not getattr(turn, "compacted", False):
+        # ⤷ 出口 return：返回 False
         return False
     thread_id, turn_id = getattr(turn, "thread_id", None) or "", getattr(turn, "turn_id", None) or ""
     logger.info("codex app-server compaction observed: session=%s thread=%s turn=%s force=%s",
@@ -182,6 +250,7 @@ def _record_codex_app_server_compaction(agent, turn, *, approx_tokens: int | Non
                       "compression_count": getattr(compressor, "compression_count", 0) if compressor is not None else 0,
                       "runtime": "codex_app_server", "thread_id": thread_id, "turn_id": turn_id,
                   }))
+    # ⤷ 出口 return：返回 True
     return True
 
 
@@ -202,83 +271,137 @@ _MCP_LIKE_ITEM_TYPES = {"mcpToolCall", "dynamicToolCall"}
 _PREVIEW_FIELDS = {"commandExecution": "command", "webSearch": "query"}
 
 
+# ┌── 函数 def _item_changes()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：item: dict
+# │  返回：list[dict]
+# └──────────────────────────────────────────────────────────────
 def _item_changes(item: dict) -> list[dict]:
+    # ⤷ 出口 return：返回 [c for c in item.get('changes') or [] if isinstance(c, dict)…
     return [c for c in (item.get("changes") or []) if isinstance(c, dict)]
 
 
+# ┌── 函数 def _codex_item_to_tool_name()
+# │  作用：Synthetic Hermes tool name for a codex item (mirrors CodexEventProjector).
+# │  参数：item: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _codex_item_to_tool_name(item: dict) -> str:
     """Synthetic Hermes tool name for a codex item (mirrors CodexEventProjector)."""
     item_type = item.get("type") or ""
     if item_type == "mcpToolCall":
         server, tool = item.get("server") or "mcp", item.get("tool") or "unknown"
+        # ⤷ 出口 return：返回 tool if server == _INTERNAL_MCP_SERVER else f'mcp.{server}.{…
         return tool if server == _INTERNAL_MCP_SERVER else f"mcp.{server}.{tool}"
     if item_type == "dynamicToolCall":
+        # ⤷ 出口 return：返回 item.get('tool') or 'dynamic'
         return item.get("tool") or "dynamic"
+    # ⤷ 出口 return：返回 _STATIC_TOOL_NAMES.get(item_type) or item_type or 'unknown'
     return _STATIC_TOOL_NAMES.get(item_type) or item_type or "unknown"
 
 
+# ┌── 函数 def _codex_item_to_args()
+# │  作用：Args dict for tool_progress_callback("tool.started"); mirrors the projector shapes.
+# │  参数：item: dict
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _codex_item_to_args(item: dict) -> dict:
     """Args dict for tool_progress_callback("tool.started"); mirrors the projector shapes."""
     item_type = item.get("type") or ""
     if item_type == "commandExecution":
+        # ⤷ 出口 return：返回 {'command': item.get('command') or '', 'cwd': item.get('cwd'…
         return {"command": item.get("command") or "", "cwd": item.get("cwd") or ""}
     if item_type == "fileChange":
+        # ⤷ 出口 return：返回 {'changes': [{'kind': (c.get('kind') or {}).get('type') or '…
         return {"changes": [{"kind": (c.get("kind") or {}).get("type") or "update", "path": c.get("path") or ""}
                             for c in _item_changes(item)]}
     if item_type in _MCP_LIKE_ITEM_TYPES:
         args = item.get("arguments") or {}
+        # ⤷ 出口 return：返回 args if isinstance(args, dict) else {'arguments': args}
         return args if isinstance(args, dict) else {"arguments": args}
+    # ⤷ 出口 return：返回 {'query': item.get('query') or ''} if item_type == 'webSearc…
     return {"query": item.get("query") or ""} if item_type == "webSearch" else {}
 
 
+# ┌── 函数 def _codex_item_to_preview()
+# │  作用：Short preview for the tool.started bubble; None when nothing useful (UI tolerates None).
+# │  参数：item: dict
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _codex_item_to_preview(item: dict) -> Any:
     """Short preview for the tool.started bubble; None when nothing useful (UI tolerates None)."""
     item_type = item.get("type") or ""
     if item_type in _PREVIEW_FIELDS:
+        # ⤷ 出口 return：返回 (item.get(_PREVIEW_FIELDS[item_type]) or '')[:120] or None
         return (item.get(_PREVIEW_FIELDS[item_type]) or "")[:120] or None
     if item_type == "fileChange":
         paths = [c.get("path") for c in _item_changes(item) if c.get("path")]
+        # ⤷ 出口 return：返回 ', '.join(paths[:3]) + (f', +{len(paths) - 3} more' if len(p…
         return (", ".join(paths[:3]) + (f", +{len(paths) - 3} more" if len(paths) > 3 else "")) if paths else None
     if item_type in _MCP_LIKE_ITEM_TYPES:
         args = item.get("arguments") or {}
         if isinstance(args, dict) and args:
             with suppress(TypeError, ValueError):
+                # ⤷ 出口 return：返回 json.dumps(args, ensure_ascii=False)[:120]
                 return json.dumps(args, ensure_ascii=False)[:120]
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _codex_item_completion_payload()
+# │  作用：(result_text, is_error) for a completed tool item; mirrors the projector's tool-result content.
+# │  参数：item: dict
+# │  返回：tuple[str, bool]
+# └──────────────────────────────────────────────────────────────
 def _codex_item_completion_payload(item: dict) -> tuple[str, bool]:
     """(result_text, is_error) for a completed tool item; mirrors the projector's tool-result content."""
     item_type = item.get("type") or ""
     if item_type == "commandExecution":
         out, exit_code = item.get("aggregatedOutput") or "", item.get("exitCode")
         is_error = bool(exit_code is not None and exit_code != 0)
+        # ⤷ 出口 return：返回 (f'[exit {exit_code}]\n{out}' if is_error else out, is_error…
         return (f"[exit {exit_code}]\n{out}" if is_error else out), is_error
     if item_type == "fileChange":
         status = item.get("status") or "unknown"
         n = len(item.get("changes") or [])
+        # ⤷ 出口 return：返回 (f'apply_patch status={status}, {n} change(s)', status not i…
         return f"apply_patch status={status}, {n} change(s)", status not in {"completed", "applied", "success"}
     if item_type == "mcpToolCall":
         if error := item.get("error"):
+            # ⤷ 出口 return：返回 (f'[error] {json.dumps(error, ensure_ascii=False)[:1000]}', …
             return f"[error] {json.dumps(error, ensure_ascii=False)[:1000]}", True
         result = item.get("result")
+        # ⤷ 出口 return：返回 (json.dumps(result, ensure_ascii=False)[:4000] if result is …
         return (json.dumps(result, ensure_ascii=False)[:4000] if result is not None else ""), False
     if item_type == "dynamicToolCall":
         content_items, success = item.get("contentItems") or [], item.get("success", True)
         has_items = isinstance(content_items, list) and content_items
+        # ⤷ 出口 return：返回 (json.dumps(content_items, ensure_ascii=False)[:4000] if has…
         return (json.dumps(content_items, ensure_ascii=False)[:4000] if has_items else f"success={success}"), not bool(success)
+    # ⤷ 出口 return：返回 ('', False)
     return "", False
 
 
+# ┌── 函数 def _stable_call_id()
+# │  作用：Deterministic tool_call id mirroring CodexEventProjector (live TUI card correlates with projected history).
+# │  参数：item: dict, name: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _stable_call_id(item: dict, name: str) -> str:
     """Deterministic tool_call id mirroring CodexEventProjector (live TUI card correlates with projected history)."""
     from agent.transports.codex_event_projector import _deterministic_call_id
     item_type = item.get("type") or ""
     tool = item.get("tool") or "unknown"
     prefix = {"mcpToolCall": f"mcp__{item.get('server') or 'mcp'}__{tool}", "dynamicToolCall": f"dyn_{tool}"}.get(item_type)
+    # ⤷ 出口 return：返回 _deterministic_call_id(prefix or _STABLE_ID_PREFIXES.get(ite…
     return _deterministic_call_id(prefix or _STABLE_ID_PREFIXES.get(item_type, name), item.get("id") or "")
 
 
+# ┌── 函数 def make_codex_app_server_event_bridge()
+# │  作用：Build the ``on_event`` callback for ``CodexAppServerSession(on_event=...)``.
+# │  参数：agent
+# │  返回：Callable[[dict], None]
+# └──────────────────────────────────────────────────────────────
 def make_codex_app_server_event_bridge(agent) -> Callable[[dict], None]:
     """Build the ``on_event`` callback for ``CodexAppServerSession(on_event=...)``.
 
@@ -356,12 +479,18 @@ def make_codex_app_server_event_bridge(agent) -> Callable[[dict], None]:
         if handler is not None:
             params = note.get("params")
             handler(params if isinstance(params, dict) else {})
+    # ⤷ 出口 return：返回 on_event
     return on_event
 
 
 # --- Codex app-server turn ----------------------------------------------------
 
 
+# ┌── 函数 def _close_codex_session()
+# │  作用：Drop the session so the next turn respawns codex instead of reusing a dead client.
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _close_codex_session(agent) -> None:
     """Drop the session so the next turn respawns codex instead of reusing a dead client."""
     with suppress(Exception):
@@ -369,6 +498,11 @@ def _close_codex_session(agent) -> None:
     agent._codex_session = None
 
 
+# ┌── 函数 def _consume_user_interrupt()
+# │  作用：(user_interrupted, interrupt_message); clears the agent-level interrupt so a hard
+# │  参数：agent, active: bool = True
+# │  返回：tuple[bool, Any]
+# └──────────────────────────────────────────────────────────────
 def _consume_user_interrupt(agent, active: bool = True) -> tuple[bool, Any]:
     """(user_interrupted, interrupt_message); clears the agent-level interrupt so a hard
     stop cannot poison the next turn (mirrors the conversation-loop finalizer)."""
@@ -376,9 +510,15 @@ def _consume_user_interrupt(agent, active: bool = True) -> tuple[bool, Any]:
     message = getattr(agent, "_interrupt_message", None) if interrupted else None
     if interrupted:
         agent.clear_interrupt()
+    # ⤷ 出口 return：返回 (interrupted, message)
     return interrupted, message
 
 
+# ┌── 函数 def _ensure_codex_session()
+# │  作用：Lazily spawn one CodexAppServerSession per AIAgent (reused across turns, closed by the _cleanup hook).
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _ensure_codex_session(agent) -> None:
     """Lazily spawn one CodexAppServerSession per AIAgent (reused across turns, closed by the _cleanup hook)."""
     if getattr(agent, "_codex_session", None) is not None:
@@ -393,6 +533,7 @@ def _ensure_codex_session(agent) -> None:
     # Gateway/cron have no UI for codex approval requests, so exec/apply_patch fail closed by default. Only an
     # explicit approval bypass (approvals.mode: off, /yolo, --yolo, HERMES_YOLO_MODE) hands policy to codex's sandbox.
     auto_approve_requests = False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.approval import is_approval_bypass_active
         auto_approve_requests = is_approval_bypass_active()
@@ -410,6 +551,11 @@ def _ensure_codex_session(agent) -> None:
     )
 
 
+# ┌── 函数 def _persist_projected_messages()
+# │  作用：Splice the projected messages into ``messages`` and flush them to the session DB.
+# │  参数：agent, turn, messages: List[Dict[str, Any]]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _persist_projected_messages(agent, turn, messages: List[Dict[str, Any]]) -> None:
     """Splice the projected messages into ``messages`` and flush them to the session DB.
 
@@ -432,6 +578,7 @@ def _persist_projected_messages(agent, turn, messages: List[Dict[str, Any]]) -> 
     if getattr(agent, "_session_db", None) is None:
         return
     flush_ok = False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         flush_ok = agent._flush_messages_to_session_db(messages)
     except Exception:
@@ -442,6 +589,11 @@ def _persist_projected_messages(agent, turn, messages: List[Dict[str, Any]]) -> 
                        "(session=%s) — this turn will be missing after restart/resume", getattr(agent, "session_id", None))
 
 
+# ┌── 函数 def _finish_codex_turn()
+# │  作用：Post-turn bookkeeping mirroring the chat_completions loop; returns usage fields.
+# │  参数：agent, turn, messages: List[Dict[str, Any]], original_user_message: Any, should_review_memory: bool
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _finish_codex_turn(agent, turn, messages: List[Dict[str, Any]], *, original_user_message: Any,
                        should_review_memory: bool) -> dict[str, Any]:
     """Post-turn bookkeeping mirroring the chat_completions loop; returns usage fields."""
@@ -464,9 +616,15 @@ def _finish_codex_turn(agent, turn, messages: List[Dict[str, Any]], *, original_
         _call_guarded(getattr(agent, "_spawn_background_review", None), "background review spawn raised", kwargs=dict(
             messages_snapshot=list(messages), review_memory=should_review_memory, review_skills=should_review_skills,
         ))
+    # ⤷ 出口 return：返回 usage_result
     return usage_result
 
 
+# ┌── 函数 def run_codex_app_server_turn()
+# │  作用：Hand the turn to a ``codex app-server`` subprocess and project its events into ``messages``.
+# │  参数：agent, user_message: str, original_user_message: Any, messages: List[Dict[str, Any]], effective_task_id: str, should_review_memory: bool = ...
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def run_codex_app_server_turn(agent, *, user_message: str, original_user_message: Any, messages: List[Dict[str, Any]],
                               effective_task_id: str, should_review_memory: bool = False) -> Dict[str, Any]:
     """Hand the turn to a ``codex app-server`` subprocess and project its events into ``messages``.
@@ -475,14 +633,17 @@ def run_codex_app_server_turn(agent, *, user_message: str, original_user_message
     # api_mode is mutable. Explicit-True check matches compress_context().
     if getattr(agent, "compression_checkpoint_required", False) is True:
         from agent.conversation_compression import _checkpoint_blocked
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _checkpoint_blocked("codex_app_server owns the authoritative thread and compacts it "
                                   "without a truthful pre-compaction transcript boundary")
     _ensure_codex_session(agent)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         turn = agent._codex_session.run_turn(user_input=user_message)
     except Exception as exc:
         logger.exception("codex app-server turn failed")
         _close_codex_session(agent)
+        # ⤷ 出口 return：返回 _turn_result(_consume_user_interrupt(agent), messages, api_c…
         return _turn_result(
             _consume_user_interrupt(agent), messages, api_calls=0, completed=False, error=str(exc),
             final_response=f"Codex app-server turn failed: {exc}. Fall back to default runtime with `/codex-runtime auto`.",
@@ -496,6 +657,7 @@ def run_codex_app_server_turn(agent, *, user_message: str, original_user_message
     usage_result = _finish_codex_turn(
         agent, turn, messages, original_user_message=original_user_message, should_review_memory=should_review_memory,
     )
+    # ⤷ 出口 return：返回 _turn_result(interrupt, messages, api_calls=1, completed=not…
     return _turn_result(
         interrupt, messages, api_calls=1, completed=not turn.interrupted and turn.error is None, error=turn.error,
         # We flushed the projected rows ourselves (agent_persisted); the gateway must skip its own DB write.
@@ -504,10 +666,16 @@ def run_codex_app_server_turn(agent, *, user_message: str, original_user_message
     )
 
 
+# ┌── 函数 def _turn_result()
+# │  作用：Result shape shared with the chat_completions path (``partial`` == ``not completed``).
+# │  参数：interrupt: tuple[bool, Any], messages: List[Dict[str, Any]], api_calls: int, completed: bool, error: Any, final_response: Any, **extra
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _turn_result(interrupt: tuple[bool, Any], messages: List[Dict[str, Any]], *, api_calls: int, completed: bool,
                  error: Any, final_response: Any, **extra: Any) -> Dict[str, Any]:
     """Result shape shared with the chat_completions path (``partial`` == ``not completed``)."""
     user_interrupted, interrupt_message = interrupt
+    # ⤷ 出口 return：返回 {'final_response': final_response, 'messages': messages, 'ap…
     return {
         "final_response": final_response, "messages": messages, "api_calls": api_calls,
         "completed": completed, "partial": not completed, "interrupted": user_interrupted,
@@ -522,11 +690,17 @@ def _turn_result(interrupt: tuple[bool, Any], messages: List[Dict[str, Any]], *,
 # response from ``output_item.done``, so the terminal ``output`` may be null / [] / a string / absent.
 
 
+# ┌── 函数 def _event_field()
+# │  作用：Field access for attr-style (SDK objects) and dict (raw JSON) events/items.
+# │  参数：event: Any, name: str, default: Any = None
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _event_field(event: Any, name: str, default: Any = None) -> Any:
     """Field access for attr-style (SDK objects) and dict (raw JSON) events/items."""
     value = getattr(event, name, None)
     if value is None and isinstance(event, dict):
         value = event.get(name, default)
+    # ⤷ 出口 return：返回 value if value is not None else default
     return value if value is not None else default
 
 
@@ -536,6 +710,11 @@ _CODEX_PROGRESS_DELTA_TYPES = frozenset({
 })
 
 
+# ┌── 函数 def _codex_event_has_content()
+# │  作用：Whether a Codex Responses event carries substantive forward progress.
+# │  参数：event: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _codex_event_has_content(event: Any) -> bool:
     """Whether a Codex Responses event carries substantive forward progress.
 
@@ -544,14 +723,22 @@ def _codex_event_has_content(event: Any) -> bool:
     """
     event_type = _event_field(event, "type")
     if event_type in _CODEX_PROGRESS_DELTA_TYPES:
+        # ⤷ 出口 return：返回 bool(_event_field(event, 'delta'))
         return bool(_event_field(event, "delta"))
     if event_type == "response.output_item.added":
         item = _event_field(event, "item")
+        # ⤷ 出口 return：返回 'function_call' in str(_event_field(item, 'type') or '') and…
         return "function_call" in str(_event_field(item, "type") or "") and any(
             bool(_event_field(item, field)) for field in ("id", "call_id", "name", "arguments"))
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _raise_stream_error()
+# │  作用：Raise ``_StreamErrorEvent`` from a ``type=error`` SSE frame. The spec puts code/message/param at the
+# │  参数：event: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _raise_stream_error(event: Any) -> None:
     """Raise ``_StreamErrorEvent`` from a ``type=error`` SSE frame. The spec puts code/message/param at the
     top level, but the SDK and several proxies nest them under ``error``; read top-level first, then the envelope."""
@@ -560,26 +747,44 @@ def _raise_stream_error(event: Any) -> None:
 
     def _error_field(name: str) -> Any:
         value = _event_field(event, name)
+        # ⤷ 出口 return：返回 _event_field(nested, name) if value is None and nested is no…
         return _event_field(nested, name) if value is None and nested is not None else value
     raw_message = _error_field("message")
     message = (str(raw_message) if raw_message is not None else "stream emitted error event").strip() or "stream emitted error event"
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise _StreamErrorEvent(message, code=_error_field("code"), param=_error_field("param"))
 
 
+# ┌── 函数 def _message_phase()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：item: Any
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _message_phase(item: Any) -> str | None:
     phase = _event_field(item, "phase", None)
+    # ⤷ 出口 return：返回 phase.strip().lower() if isinstance(phase, str) else None
     return phase.strip().lower() if isinstance(phase, str) else None
 
 
+# ┌── 函数 def _output_text_of()
+# │  作用：Concatenated ``output_text`` parts of a message item ("" if content is not a list).
+# │  参数：item: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _output_text_of(item: Any) -> str:
     """Concatenated ``output_text`` parts of a message item ("" if content is not a list)."""
     content_parts = _event_field(item, "content", [])
     parts = content_parts if isinstance(content_parts, list) else []
+    # ⤷ 出口 return：返回 ''.join((str(_event_field(part, 'text', '') or '') for part …
     return "".join(
         str(_event_field(part, "text", "") or "") for part in parts if _event_field(part, "type", "") == "output_text"
     ).strip()
 
 
+# ┌── 类 class _CodexResponseAssembler
+# │  说明：Assemble a Response-shaped ``SimpleNamespace`` from raw Responses SSE events.
+# │  成员：共 11 个方法；对外可用 2 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _CodexResponseAssembler:
     """Assemble a Response-shaped ``SimpleNamespace`` from raw Responses SSE events.
 
@@ -597,6 +802,11 @@ class _CodexResponseAssembler:
     # terminal_status defaults to "completed", so settlement needs an explicitly observed response.completed frame.
     saw_response_completed = False
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, model, on_text_delta, on_reasoning_delta, on_commentary_message, on_first_delta
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, *, model, on_text_delta, on_reasoning_delta, on_commentary_message, on_first_delta):
         self.model, self.on_text_delta, self.on_reasoning_delta = model, on_text_delta, on_reasoning_delta
         self.on_commentary_message, self.on_first_delta = on_commentary_message, on_first_delta
@@ -610,9 +820,19 @@ class _CodexResponseAssembler:
         self.pending_function_calls: Dict[str, Dict[str, Any]] = {}
         self.announced_output_order: Dict[str, tuple] = {}
 
+    # ┌── 函数 def _safe()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, cb: Callable | None, label: str, *args
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _safe(self, cb: Callable | None, label: str, *args: Any) -> None:
         _call_guarded(cb, f"Codex stream {label} raised", args=args)
 
+    # ┌── 函数 def _on_item_added()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, event: Any, event_type: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_item_added(self, event: Any, event_type: str) -> None:
         item = _event_field(event, "item")
         item_type = _event_field(item, "type", "")
@@ -634,6 +854,11 @@ class _CodexResponseAssembler:
                     "output_index": announced_index, "sequence": announced_sequence,
                 }
 
+    # ┌── 函数 def _on_text_delta()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, event: Any, event_type: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_text_delta(self, event: Any, event_type: str) -> None:
         delta_text = _event_field(event, "delta", "")
         if not delta_text:
@@ -656,6 +881,11 @@ class _CodexResponseAssembler:
                 self._safe(self.on_first_delta, "on_first_delta")
             self._safe(self.on_text_delta, "on_text_delta", delta_text)
 
+    # ┌── 函数 def _on_function_call()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, event: Any, event_type: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_function_call(self, event: Any, event_type: str) -> None:
         self.has_tool_calls = True
         pending = self.pending_function_calls.get(str(_event_field(event, "item_id", "")))
@@ -669,6 +899,11 @@ class _CodexResponseAssembler:
             if (done_args := _event_field(event, "arguments", None)) is not None:
                 pending["arguments"] = str(done_args)
 
+    # ┌── 函数 def _on_reasoning_delta()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, event: Any, event_type: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_reasoning_delta(self, event: Any, event_type: str) -> None:
         reasoning_text = _event_field(event, "delta", "")
         if not reasoning_text or self.on_reasoning_delta is None:
@@ -680,6 +915,11 @@ class _CodexResponseAssembler:
             self.active_summary_index = summary_index
         self._safe(self.on_reasoning_delta, "on_reasoning_delta", reasoning_text)
 
+    # ┌── 函数 def _on_item_done()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, event: Any, event_type: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_item_done(self, event: Any, event_type: str) -> None:
         done_item = _event_field(event, "item")
         if done_item is None:
@@ -701,6 +941,11 @@ class _CodexResponseAssembler:
                 self._safe(self.on_commentary_message, "on_commentary_message", commentary_text)
             self.commentary_text_deltas = []
 
+    # ┌── 函数 def _on_terminal()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, event: Any, event_type: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _on_terminal(self, event: Any, event_type: str) -> bool:
         self.saw_terminal = True
         resp_obj = _event_field(event, "response")
@@ -715,6 +960,7 @@ class _CodexResponseAssembler:
                 self.terminal_error = _event_field(resp_obj, "error")
         self.saw_response_completed = self.saw_response_completed or event_type == "response.completed"
         self.terminal_status = self.terminal_status or event_type.removeprefix("response.")
+        # ⤷ 出口 return：返回 True
         return True
 
     # Exact-type handlers first, then substring-matched ones in priority order. ``error`` frames
@@ -729,13 +975,24 @@ class _CodexResponseAssembler:
         (lambda t: "reasoning" in t and "delta" in t, _on_reasoning_delta),
     )
 
+    # ┌── 函数 def feed()
+    # │  作用：Process one event; True when the stream hit a terminal frame.
+    # │  参数：self, event: Any
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def feed(self, event: Any) -> bool:
         """Process one event; True when the stream hit a terminal frame."""
         event_type = _event_field(event, "type", "")
         event_type = event_type if isinstance(event_type, str) else ""
         handler = self._EXACT_HANDLERS.get(event_type) or next((h for m, h in self._FUZZY_HANDLERS if m(event_type)), None)
+        # ⤷ 出口 return：返回 bool(handler(self, event, event_type)) if handler is not Non…
         return bool(handler(self, event, event_type)) if handler is not None else False
 
+    # ┌── 函数 def _settled_output()
+    # │  作用：Merge .done items with settled pending calls, keeping stream order.
+    # │  参数：self
+    # │  返回：List[Any]
+    # └──────────────────────────────────────────────────────────────
     def _settled_output(self) -> List[Any]:
         """Merge .done items with settled pending calls, keeping stream order."""
         indexed = list(zip(self.output_indexes, self.output_sequences, self.output_items))
@@ -754,8 +1011,14 @@ class _CodexResponseAssembler:
                 indexed.sort(key=lambda entry: entry[0])
         else:
             indexed.sort(key=lambda entry: entry[1])
+        # ⤷ 出口 return：返回 [entry[2] for entry in indexed]
         return [entry[2] for entry in indexed]
 
+    # ┌── 函数 def result()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：SimpleNamespace
+    # └──────────────────────────────────────────────────────────────
     def result(self) -> SimpleNamespace:
         # With only plain text deltas (no tool calls), synthesize one message item.
         output: List[Any] = list(self.output_items)
@@ -768,13 +1031,20 @@ class _CodexResponseAssembler:
             output = self._settled_output()
         # No terminal frame AND no usable content = truncated / rejected stream.
         if not self.saw_terminal and not output:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise RuntimeError("Codex Responses stream did not emit a terminal response")
+        # ⤷ 出口 return：返回 SimpleNamespace(output=output, output_text=''.join(self.text…
         return SimpleNamespace(
             output=output, output_text="".join(self.text_deltas), usage=self.terminal_usage, status=self.terminal_status,
             id=self.terminal_response_id, model=self.model, incomplete_details=self.terminal_incomplete_details,
             error=self.terminal_error)
 
 
+# ┌── 函数 def _consume_codex_event_stream()
+# │  作用：Consume a Codex Responses SSE stream into a Response-shaped ``SimpleNamespace`` (see
+# │  参数：event_iter: Any, model: str, on_text_delta = ..., on_reasoning_delta = ..., on_commentary_message = ..., on_first_delta = ..., on_event = ..., interrupt_check = ...
+# │  返回：SimpleNamespace
+# └──────────────────────────────────────────────────────────────
 def _consume_codex_event_stream(
     event_iter: Any, *, model: str, on_text_delta=None, on_reasoning_delta=None, on_commentary_message=None,
     on_first_delta=None, on_event=None, interrupt_check=None,
@@ -793,17 +1063,25 @@ def _consume_codex_event_stream(
                                         on_commentary_message=on_commentary_message, on_first_delta=on_first_delta)
     for event in event_iter:
         if on_event is not None:
+            # ⤷ 关键分支 try/except：捕获 (TimeoutError, InterruptedError)、Exception，出错走兜底而不是崩溃。
             try:
                 on_event(event)
             except (TimeoutError, InterruptedError):
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise  # watchdog / cancellation control flow must propagate
             except Exception:
                 logger.debug("Codex stream on_event hook raised", exc_info=True)
         if (interrupt_check is not None and interrupt_check()) or assembler.feed(event):
             break
+    # ⤷ 出口 return：返回 assembler.result()
     return assembler.result()
 
 
+# ┌── 函数 def _sanitize_consumer_codex_request()
+# │  作用：Drop fields the ChatGPT OAuth Codex endpoint rejects, at the final wire boundary (after Relay /
+# │  参数：agent: Any, request: dict[str, Any]
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _sanitize_consumer_codex_request(agent: Any, request: dict[str, Any]) -> dict[str, Any]:
     """Drop fields the ChatGPT OAuth Codex endpoint rejects, at the final wire boundary (after Relay /
     middleware / ``request_overrides``): a late ``prompt_cache_retention``, top-level or nested in
@@ -812,6 +1090,7 @@ def _sanitize_consumer_codex_request(agent: Any, request: dict[str, Any]) -> dic
     # getattr: run_codex_stream is also driven with stand-in agents carrying only the attrs a path needs.
     backend_predicate = getattr(agent, "_is_codex_backend", None)
     if not (callable(backend_predicate) and bool(backend_predicate())):
+        # ⤷ 出口 return：返回 sanitized
         return sanitized
     dropped_from = ["top-level"] if "prompt_cache_retention" in sanitized else []
     sanitized.pop("prompt_cache_retention", None)
@@ -825,6 +1104,7 @@ def _sanitize_consumer_codex_request(agent: Any, request: dict[str, Any]) -> dic
     if dropped_from:
         logger.warning("Dropped unsupported prompt_cache_retention at consumer Codex wire boundary (model=%s, via %s).",
                        sanitized.get("model", getattr(agent, "model", "unknown")), ", ".join(dropped_from))
+    # ⤷ 出口 return：返回 sanitized
     return sanitized
 
 
@@ -832,17 +1112,31 @@ def _sanitize_consumer_codex_request(agent: Any, request: dict[str, Any]) -> dic
 _SDK_TRANSFORM_BYPASS_FIELDS = ("input", "tools")
 
 
+# ┌── 函数 def _is_plain_json_data()
+# │  作用：True when ``value`` is purely JSON wire types; pydantic models / generators must keep the typed SDK path.
+# │  参数：value: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_plain_json_data(value: Any) -> bool:
     """True when ``value`` is purely JSON wire types; pydantic models / generators must keep the typed SDK path."""
     if value is None or isinstance(value, (str, int, float, bool)):
+        # ⤷ 出口 return：返回 True
         return True
     if isinstance(value, dict):
+        # ⤷ 出口 return：返回 all((isinstance(key, str) and _is_plain_json_data(item) for …
         return all(isinstance(key, str) and _is_plain_json_data(item) for key, item in value.items())
     if isinstance(value, list):
+        # ⤷ 出口 return：返回 all((_is_plain_json_data(item) for item in value))
         return all(_is_plain_json_data(item) for item in value)
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _bypass_sdk_request_transform()
+# │  作用：Route bulk payload fields around the SDK's ``maybe_transform``.
+# │  参数：stream_kwargs: dict
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _bypass_sdk_request_transform(stream_kwargs: dict) -> dict:
     """Route bulk payload fields around the SDK's ``maybe_transform``.
 
@@ -851,19 +1145,27 @@ def _bypass_sdk_request_transform(stream_kwargs: dict) -> dict:
     merges ``extra_body`` AFTER the transform, so moving wire-format bulk fields there yields a byte-identical
     request without the walk. HERMES_CODEX_SDK_TRANSFORM=1 disables."""
     if os.environ.get("HERMES_CODEX_SDK_TRANSFORM", "").strip().lower() in {"1", "true", "yes", "on"}:
+        # ⤷ 出口 return：返回 stream_kwargs
         return stream_kwargs
     moved = {f: stream_kwargs[f] for f in _SDK_TRANSFORM_BYPASS_FIELDS
              if isinstance(stream_kwargs.get(f), (dict, list)) and _is_plain_json_data(stream_kwargs[f])}
     if not moved:
+        # ⤷ 出口 return：返回 stream_kwargs
         return stream_kwargs
     bypassed = {key: value for key, value in stream_kwargs.items() if key not in moved}
     extra_body = bypassed.get("extra_body")
     merged = dict(extra_body) if isinstance(extra_body, dict) else {}
     # An explicit caller-provided extra_body entry keeps precedence (SDK post-transform merge).
     bypassed["extra_body"] = {**merged, **{f: v for f, v in moved.items() if f not in merged}}
+    # ⤷ 出口 return：返回 bypassed
     return bypassed
 
 
+# ┌── 函数 def run_codex_stream()
+# │  作用：One streaming Responses API request over raw ``responses.create(stream=True)`` events.
+# │  参数：agent, api_kwargs: dict, client: Any = None, on_first_delta = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta=None):
     """One streaming Responses API request over raw ``responses.create(stream=True)`` events."""
     import httpx as _httpx
@@ -887,10 +1189,12 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
     writer_token = {"value": None}
 
     def _request_is_current() -> bool:
+        # ⤷ 出口 return：返回 request_token is None or getattr(agent, '_active_codex_strea…
         return request_token is None or getattr(agent, "_active_codex_stream_request_token", None) is request_token
 
     def _fenced(fn: Callable[[Any], None]) -> Callable[[Any], None]:
         """Wrap a callback so a retired request's late frames never reach the agent."""
+        # ⤷ 出口 return：返回 lambda value: fn(value) if _request_is_current() else None
         return lambda value: fn(value) if _request_is_current() else None
 
     def _on_text_delta(text: str) -> None:
@@ -915,6 +1219,7 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
         # status "completed"); raise so the watchdog's TimeoutError is seen.
         if not _request_is_current():
             raise TimeoutError("Codex Responses stream request retired before terminal response")
+        # ⤷ 出口 return：返回 bool(agent._interrupt_requested)
         return bool(agent._interrupt_requested)
 
     def _open_codex_stream(next_api_kwargs: dict[str, Any]):
@@ -929,6 +1234,7 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
             )
         stream_kwargs = _sanitize_consumer_codex_request(agent, next_api_kwargs)
         stream_kwargs["stream"] = True
+        # ⤷ 出口 return：返回 active_client.responses.create(**_bypass_sdk_request_transfo…
         return active_client.responses.create(**_bypass_sdk_request_transform(stream_kwargs))
 
     def _log_failure(exc: BaseException) -> None:
@@ -947,11 +1253,13 @@ def run_codex_stream(agent, api_kwargs: dict, client: Any = None, on_first_delta
             return True
         logger.warning("Codex streaming attempt superseded by a newer stream; stopping consumption to preserve "
                        "the single-writer invariant (model=%s).", api_kwargs.get("model", "unknown"))
+        # ⤷ 出口 return：返回 False
         return False
 
     def _drain_for_finalizer(event_stream: Any) -> None:
         # ``final`` is already assembled; draining only lets Relay run its finalizer. A transport error
         # here must NOT discard the completed, already-billed response.
+        # ⤷ 关键分支 try/except：捕获 (*transport_errors, _APIConnectionError)，出错走兜底而不是崩溃。
         try:
             for _ignored in event_stream:
                 pass
@@ -1051,6 +1359,11 @@ __all__ = [
 # Internal code MUST NOT use these (scripts/check_compat_pointers.py fails CI if it does).
 # The whole block is removed by reverting the commit that added it.
 
+# ┌── 函数 def run_codex_create_stream_fallback()
+# │  作用：Backward-compatible alias for the unified event-driven path.
+# │  参数：agent, api_kwargs: dict, client: Any = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None):
     """Backward-compatible alias for the unified event-driven path.
 
@@ -1060,5 +1373,6 @@ def run_codex_create_stream_fallback(agent, api_kwargs: dict, client: Any = None
     Kept as a public symbol because tests and a small number of call sites
     still reference it by name.
     """
+    # ⤷ 出口 return：返回 run_codex_stream(agent, api_kwargs, client=client)
     return run_codex_stream(agent, api_kwargs, client=client)
 # ---- END PLUGIN-COMPAT ----

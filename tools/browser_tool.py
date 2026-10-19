@@ -7,6 +7,31 @@ share one agent-facing behaviour: per-task sessions, accessibility-tree snapshot
 ``@eN`` refs, automatic cleanup. Settings live under ``browser.*`` in config.yaml.
 Sibling ``browser_tool_*`` modules hold extracted clusters.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：tools/browser_tool.py（约 1367 行）
+# 地位：浏览器自动化工具（让 Agent 能上网、点按钮、填表单）。
+#
+# 后端：本地无头 Chromium、Browser Use / Browserbase / Firecrawl 云、
+#   用户提供的 CDP 端点、Camofox —— 但对 Agent 暴露的行为是一致的。
+#
+# 核心交互模型（值得记住）：
+#   不是让模型看截图，而是生成「无障碍树快照（accessibility tree snapshot）」，
+#   页面上的每个可交互元素被标成 @e1 @e2 @e3 ... 这样的引用号，
+#   模型说 browser_click(ref='@e5') 就能点。这比视觉方案省 token 且更精确。
+#
+# 主要函数：
+#   browser_navigate(url)      打开网页
+#   browser_snapshot(full)     拿快照（拿到 @eN 引用）
+#   browser_click(ref) / browser_type(ref, text) / browser_scroll / browser_back / browser_press
+#   browser_console(expression) 执行 JS
+#   browser_vision(question)   用视觉模型看截图（截图方案作为补充）
+#   browser_get_images()
+#
+# 安全：evaluate_url_safety(url) / _url_is_private(url) —— 阻止访问内网地址（SSRF 防护）。
+# ==========================================================================
+#
 
 import atexit
 import json
@@ -35,6 +60,11 @@ _BROWSER_PASSTHROUGH_KEYS: tuple[str, ...] = (
 )
 
 
+# ┌── 函数 def _build_browser_env()
+# │  作用：Credential-scrubbed env for an agent-browser subprocess (deferred import: test
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _build_browser_env() -> dict:
     """Credential-scrubbed env for an agent-browser subprocess (deferred import: test
     harnesses stub the ``tools`` package)."""
@@ -42,6 +72,7 @@ def _build_browser_env() -> dict:
 
     env = hermes_subprocess_env(inherit_credentials=False)
     env.update({k: os.environ[k] for k in _BROWSER_PASSTHROUGH_KEYS if k in os.environ})
+    # ⤷ 出口 return：返回 env
     return env
 
 
@@ -156,19 +187,32 @@ _chromium_autoinstall_attempted = False  # one-shot: a failed 170MB download mus
 _sanitize_url_for_logs = redact_cdp_url
 
 
+# ┌── 函数 def _browser_cfg()
+# │  作用：``parse(browser.<key>)`` from the RAW profile config (loader warnings must not
+# │  参数：key: str, default, parse, log_label: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _browser_cfg(key: str, default, parse, log_label: str):
     """``parse(browser.<key>)`` from the RAW profile config (loader warnings must not
     leak into tool JSON); ``default`` when absent, not a mapping, or on any error."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import read_raw_config
         browser_cfg = read_raw_config().get("browser", {})
         if isinstance(browser_cfg, dict) and key in browser_cfg:
+            # ⤷ 出口 return：返回 parse(browser_cfg[key])
             return parse(browser_cfg[key])
     except Exception as e:
         logger.debug("Could not read %s: %s", log_label, e)
+    # ⤷ 出口 return：返回 default
     return default
 
 
+# ┌── 函数 def _cached_browser_cfg()
+# │  作用：Process-cached ``_browser_cfg`` read, one slot per profile home (cleared by
+# │  参数：cache_name: str, flag_name: str, key: str, default, parse, log_label: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _cached_browser_cfg(cache_name: str, flag_name: str, key: str, default, parse, log_label: str):
     """Process-cached ``_browser_cfg`` read, one slot per profile home (cleared by
     ``cleanup_all_browsers``). The value is stored BEFORE the resolved flag flips so a
@@ -179,15 +223,23 @@ def _cached_browser_cfg(cache_name: str, flag_name: str, key: str, default, pars
     if cache is None:
         cache = g[cache_name] = {}
     if g[flag_name] and cache.get(home) is not None:
+        # ⤷ 出口 return：返回 cache[home]
         return cache[home]
     result = _browser_cfg(key, default, parse, log_label)
     cache[home] = result
     g[flag_name] = True
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def _get_command_timeout()
+# │  作用：``browser.command_timeout`` (floored at 5s; default 30s).
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _get_command_timeout() -> int:
     """``browser.command_timeout`` (floored at 5s; default 30s)."""
+    # ⤷ 出口 return：返回 _cached_browser_cfg('_cached_command_timeout', '_command_tim…
     return _cached_browser_cfg(
         "_cached_command_timeout", "_command_timeout_resolved",
         "command_timeout", DEFAULT_COMMAND_TIMEOUT,
@@ -196,15 +248,27 @@ def _get_command_timeout() -> int:
     )
 
 
+# ┌── 函数 def _safe_command_timeout()
+# │  作用：``_get_command_timeout`` guaranteed non-None (cache reset mid-flight); ``is not
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _safe_command_timeout() -> int:
     """``_get_command_timeout`` guaranteed non-None (cache reset mid-flight); ``is not
     None`` rather than ``or`` so a configured ``0`` is preserved."""
     val = _get_command_timeout()
+    # ⤷ 出口 return：返回 val if val is not None else DEFAULT_COMMAND_TIMEOUT
     return val if val is not None else DEFAULT_COMMAND_TIMEOUT
 
 
+# ┌── 函数 def get_browser_snapshot_threshold()
+# │  作用：``browser.snapshot_threshold`` (floored at MIN_SNAPSHOT_THRESHOLD).
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def get_browser_snapshot_threshold() -> int:
     """``browser.snapshot_threshold`` (floored at MIN_SNAPSHOT_THRESHOLD)."""
+    # ⤷ 出口 return：返回 _cached_browser_cfg('_cached_snapshot_threshold', '_snapshot…
     return _cached_browser_cfg(
         "_cached_snapshot_threshold", "_snapshot_threshold_resolved",
         "snapshot_threshold", DEFAULT_SNAPSHOT_THRESHOLD,
@@ -213,16 +277,28 @@ def get_browser_snapshot_threshold() -> int:
     )
 
 
+# ┌── 函数 def _get_open_command_timeout()
+# │  作用：Timeout for agent-browser ``open`` (navigation / daemon cold start).
+# │  参数：first_open: bool = ...
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _get_open_command_timeout(*, first_open: bool = False) -> int:
     """Timeout for agent-browser ``open`` (navigation / daemon cold start)."""
+    # ⤷ 出口 return：返回 max(_safe_command_timeout(), MIN_FIRST_OPEN_TIMEOUT if first…
     return max(_safe_command_timeout(), MIN_FIRST_OPEN_TIMEOUT if first_open else MIN_OPEN_TIMEOUT)
 
 
 from tools import browser_tool_session as _session
 
 
+# ┌── 函数 def _get_vision_model()
+# │  作用：Model for browser_vision (screenshot analysis — multimodal).
+# │  参数：无
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _get_vision_model() -> Optional[str]:
     """Model for browser_vision (screenshot analysis — multimodal)."""
+    # ⤷ 出口 return：返回 os.getenv('AUXILIARY_VISION_MODEL', '').strip() or None
     return os.getenv("AUXILIARY_VISION_MODEL", "").strip() or None
 
 
@@ -245,6 +321,11 @@ _real_profile_chrome_procs: list = []  # Popen handles of directly-launched real
 _PRIVATE_HOST_SUFFIXES = (".localhost", ".local", ".lan", ".internal")
 
 
+# ┌── 函数 def _url_is_private()
+# │  作用：True when the URL's host is (or resolves to) a private/LAN/loopback/CGNAT address.
+# │  参数：url: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _url_is_private(url: str) -> bool:
     """True when the URL's host is (or resolves to) a private/LAN/loopback/CGNAT address.
     Routing oracle only: DNS failures are NOT private (the configured backend surfaces the
@@ -254,30 +335,41 @@ def _url_is_private(url: str) -> bool:
     from urllib.parse import urlparse
 
     def private(host: str) -> Optional[bool]:  # None when ``host`` is not an IP literal
+        # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
         try:
             ip = ipaddress.ip_address(host)
         except ValueError:
             return None
+        # ⤷ 出口 return：返回 ip.is_private or ip.is_loopback or ip.is_link_local or (ip i…
         return ip.is_private or ip.is_loopback or ip.is_link_local or ip in ipaddress.ip_network("100.64.0.0/10")
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         hostname = (urlparse(url).hostname or "").strip().lower().rstrip(".")
         if not hostname:
+            # ⤷ 出口 return：返回 False
             return False
         if (literal := private(hostname)) is not None:
             return literal
         if hostname == "localhost" or hostname.endswith(_PRIVATE_HOST_SUFFIXES):
             return True
+        # ⤷ 关键分支 try/except：捕获 socket.gaierror，出错走兜底而不是崩溃。
         try:
             addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
         except socket.gaierror:
             return False
+        # ⤷ 出口 return：返回 any((private(sockaddr[0]) for *_, sockaddr in addr_info))
         return any(private(sockaddr[0]) for *_, sockaddr in addr_info)
     except Exception as exc:
         logger.debug("URL-privacy check failed for %s: %s", url, exc)
         return False
 
 
+# ┌── 函数 def _navigation_session_key()
+# │  作用：Session key that should handle ``url`` for ``task_id``: ``f"{task_id}::local"`` (hybrid
+# │  参数：task_id: str, url: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _navigation_session_key(task_id: str, url: str) -> str:
     """Session key that should handle ``url`` for ``task_id``: ``f"{task_id}::local"`` (hybrid
     local sidecar while the cloud session keeps serving public URLs) only when ALL hold —
@@ -292,25 +384,49 @@ def _navigation_session_key(task_id: str, url: str) -> str:
         and _cloud._auto_local_for_private_urls()
         and _url_is_private(url)
     )
+    # ⤷ 出口 return：返回 f'{task_id}{_LOCAL_SUFFIX}' if hybrid else task_id
     return f"{task_id}{_LOCAL_SUFFIX}" if hybrid else task_id
 
 
+# ┌── 函数 def _is_local_sidecar_key()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：session_key: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_local_sidecar_key(session_key: str) -> bool:
+    # ⤷ 出口 return：返回 session_key.endswith(_LOCAL_SUFFIX)
     return session_key.endswith(_LOCAL_SUFFIX)
 
 
+# ┌── 函数 def _bare_task_id_for_session_key()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：session_key: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _bare_task_id_for_session_key(session_key: str) -> str:
+    # ⤷ 出口 return：返回 session_key[:-len(_LOCAL_SUFFIX)] if _is_local_sidecar_key(s…
     return session_key[: -len(_LOCAL_SUFFIX)] if _is_local_sidecar_key(session_key) else session_key
 
 
+# ┌── 函数 def _session_info_owned_by_task()
+# │  作用：Ownership check; entries without metadata (older in-memory / hot-reload) pass,
+# │  参数：session_info: Dict[str, Any], task_id: str, session_key: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _session_info_owned_by_task(session_info: Dict[str, Any], task_id: str, session_key: str) -> bool:
     """Ownership check; entries without metadata (older in-memory / hot-reload) pass,
     any explicit mismatch fails before a non-nav tool can act on the wrong session."""
     owner = session_info.get("owner_task_id")
     key = session_info.get("session_key")
+    # ⤷ 出口 return：返回 (owner is None or owner == task_id) and (key is None or key …
     return (owner is None or owner == task_id) and (key is None or key == session_key)
 
 
+# ┌── 函数 def _last_session_key()
+# │  作用：Session key a non-nav tool must use: the one that served the task's last navigation.
+# │  参数：task_id: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _last_session_key(task_id: str) -> str:
     """Session key a non-nav tool must use: the one that served the task's last navigation.
     If it was cleaned up or ownership no longer matches, fail closed by dropping the stale
@@ -319,20 +435,29 @@ def _last_session_key(task_id: str) -> str:
         task_id = "default"
     recorded_key = _last_active_session_key.get(task_id)
     if not recorded_key:
+        # ⤷ 出口 return：返回 task_id
         return task_id
     with _cleanup_lock:
         session_info = _active_sessions.get(recorded_key)
         if session_info and _session_info_owned_by_task(session_info, task_id, recorded_key):
+            # ⤷ 出口 return：返回 recorded_key
             return recorded_key
         _last_active_session_key.pop(task_id, None)
     logger.debug("browser session ownership: dropping stale/mismatched last-active binding %s -> %s",
                  task_id, recorded_key)
+    # ⤷ 出口 return：返回 task_id
     return task_id
 
 
+# ┌── 函数 def _socket_safe_tmpdir()
+# │  作用：Short temp dir for Unix sockets: macOS ``TMPDIR`` + ``agent-browser-hermes_…``
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _socket_safe_tmpdir() -> str:
     """Short temp dir for Unix sockets: macOS ``TMPDIR`` + ``agent-browser-hermes_…``
     exceeds the 104-byte AF_UNIX limit (silent screenshot failures), so use /tmp there."""
+    # ⤷ 出口 return：返回 '/tmp' if sys.platform == 'darwin' else tempfile.gettempdir(…
     return "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
 
 
@@ -352,8 +477,14 @@ _cleanup_done = False
 DEFAULT_SESSION_INACTIVITY_TIMEOUT = int(DEFAULT_CONFIG.get("browser", {}).get("inactivity_timeout", 120))
 
 
+# ┌── 函数 def _get_session_inactivity_timeout()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _get_session_inactivity_timeout() -> int:
     env_default = env_int("BROWSER_INACTIVITY_TIMEOUT", DEFAULT_SESSION_INACTIVITY_TIMEOUT)
+    # ⤷ 出口 return：返回 _browser_cfg('inactivity_timeout', env_default, lambda v: en…
     return _browser_cfg(
         "inactivity_timeout", env_default,
         lambda v: env_default if v is None else max(int(v), 30),  # 30s floor: no instant reaping
@@ -387,6 +518,10 @@ MAX_INACTIVITY_CLEANUP_FAILURES = 3
 _suspect_browser_sessions: Dict[str, str] = {}
 
 
+# ┌── 类 class _BrowserSessionBackend
+# │  说明：``agent.deadline.SuspectableBackend`` adapter for one cached session key: the
+# │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _BrowserSessionBackend:
     """``agent.deadline.SuspectableBackend`` adapter for one cached session key: the
     timeout path calls ``mark_suspect`` inline; ``ensure_healthy`` runs at the top of
@@ -394,26 +529,44 @@ class _BrowserSessionBackend:
 
     __slots__ = ("_session_key",)
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, session_key: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, session_key: str) -> None:
         self._session_key = session_key
 
+    # ┌── 函数 def mark_suspect()
+    # │  作用：MUST stay cheap and lock-free (runs inline on the timed-out caller's thread).
+    # │  参数：self, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def mark_suspect(self, reason: str) -> None:
         """MUST stay cheap and lock-free (runs inline on the timed-out caller's thread)."""
         _suspect_browser_sessions[self._session_key] = reason
 
+    # ┌── 函数 def ensure_healthy()
+    # │  作用：Recycle the session when a prior timeout marked it suspect; False after teardown.
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def ensure_healthy(self) -> bool:
         """Recycle the session when a prior timeout marked it suspect; False after teardown.
         The flag is popped BEFORE teardown: ``close`` re-enters ``_get_session_info``
         and must not recurse into another recycle."""
         reason = _suspect_browser_sessions.pop(self._session_key, None)
         if reason is None:
+            # ⤷ 出口 return：返回 True
             return True
         logger.info("Recycling suspect browser session %s before reuse (%s)", self._session_key, reason)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _lifecycle._cleanup_single_browser_session(self._session_key)
         except Exception:
             logger.warning("Teardown of suspect browser session %s failed; a fresh "
                            "session will be created anyway", self._session_key, exc_info=True)
+        # ⤷ 出口 return：返回 False
         return False
 
 
@@ -582,14 +735,31 @@ from tools import browser_tool_snapshot as _snapshot
 # Browser Tool Functions
 # ----------------------------------------------------------------------------
 
+# ┌── 函数 def _err()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：error: str, **extra
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _err(error: str, **extra) -> dict:
+    # ⤷ 出口 return：返回 {'success': False, 'error': error, **extra}
     return {"success": False, "error": error, **extra}
 
 
+# ┌── 函数 def _dumps()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：payload: Dict[str, Any], **kw
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _dumps(payload: Dict[str, Any], **kw) -> str:
+    # ⤷ 出口 return：返回 json.dumps(payload, ensure_ascii=False, **kw)
     return json.dumps(payload, ensure_ascii=False, **kw)
 
 
+# ┌── 函数 def _secret_url_error()
+# │  作用：Refuse URLs embedding an API key/token (raw and URL-decoded, catching ``%2D``
+# │  参数：url: str
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _secret_url_error(url: str) -> Optional[dict]:
     """Refuse URLs embedding an API key/token (raw and URL-decoded, catching ``%2D``
     tricks) — a prompt injection could otherwise exfiltrate secrets via the URL."""
@@ -597,10 +767,17 @@ def _secret_url_error(url: str) -> Optional[dict]:
     from agent.redact import _PREFIX_RE
 
     if _PREFIX_RE.search(url) or _PREFIX_RE.search(urllib.parse.unquote(url)):
+        # ⤷ 出口 return：返回 _err('Blocked: URL contains what appears to be an API key or…
         return _err("Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.")
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _url_policy_error()
+# │  作用：Backend-aware URL checks on an already-normalized URL; None if allowed. Ordered floors:
+# │  参数：url: str, auto_local: bool = ...
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _url_policy_error(url: str, *, auto_local: bool = False) -> Optional[dict]:
     """Backend-aware URL checks on an already-normalized URL; None if allowed. Ordered floors:
     (1) cloud metadata / IMDS refused UNCONDITIONALLY (a local Chromium on a cloud VM still
@@ -619,28 +796,44 @@ def _url_policy_error(url: str, *, auto_local: bool = False) -> Optional[dict]:
     # must fire for every backend, including the pure-local headless Chromium and off-host CDP cases (a
     # local Chromium on a cloud VM still reaches the host IMDS).
     if _is_always_blocked_url(url):
+        # ⤷ 出口 return：返回 _err('Blocked: URL targets a cloud metadata endpoint')
         return _err("Blocked: URL targets a cloud metadata endpoint")
     if not local and not auto_local and not _cloud._allow_private_urls() and not _is_safe_url(url):
+        # ⤷ 出口 return：返回 _err('Blocked: URL targets a private or internal address')
         return _err("Blocked: URL targets a private or internal address")
     blocked = check_website_access(url)
     if blocked:
+        # ⤷ 出口 return：返回 _err(blocked['message'], blocked_by_policy={'host': blocked[…
         return _err(blocked["message"],
                     blocked_by_policy={"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]})
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _secret_url_error_normalized()
+# │  作用：Secret check on the raw URL, then again on the normalized one; returns ``(url, error)``.
+# │  参数：url: str
+# │  返回：tuple[str, Optional[dict]]
+# └──────────────────────────────────────────────────────────────
 def _secret_url_error_normalized(url: str) -> tuple[str, Optional[dict]]:
     """Secret check on the raw URL, then again on the normalized one; returns ``(url, error)``."""
     err = _secret_url_error(url)
     if err is None:
         url = _normalize_url_for_request(url)
         err = _secret_url_error(url)
+    # ⤷ 出口 return：返回 (url, err)
     return url, err
 
 
+# ┌── 函数 def evaluate_url_safety()
+# │  作用：Run URL safety checks; None if safe, else an error dict
+# │  参数：url: str
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def evaluate_url_safety(url: str) -> Optional[dict]:
     """Run URL safety checks; None if safe, else an error dict"""
     url, err = _secret_url_error_normalized(url)
+    # ⤷ 出口 return：返回 err or _url_policy_error(url)
     return err or _url_policy_error(url)
 
 
@@ -651,12 +844,18 @@ _BOT_DETECTION_TITLE_PATTERNS = (
 )
 
 
+# ┌── 函数 def _post_redirect_block()
+# │  作用：Post-redirect SSRF check; blocked JSON payload or None. The page is moved to about:blank
+# │  参数：nav_session_key: str, url: str, final_url: str, auto_local_this_nav: bool
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _post_redirect_block(nav_session_key: str, url: str, final_url: str, auto_local_this_nav: bool) -> Optional[str]:
     """Post-redirect SSRF check; blocked JSON payload or None. The page is moved to about:blank
     first so later snapshots can't read the internal content. The metadata floor fires for
     every backend; the private-address check is skipped for local, the sidecar, and
     ``browser.allow_private_urls``."""
     if not final_url or final_url == url:
+        # ⤷ 出口 return：返回 None
         return None
     if _is_always_blocked_url(final_url):
         what = "a cloud metadata endpoint"
@@ -668,11 +867,18 @@ def _post_redirect_block(nav_session_key: str, url: str, final_url: str, auto_lo
     ):
         what = "a private/internal address"
     else:
+        # ⤷ 出口 return：返回 None
         return None
     _session._run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
+    # ⤷ 出口 return：返回 json.dumps(_err(f'Blocked: redirect landed on {what}'))
     return json.dumps(_err(f"Blocked: redirect landed on {what}"))
 
 
+# ┌── 函数 def _snapshot_fields()
+# │  作用：``snapshot`` + ``element_count`` fields from a successful snapshot result; oversized
+# │  参数：snap_result: Dict[str, Any]
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _snapshot_fields(snap_result: Dict[str, Any]) -> Dict[str, Any]:
     """``snapshot`` + ``element_count`` fields from a successful snapshot result; oversized
     snapshots truncate at line boundaries with the full tree stored for read_file paging."""
@@ -682,17 +888,29 @@ def _snapshot_fields(snap_result: Dict[str, Any]) -> Dict[str, Any]:
     threshold = get_browser_snapshot_threshold()
     if len(snapshot_text) > threshold:
         snapshot_text = _snapshot._truncate_snapshot(snapshot_text, max_chars=threshold)
+    # ⤷ 出口 return：返回 {'snapshot': _snapshot._redact_browser_output(snapshot_text)…
     return {"snapshot": _snapshot._redact_browser_output(snapshot_text), "element_count": len(refs) if refs else 0}
 
 
+# ┌── 函数 def _merge_fallback_warning()
+# │  作用：Copy a secondary result's fallback warning only if the response has none yet.
+# │  参数：response: Dict[str, Any], result: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _merge_fallback_warning(response: Dict[str, Any], result: Dict[str, Any]) -> None:
     """Copy a secondary result's fallback warning only if the response has none yet."""
     if result.get("fallback_warning") and not response.get("fallback_warning"):
         _lp._copy_fallback_warning(response, result)
 
 
+# ┌── 函数 def _attach_auto_snapshot()
+# │  作用：Add a compact snapshot to a navigate response so the model can act without browser_snapshot.
+# │  参数：response: Dict[str, Any], nav_session_key: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _attach_auto_snapshot(response: Dict[str, Any], nav_session_key: str) -> None:
     """Add a compact snapshot to a navigate response so the model can act without browser_snapshot."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         snap_result = _session._run_browser_command(nav_session_key, "snapshot", ["-c"])
         if snap_result.get("success"):
@@ -702,12 +920,18 @@ def _attach_auto_snapshot(response: Dict[str, Any], nav_session_key: str) -> Non
         logger.debug("Auto-snapshot after navigate failed: %s", e)
 
 
+# ┌── 函数 def browser_navigate()
+# │  作用：Navigate to ``url``; JSON with title, compact snapshot and, on first nav, stealth features.
+# │  参数：url: str, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     """Navigate to ``url``; JSON with title, compact snapshot and, on first nav, stealth features.
     Hybrid routing decides BEFORE the safety checks whether this URL goes to a local sidecar
     (the cloud provider never sees it then, so the private-address checks are relaxed)."""
     url, safety_error = _secret_url_error_normalized(url)
     if safety_error is not None:
+        # ⤷ 出口 return：返回 json.dumps(safety_error)
         return json.dumps(safety_error)
 
     effective_task_id = task_id or "default"
@@ -716,9 +940,11 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
 
     safety_error = _url_policy_error(url, auto_local=auto_local_this_nav)
     if safety_error is not None:
+        # ⤷ 出口 return：返回 json.dumps(safety_error)
         return json.dumps(safety_error)
 
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_navigate', url, task_id)
         return _camofox("camofox_navigate", url, task_id)
 
     if auto_local_this_nav:
@@ -735,6 +961,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     result = _session._run_browser_command(nav_session_key, "open", [url],
                                   timeout=_get_open_command_timeout(first_open=is_first_nav))
     if not result.get("success"):
+        # ⤷ 出口 return：返回 _dumps(_err(result.get('error', 'Navigation failed')))
         return _dumps(_err(result.get("error", "Navigation failed")))
 
     data = result.get("data", {})
@@ -742,6 +969,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     final_url = data.get("url", url)
     blocked = _post_redirect_block(nav_session_key, url, final_url, auto_local_this_nav)
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
 
     response = {"success": True, "url": final_url, "title": title}
@@ -754,9 +982,15 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     _lp._copy_fallback_warning(response, result)
     _add_navigate_warnings(response, title, session_info if is_first_nav else None)
     _attach_auto_snapshot(response, nav_session_key)
+    # ⤷ 出口 return：返回 _dumps(response)
     return _dumps(response)
 
 
+# ┌── 函数 def _add_navigate_warnings()
+# │  作用：Bot-detection hint from the page title; on first navigation, the session's stealth features.
+# │  参数：response: Dict[str, Any], title: str, first_nav_session: Optional[Dict[str, Any]]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _add_navigate_warnings(response: Dict[str, Any], title: str, first_nav_session: Optional[Dict[str, Any]]) -> None:
     """Bot-detection hint from the page title; on first navigation, the session's stealth features."""
     title_lower = title.lower()
@@ -777,20 +1011,28 @@ def _add_navigate_warnings(response: Dict[str, Any], title: str, first_nav_sessi
         response["stealth_features"] = [k for k, v in features.items() if v]
 
 
+# ┌── 函数 def browser_snapshot()
+# │  作用：Text snapshot of the page's accessibility tree (compact unless ``full``).
+# │  参数：full: bool = False, task_id: Optional[str] = None, user_task: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_snapshot(
     full: bool = False, task_id: Optional[str] = None, user_task: Optional[str] = None
 ) -> str:
     """Text snapshot of the page's accessibility tree (compact unless ``full``).
     ``user_task`` is deprecated and unused (oversized snapshots always truncate-and-store)."""
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_snapshot', full, task_id)
         return _camofox("camofox_snapshot", full, task_id)
     effective_task_id = _last_session_key(task_id or "default")
     result = _session._run_browser_command(effective_task_id, "snapshot", [] if full else ["-c"])
     if not result.get("success"):
+        # ⤷ 出口 return：返回 _failed_response(result, 'Failed to get snapshot')
         return _failed_response(result, "Failed to get snapshot")
 
     blocked = _blocked_private_page_content(effective_task_id)
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
 
     response = {"success": True, **_snapshot_fields(result)}
@@ -798,6 +1040,7 @@ def browser_snapshot(
 
     # Merge supervisor state (pending dialogs + frame tree) when a CDP supervisor is
     # attached. See website/docs/developer-guide/browser-supervisor.md.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
         _supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
@@ -808,59 +1051,112 @@ def browser_snapshot(
     except Exception as _sv_exc:
         logger.debug("supervisor snapshot merge failed: %s", _sv_exc)
 
+    # ⤷ 出口 return：返回 _dumps(response)
     return _dumps(response)
 
 
+# ┌── 函数 def _json_with_fallback()
+# │  作用：``json.dumps`` of ``response`` with the Lightpanda fallback metadata copied from ``result``.
+# │  参数：response: Dict[str, Any], result: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _json_with_fallback(response: Dict[str, Any], result: Dict[str, Any]) -> str:
     """``json.dumps`` of ``response`` with the Lightpanda fallback metadata copied from ``result``."""
+    # ⤷ 出口 return：返回 _dumps(_lp._copy_fallback_warning(response, result))
     return _dumps(_lp._copy_fallback_warning(response, result))
 
 
+# ┌── 函数 def _failed_response()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：result: Dict[str, Any], default_error: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _failed_response(result: Dict[str, Any], default_error: str) -> str:
+    # ⤷ 出口 return：返回 _json_with_fallback(_err(result.get('error', default_error))…
     return _json_with_fallback(_err(result.get("error", default_error)), result)
 
 
+# ┌── 函数 def _tool_response()
+# │  作用：``{"success": True, **ok}`` or ``{"success": False, "error": result.error or default}``, plus fallback metadata.
+# │  参数：result: Dict[str, Any], ok: Dict[str, Any], default_error: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _tool_response(result: Dict[str, Any], ok: Dict[str, Any], default_error: str) -> str:
     """``{"success": True, **ok}`` or ``{"success": False, "error": result.error or default}``, plus fallback metadata."""
     if not result.get("success"):
+        # ⤷ 出口 return：返回 _failed_response(result, default_error)
         return _failed_response(result, default_error)
+    # ⤷ 出口 return：返回 _json_with_fallback({'success': True, **ok}, result)
     return _json_with_fallback({"success": True, **ok}, result)
 
 
+# ┌── 函数 def _camofox()
+# │  作用：Call ``tools.browser_camofox.<func_name>(*args)`` (Camofox mode delegation).
+# │  参数：func_name: str, *args
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _camofox(func_name: str, *args):
     """Call ``tools.browser_camofox.<func_name>(*args)`` (Camofox mode delegation)."""
     import importlib
+    # ⤷ 出口 return：返回 getattr(importlib.import_module('tools.browser_camofox'), fu…
     return getattr(importlib.import_module("tools.browser_camofox"), func_name)(*args)
 
 
+# ┌── 函数 def _guarded_action()
+# │  作用：Input action on the task's current page, refused when the SSRF guard flags the page.
+# │  参数：task_id: Optional[str], action: str, command: str, args: list, ok: Dict[str, Any], err: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _guarded_action(task_id: Optional[str], action: str, command: str, args: list, ok: Dict[str, Any], err: str) -> str:
     """Input action on the task's current page, refused when the SSRF guard flags the page."""
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, action)
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
+    # ⤷ 出口 return：返回 _tool_response(_session._run_browser_command(effective_task_…
     return _tool_response(_session._run_browser_command(effective_task_id, command, args), ok, err)
 
 
+# ┌── 函数 def _at_ref()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：ref: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _at_ref(ref: str) -> str:
+    # ⤷ 出口 return：返回 ref if ref.startswith('@') else f'@{ref}'
     return ref if ref.startswith("@") else f"@{ref}"
 
 
+# ┌── 函数 def browser_click()
+# │  作用：Click the element ``ref`` (e.g. "@e5").
+# │  参数：ref: str, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_click(ref: str, task_id: Optional[str] = None) -> str:
     """Click the element ``ref`` (e.g. "@e5")."""
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_click', ref, task_id)
         return _camofox("camofox_click", ref, task_id)
     ref = _at_ref(ref)
+    # ⤷ 出口 return：返回 _guarded_action(task_id, 'click', 'click', [ref], {'clicked'…
     return _guarded_action(task_id, "click", "click", [ref], {"clicked": ref}, f"Failed to click {ref}")
 
 
+# ┌── 函数 def browser_type()
+# │  作用：Type ``text`` into the element ``ref`` (fill: clears, then types).
+# │  参数：ref: str, text: str, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
     """Type ``text`` into the element ``ref`` (fill: clears, then types)."""
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_type', ref, text, task_id)
         return _camofox("camofox_type", ref, text, task_id)
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_action(effective_task_id, "type")
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
     ref = _at_ref(ref)
     result = _session._run_browser_command(effective_task_id, "fill", [ref, text])
@@ -872,24 +1168,39 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
         response = {"success": True, "typed": display_text, "element": ref}
     else:
         response = _err(result.get("error", f"Failed to type into {ref}"))
+    # ⤷ 出口 return：返回 _dumps(redact_browser_typed_text_for_display(_lp._copy_fallb…
     return _dumps(redact_browser_typed_text_for_display(_lp._copy_fallback_warning(response, result), text))
 
 
+# ┌── 函数 def browser_scroll()
+# │  作用：Scroll the page ``direction`` ("up"/"down") by about half a viewport.
+# │  参数：direction: str, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
     """Scroll the page ``direction`` ("up"/"down") by about half a viewport."""
     if direction not in {"up", "down"}:
+        # ⤷ 出口 return：返回 _dumps(_err(f"Invalid direction '{direction}'. Use 'up' or '…
         return _dumps(_err(f"Invalid direction '{direction}'. Use 'up' or 'down'."))
     _SCROLL_PIXELS = 500  # ~half a viewport in one call instead of 5x subprocess calls
     if _is_camofox_mode():  # Camofox REST API has no pixel argument; use repeated calls
+        # ⤷ 出口 return：返回 [_camofox('camofox_scroll', direction, task_id) for _ in ran…
         return [_camofox("camofox_scroll", direction, task_id) for _ in range(5)][-1]
     effective_task_id = _last_session_key(task_id or "default")
     result = _session._run_browser_command(effective_task_id, "scroll", [direction, str(_SCROLL_PIXELS)])
+    # ⤷ 出口 return：返回 _tool_response(result, {'scrolled': direction}, f'Failed to …
     return _tool_response(result, {"scrolled": direction}, f"Failed to scroll {direction}")
 
 
+# ┌── 函数 def browser_back()
+# │  作用：Navigate back in browser history.
+# │  参数：task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_back(task_id: Optional[str] = None) -> str:
     """Navigate back in browser history."""
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_back', task_id)
         return _camofox("camofox_back", task_id)
     effective_task_id = _last_session_key(task_id or "default")
     result = _session._run_browser_command(effective_task_id, "back", [])
@@ -898,60 +1209,103 @@ def browser_back(task_id: Optional[str] = None) -> str:
         # preflight never saw (earlier redirect chain, manipulated client-side history).
         blocked = _blocked_private_page(effective_task_id, "Browser history navigation (back) landed on this address.")
         if blocked is not None:
+            # ⤷ 出口 return：返回 blocked
             return blocked
+    # ⤷ 出口 return：返回 _tool_response(result, {'url': result.get('data', {}).get('u…
     return _tool_response(result, {"url": result.get("data", {}).get("url", "")}, "Failed to go back")
 
 
+# ┌── 函数 def browser_press()
+# │  作用：Press a keyboard key (e.g. "Enter", "Tab").
+# │  参数：key: str, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_press(key: str, task_id: Optional[str] = None) -> str:
     """Press a keyboard key (e.g. "Enter", "Tab")."""
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_press', key, task_id)
         return _camofox("camofox_press", key, task_id)
+    # ⤷ 出口 return：返回 _guarded_action(task_id, 'press', 'press', [key], {'pressed'…
     return _guarded_action(task_id, "press", "press", [key], {"pressed": key}, f"Failed to press {key}")
 
 
+# ┌── 函数 def _blocked_private_page_json()
+# │  作用：Refusal payload for a page whose URL targets a private/internal address.
+# │  参数：blocked_url: str, why: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _blocked_private_page_json(blocked_url: str, why: str) -> str:
     """Refusal payload for a page whose URL targets a private/internal address."""
+    # ⤷ 出口 return：返回 _dumps(_err(f'Blocked: page URL targets a private or interna…
     return _dumps(_err(f"Blocked: page URL targets a private or internal address ({blocked_url}). {why}"))
 
 
+# ┌── 函数 def _blocked_private_page()
+# │  作用：Blocked payload when the SSRF guard is active and the current page is private, else
+# │  参数：effective_task_id: str, why: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _blocked_private_page(effective_task_id: str, why: str) -> Optional[str]:
     """Blocked payload when the SSRF guard is active and the current page is private, else
     None. Fail-open on probe failure (see ``_current_page_private_url``)."""
     if not _eval_policy._eval_ssrf_guard_active(effective_task_id):
+        # ⤷ 出口 return：返回 None
         return None
     blocked_url = _eval_policy._current_page_private_url(effective_task_id)
+    # ⤷ 出口 return：返回 _blocked_private_page_json(blocked_url, why) if blocked_url …
     return _blocked_private_page_json(blocked_url, why) if blocked_url else None
 
 
+# ┌── 函数 def _blocked_private_page_action()
+# │  作用：Blocked payload when an unsafe cloud page would receive input.
+# │  参数：effective_task_id: str, action: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _blocked_private_page_action(effective_task_id: str, action: str) -> Optional[str]:
     """Blocked payload when an unsafe cloud page would receive input."""
+    # ⤷ 出口 return：返回 _blocked_private_page(effective_task_id, f'Refusing to {acti…
     return _blocked_private_page(effective_task_id, f"Refusing to {action} on this page in this browser mode.")
 
 
 _EVAL_NAVIGATED_WHY = "This may have been caused by a JavaScript navigation via browser_console."
 
 
+# ┌── 函数 def _blocked_private_page_content()
+# │  作用：Content-returning tools (snapshot/vision/eval/get_images): after an eval that may
+# │  参数：effective_task_id: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _blocked_private_page_content(effective_task_id: str) -> Optional[str]:
     """Content-returning tools (snapshot/vision/eval/get_images): after an eval that may
     have moved ``location.href`` to a private address, returning content would expose it."""
+    # ⤷ 出口 return：返回 _blocked_private_page(effective_task_id, _EVAL_NAVIGATED_WHY…
     return _blocked_private_page(effective_task_id, _EVAL_NAVIGATED_WHY)
 
 
+# ┌── 函数 def browser_console()
+# │  作用：Console messages + uncaught JS errors (optionally ``clear``ing the buffers),
+# │  参数：clear: bool = False, expression: Optional[str] = None, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_console(clear: bool = False, expression: Optional[str] = None, task_id: Optional[str] = None) -> str:
     """Console messages + uncaught JS errors (optionally ``clear``ing the buffers),
     or — when ``expression`` is given — evaluate JS in the page like the DevTools console."""
     if expression is not None:
         policy_error = _eval_policy._enforce_browser_eval_policy(expression)
         if policy_error:
+            # ⤷ 出口 return：返回 _dumps(_err(policy_error))
             return _dumps(_err(policy_error))
+        # ⤷ 出口 return：返回 _browser_eval(expression, task_id)
         return _browser_eval(expression, task_id)
 
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_console', clear, task_id)
         return _camofox("camofox_console", clear, task_id)
 
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_content(effective_task_id)
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
 
     clear_args = ["--clear"] if clear else []
@@ -972,60 +1326,97 @@ def browser_console(clear: bool = False, expression: Optional[str] = None, task_
     }
     _lp._copy_fallback_warning(response, console_result)
     _merge_fallback_warning(response, errors_result)
+    # ⤷ 出口 return：返回 _dumps(response)
     return _dumps(response)
 
 
 from tools import browser_tool_eval_policy as _eval_policy
 
 
+# ┌── 函数 def _parse_eval_value()
+# │  作用：Eval returns the JS value as a string; parse valid JSON so the model gets structured data.
+# │  参数：raw_result: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _parse_eval_value(raw_result: Any) -> Any:
     """Eval returns the JS value as a string; parse valid JSON so the model gets structured data."""
     if isinstance(raw_result, str):
+        # ⤷ 关键分支 try/except：捕获 (json.JSONDecodeError, ValueError)，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 json.loads(raw_result)
             return json.loads(raw_result)
         except (json.JSONDecodeError, ValueError):
             pass  # keep as string
+    # ⤷ 出口 return：返回 raw_result
     return raw_result
 
 
+# ┌── 函数 def _eval_ok_response()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：parsed: Any, **extra
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _eval_ok_response(parsed: Any, **extra) -> Dict[str, Any]:
+    # ⤷ 出口 return：返回 {'success': True, 'result': _snapshot._redact_browser_output…
     return {"success": True, "result": _snapshot._redact_browser_output(parsed), "result_type": type(parsed).__name__, **extra}
 
 
+# ┌── 函数 def _eval_result_or_blocked()
+# │  作用：Eval tool JSON, unless the post-eval page-URL recheck finds an eval navigated the
+# │  参数：effective_task_id: str, parsed: Any, result: Dict[str, Any], **extra
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _eval_result_or_blocked(effective_task_id: str, parsed: Any, result: Dict[str, Any], **extra) -> str:
     """Eval tool JSON, unless the post-eval page-URL recheck finds an eval navigated the
     page to a private address — then the result is withheld."""
     blocked = _blocked_private_page_content(effective_task_id)
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
+    # ⤷ 出口 return：返回 _dumps(_lp._copy_fallback_warning(_eval_ok_response(parsed, …
     return _dumps(_lp._copy_fallback_warning(_eval_ok_response(parsed, **extra), result), default=str)
 
 
+# ┌── 函数 def _eval_supervisor_fast_path()
+# │  作用：``Runtime.evaluate`` on the CDP supervisor's persistent WebSocket (no subprocess cost).
+# │  参数：effective_task_id: str, expression: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _eval_supervisor_fast_path(effective_task_id: str, expression: str) -> Optional[str]:
     """``Runtime.evaluate`` on the CDP supervisor's persistent WebSocket (no subprocess cost).
     Tool JSON when the supervisor gave a definitive answer (value, blocked page, or a real
     JS-side exception — NOT retried via subprocess, that would just reproduce it slower);
     None to fall through to the subprocess path."""
+    # ⤷ 关键分支 try/except：捕获 ImportError、Exception，出错走兜底而不是崩溃。
     try:
         from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
         supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
         if supervisor is None:
+            # ⤷ 出口 return：返回 None
             return None
         sup_result = supervisor.evaluate_runtime(expression)
         if sup_result.get("ok"):
+            # ⤷ 出口 return：返回 _eval_result_or_blocked(effective_task_id, _parse_eval_value…
             return _eval_result_or_blocked(
                 effective_task_id, _parse_eval_value(sup_result.get("result")), {}, method="cdp_supervisor")
         err = sup_result.get("error") or "evaluate_runtime failed"
         if "supervisor" not in err.lower():
+            # ⤷ 出口 return：返回 _dumps(_err(err))
             return _dumps(_err(err))
         logger.debug("browser_eval: supervisor path unavailable (%s), falling back to subprocess", err)
     except ImportError:
         pass
     except Exception as exc:  # pragma: no cover — defensive
         logger.debug("browser_eval: supervisor path errored (%s), falling back", exc)
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _eval_failure_response()
+# │  作用：Tool JSON for a failed ``agent-browser eval``, with actionable rewrites of known errors.
+# │  参数：result: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _eval_failure_response(result: Dict[str, Any]) -> str:
     """Tool JSON for a failed ``agent-browser eval``, with actionable rewrites of known errors."""
     err = result.get("error", "eval failed")
@@ -1040,9 +1431,15 @@ def _eval_failure_response(result: Dict[str, Any]) -> str:
             "(e.g. .innerText, .href, .src, .value) or use "
             "JSON.stringify() / a snapshot tool instead."
         )
+    # ⤷ 出口 return：返回 json.dumps(_lp._copy_fallback_warning(_err(err), result))
     return json.dumps(_lp._copy_fallback_warning(_err(err), result))
 
 
+# ┌── 函数 def _browser_eval()
+# │  作用：Evaluate JS in the page context. Private-network guard in two halves: the literal
+# │  参数：expression: str, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
     """Evaluate JS in the page context. Private-network guard in two halves: the literal
     pre-scan closes direct fetches (they never update ``location.href``); the post-eval
@@ -1052,6 +1449,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
     if _eval_policy._eval_ssrf_guard_active(effective_task_id):
         blocked_literal = _eval_policy._expression_targets_private_url(expression)
         if blocked_literal:
+            # ⤷ 出口 return：返回 _dumps(_err(f'Blocked: JavaScript expression targets a priva…
             return _dumps(_err(
                 "Blocked: JavaScript expression targets a private or "
                 f"internal address ({blocked_literal}). Reading internal "
@@ -1061,21 +1459,31 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
 
     # Camofox keeps its own raw-task_id-keyed session map, so pass the raw id.
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox_eval(expression, task_id)
         return _camofox_eval(expression, task_id)
 
     fast = _eval_supervisor_fast_path(effective_task_id, expression)
     if fast is not None:
+        # ⤷ 出口 return：返回 fast
         return fast
 
     result = _session._run_browser_command(effective_task_id, "eval", [expression])
     if not result.get("success"):
+        # ⤷ 出口 return：返回 _eval_failure_response(result)
         return _eval_failure_response(result)
+    # ⤷ 出口 return：返回 _eval_result_or_blocked(effective_task_id, _parse_eval_value…
     return _eval_result_or_blocked(effective_task_id, _parse_eval_value(result.get("data", {}).get("result")), result)
 
 
+# ┌── 函数 def _camofox_eval()
+# │  作用：Evaluate JS via Camofox's /tabs/{tab_id}/evaluate endpoint (if available).
+# │  参数：expression: str, task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
     """Evaluate JS via Camofox's /tabs/{tab_id}/evaluate endpoint (if available)."""
     from tools.browser_camofox import _ensure_tab, _post
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         tab_info = _ensure_tab(task_id or "default")
         tab_id = tab_info.get("tab_id") or tab_info.get("id")
@@ -1086,21 +1494,31 @@ def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
         if _eval_policy._eval_ssrf_guard_active(task_id or "default"):
             _blocked_url = _eval_policy._camofox_current_page_private_url(tab_id, user_id)
             if _blocked_url:
+                # ⤷ 出口 return：返回 _blocked_private_page_json(_blocked_url, _EVAL_NAVIGATED_WHY…
                 return _blocked_private_page_json(_blocked_url, _EVAL_NAVIGATED_WHY)
 
+        # ⤷ 出口 return：返回 _dumps(_eval_ok_response(parsed), default=str)
         return _dumps(_eval_ok_response(parsed), default=str)
     except Exception as e:
         if any(code in str(e) for code in ("404", "405", "501")):  # server without eval support
+            # ⤷ 出口 return：返回 json.dumps(_err('JavaScript evaluation is not supported by t…
             return json.dumps(_err("JavaScript evaluation is not supported by this Camofox server. "
                                    "Use browser_snapshot or browser_vision to inspect page state."))
+        # ⤷ 出口 return：返回 tool_error(str(e), success=False)
         return tool_error(str(e), success=False)
 
 
+# ┌── 函数 def _maybe_start_recording()
+# │  作用：Start recording if browser.record_sessions is enabled in config.
+# │  参数：task_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _maybe_start_recording(task_id: str):
     """Start recording if browser.record_sessions is enabled in config."""
     with _cleanup_lock:
         if task_id in _recording_sessions:
             return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import read_raw_config
         hermes_home = get_hermes_home()
@@ -1121,11 +1539,17 @@ def _maybe_start_recording(task_id: str):
         logger.debug("Auto-recording setup failed: %s", e)
 
 
+# ┌── 函数 def _maybe_stop_recording()
+# │  作用：Stop recording if one is active for this session.
+# │  参数：task_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _maybe_stop_recording(task_id: str):
     """Stop recording if one is active for this session."""
     with _cleanup_lock:
         if task_id not in _recording_sessions:
             return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         result = _session._run_browser_command(task_id, "record", ["stop"])
         if result.get("success"):
@@ -1144,25 +1568,36 @@ _GET_IMAGES_JS = """JSON.stringify(
     )"""
 
 
+# ┌── 函数 def browser_get_images()
+# │  作用：List the page's images (src, alt, natural size), excluding data: URIs.
+# │  参数：task_id: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def browser_get_images(task_id: Optional[str] = None) -> str:
     """List the page's images (src, alt, natural size), excluding data: URIs."""
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_get_images', task_id)
         return _camofox("camofox_get_images", task_id)
 
     effective_task_id = _last_session_key(task_id or "default")
     result = _session._run_browser_command(effective_task_id, "eval", [_GET_IMAGES_JS])
     if not result.get("success"):
+        # ⤷ 出口 return：返回 _failed_response(result, 'Failed to get images')
         return _failed_response(result, "Failed to get images")
 
     blocked = _blocked_private_page_content(effective_task_id)
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
 
     raw_result = result.get("data", {}).get("result", "[]")
+    # ⤷ 关键分支 try/except：捕获 json.JSONDecodeError，出错走兜底而不是崩溃。
     try:
         images = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
+        # ⤷ 出口 return：返回 _json_with_fallback({'success': True, 'images': _snapshot._r…
         return _json_with_fallback({"success": True, "images": _snapshot._redact_browser_output(images), "count": len(images)}, result)
     except json.JSONDecodeError:
+        # ⤷ 出口 return：返回 _json_with_fallback({'success': True, 'images': [], 'count':…
         return _json_with_fallback({"success": True, "images": [], "count": 0, "warning": "Could not parse image data"}, result)
 
 
@@ -1172,6 +1607,11 @@ _LP_VISION_FALLBACK_REASON = "Lightpanda has no graphical renderer for screensho
 from tools import browser_tool_vision as _vision
 
 
+# ┌── 函数 def _capture_vision_screenshot()
+# │  作用：Take (or adopt the pre-routed) screenshot; returns ``(result, path, error_json_or_None)``.
+# │  参数：effective_task_id: str, annotate: bool, screenshot_path: Path, lp_prerouted: bool
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _capture_vision_screenshot(effective_task_id: str, annotate: bool, screenshot_path: Path, lp_prerouted: bool):
     """Take (or adopt the pre-routed) screenshot; returns ``(result, path, error_json_or_None)``."""
     if lp_prerouted and screenshot_path.exists():
@@ -1184,26 +1624,35 @@ def _capture_vision_screenshot(effective_task_id: str, annotate: bool, screensho
         result = _session._run_browser_command(effective_task_id, "screenshot", screenshot_args,
                                       _engine_override="auto" if lp_prerouted else None)
     if not result.get("success"):
+        # ⤷ 出口 return：返回 (result, screenshot_path, _json_with_fallback(_err(f"Failed …
         return result, screenshot_path, _json_with_fallback(_err(
             f"Failed to take screenshot ({_vision._vision_mode_label()} mode): {result.get('error', 'Unknown error')}"
         ), result)
     if result.get("data", {}).get("path"):
         screenshot_path = Path(result["data"]["path"])
     if not screenshot_path.exists():
+        # ⤷ 出口 return：返回 (result, screenshot_path, _dumps(_err(f"Screenshot file was …
         return result, screenshot_path, _dumps(_err(
             f"Screenshot file was not created at {screenshot_path} ({_vision._vision_mode_label()} mode). "
             f"This may indicate a socket path issue (macOS /var/folders/), "
             f"a missing Chromium install ('agent-browser install'), "
             f"or a stale daemon process."
         ))
+    # ⤷ 出口 return：返回 (result, screenshot_path, None)
     return result, screenshot_path, None
 
 
+# ┌── 函数 def browser_vision()
+# │  作用：Screenshot the current page for visual inspection. Native-vision models get the image
+# │  参数：question: str, annotate: bool = False, task_id: Optional[str] = None
+# │  返回：Union[str, Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def browser_vision(question: str, annotate: bool = False, task_id: Optional[str] = None) -> Union[str, Dict[str, Any]]:
     """Screenshot the current page for visual inspection. Native-vision models get the image
     attached to the conversation; otherwise the auxiliary vision model returns a text
     analysis. The file is kept and its path returned (MEDIA:<path>)."""
     if _is_camofox_mode():
+        # ⤷ 出口 return：返回 _camofox('camofox_vision', question, annotate, task_id)
         return _camofox("camofox_vision", question, annotate, task_id)
 
     import uuid as uuid_mod
@@ -1213,22 +1662,26 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
     effective_task_id = _last_session_key(task_id or "default")
     blocked = _blocked_private_page_content(effective_task_id)
     if blocked is not None:
+        # ⤷ 出口 return：返回 blocked
         return blocked
 
     _lp_prerouted, _lp_fallback_warning, screenshot_path = _vision._lightpanda_vision_preroute(
         effective_task_id, annotate, screenshot_path)
     result: Dict[str, Any] = {}
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         screenshots_dir.mkdir(parents=True, exist_ok=True)
         _lifecycle._cleanup_old_screenshots(screenshots_dir, max_age_hours=24)
         result, screenshot_path, error = _capture_vision_screenshot(
             effective_task_id, annotate, screenshot_path, _lp_prerouted)
         if error is not None:
+            # ⤷ 出口 return：返回 error
             return error
         # Native image routing: attach the screenshot directly instead of describing it
         # through an aux vision LLM (no information loss).
         from tools.vision_tools import _should_use_native_vision_fast_path
         if _should_use_native_vision_fast_path():
+            # ⤷ 出口 return：返回 _vision._native_vision_result(screenshot_path, question, ann…
             return _vision._native_vision_result(screenshot_path, question, annotate, result, _lp_fallback_warning)
 
         analysis = _vision._analyze_screenshot_with_aux_llm(screenshot_path, question)
@@ -1237,6 +1690,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
         _lp._copy_fallback_warning(response_data, result)
         if annotate and result.get("data", {}).get("annotations"):
             response_data["annotations"] = result["data"]["annotations"]
+        # ⤷ 出口 return：返回 _dumps(response_data)
         return _dumps(response_data)
     except Exception as e:
         # Keep a captured screenshot — the failure is in the analysis, not the capture,
@@ -1259,11 +1713,22 @@ from tools.browser_extension_router import extension_controller_available, route
 _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
 
 
+# ┌── 函数 def check_browser_routed_requirements()
+# │  作用：Availability gate for tools that can use either browser backend.
+# │  参数：action: str = 'browser_snapshot'
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def check_browser_routed_requirements(action: str = "browser_snapshot") -> bool:
     """Availability gate for tools that can use either browser backend."""
+    # ⤷ 出口 return：返回 _install.check_browser_requirements() or extension_controlle…
     return _install.check_browser_requirements() or extension_controller_available(action)
 
 
+# ┌── 函数 def _fallback_call()
+# │  作用：Adapter from the registry's ``(args, kw)`` to ``<fn_name>(**schema_args, task_id=...)``;
+# │  参数：fn_name: str, arg_defaults: Dict[str, Any], extra_kw: tuple = ()
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _fallback_call(fn_name: str, arg_defaults: Dict[str, Any], extra_kw: tuple = ()):
     """Adapter from the registry's ``(args, kw)`` to ``<fn_name>(**schema_args, task_id=...)``;
     the function is looked up in module globals at call time so monkeypatching works."""
@@ -1272,7 +1737,9 @@ def _fallback_call(fn_name: str, arg_defaults: Dict[str, Any], extra_kw: tuple =
         params["task_id"] = kw.get("task_id")
         for k in extra_kw:
             params[k] = kw.get(k)
+        # ⤷ 出口 return：返回 globals()[fn_name](**params)
         return globals()[fn_name](**params)
+    # ⤷ 出口 return：返回 call
     return call
 
 
@@ -1293,18 +1760,32 @@ _BROWSER_TOOL_TABLE = (
 )
 
 
+# ┌── 函数 def _routed_check_fn()
+# │  作用：Per-action availability gate (a named function, as the registry expects).
+# │  参数：name: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _routed_check_fn(name: str):
     """Per-action availability gate (a named function, as the registry expects)."""
     def check() -> bool:
+        # ⤷ 出口 return：返回 check_browser_routed_requirements(name)
         return check_browser_routed_requirements(name)
     check.__name__ = check.__qualname__ = f"check_{name}_requirements"
+    # ⤷ 出口 return：返回 check
     return check
 
 
+# ┌── 函数 def _routed_handler()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：name: str, fallback
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _routed_handler(name: str, fallback):
     def handler(args, **kw):
+        # ⤷ 出口 return：返回 routed_browser_handler(name, args, fallback=lambda: fallback…
         return routed_browser_handler(name, args, fallback=lambda: fallback(args, kw),
                                       task_id=kw.get("task_id"), session_id=kw.get("session_id"))
+    # ⤷ 出口 return：返回 handler
     return handler
 
 
@@ -1356,12 +1837,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

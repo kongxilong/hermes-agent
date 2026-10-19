@@ -3,6 +3,29 @@
 Short tokens (< 18 chars) are fully masked; longer ones keep the first 6 and
 last 4 characters for debuggability.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/redact.py（约 1222 行）
+# 地位：敏感信息脱敏——日志和工具输出里的密钥要打码。
+#
+# 规则：短 token（<18 字符）整段打码；长 token 保留前 6 位和后 4 位，方便调试时辨认是哪个 key。
+#
+# 主要函数：
+#   redact_sensitive_text(text)    通用文本脱敏
+#   redact_terminal_output(output, command)   终端输出脱敏
+#   redact_for_egress(text)        外发前脱敏（比如要发给远端模型时）
+#   is_env_dump_command(command)   判断这条命令是不是在 dump 环境变量（如 env、printenv）
+#   register_redaction_patterns()  让插件注册自己的脱敏规则
+#   class RedactingFormatter       挂到 logging 上，日志自动脱敏
+#
+# 难点（也是很好的学习材料）：
+#   它不是简单做字符串替换，而是要理解 shell 语法：
+#   _shell_tokens_with_spans / _scan_shell / _read_shell_word / _deobfuscate_shell_word_for_detection
+#   —— 因为密钥可能藏在引号、命令替换 $(...)、反引号里，不解析语法就会漏掉。
+#   _command_reads_secret_file() 还会判断「这条命令是不是在读取 .env 之类的密钥文件」。
+# ==========================================================================
+#
 
 import logging
 import os
@@ -32,11 +55,22 @@ _VAULT_REDACTION_VALUES: dict = {}  # profile home → ordered {value: None}
 _VAULT_REDACTION_LOCK = threading.Lock()
 
 
+# ┌── 函数 def _vault_scope()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _vault_scope() -> str:
     from hermes_constants import get_hermes_home
+    # ⤷ 出口 return：返回 str(get_hermes_home())
     return str(get_hermes_home())
 
 
+# ┌── 函数 def register_vault_redaction_value()
+# │  作用：Register an exact vault secret value for model-facing redaction.
+# │  参数：value
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def register_vault_redaction_value(value) -> None:
     """Register an exact vault secret value for model-facing redaction.
 
@@ -57,15 +91,26 @@ def register_vault_redaction_value(value) -> None:
             del bucket[next(iter(bucket))]
 
 
+# ┌── 函数 def clear_vault_redaction_values()
+# │  作用：Drop the current profile's registered values (profile teardown / explicit lock).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def clear_vault_redaction_values() -> None:
     """Drop the current profile's registered values (profile teardown / explicit lock)."""
     with _VAULT_REDACTION_LOCK:
         _VAULT_REDACTION_VALUES.pop(_vault_scope(), None)
 
 
+# ┌── 函数 def redact_registered_vault_values()
+# │  作用：Exact-substring scrub of every vault secret value registered for the current profile.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def redact_registered_vault_values(text: str) -> str:
     """Exact-substring scrub of every vault secret value registered for the current profile."""
     if not isinstance(text, str) or not text:
+        # ⤷ 出口 return：返回 text
         return text
     with _VAULT_REDACTION_LOCK:
         bucket = _VAULT_REDACTION_VALUES.get(_vault_scope())
@@ -73,6 +118,7 @@ def redact_registered_vault_values(text: str) -> str:
     for value in values:
         if value in text:
             text = text.replace(value, "«redacted-vault-secret»")
+    # ⤷ 出口 return：返回 text
     return text
 
 # Sensitive query-string param names (case-insensitive): opaque tokens / OAuth
@@ -103,16 +149,24 @@ _REDACT_ENABLED_BY_HOME: dict = {}
 _REDACT_ENABLED_LOCK = threading.Lock()
 
 
+# ┌── 函数 def _redact_enabled()
+# │  作用：Effective redaction switch for the active profile (launch snapshot when no override).
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _redact_enabled() -> bool:
     """Effective redaction switch for the active profile (launch snapshot when no override)."""
     from hermes_constants import get_hermes_home_override, hermes_home_key
     if get_hermes_home_override() is None:
+        # ⤷ 出口 return：返回 _REDACT_ENABLED
         return _REDACT_ENABLED
     home_key = hermes_home_key()
     cached = _REDACT_ENABLED_BY_HOME.get(home_key)
     if cached is not None:
+        # ⤷ 出口 return：返回 cached
         return cached
     enabled = True
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.secret_scope import current_secret_scope
         scope = current_secret_scope()
@@ -127,6 +181,7 @@ def _redact_enabled() -> bool:
         enabled = True  # unreadable policy: keep the secure default
     with _REDACT_ENABLED_LOCK:
         _REDACT_ENABLED_BY_HOME[home_key] = enabled
+    # ⤷ 出口 return：返回 enabled
     return enabled
 
 # Known API key prefixes -- match the prefix + contiguous token chars.
@@ -301,50 +356,93 @@ _STRONG_KEY_KEYWORD_RE = re.compile(
 )
 
 
+# ┌── 函数 def _is_word_start()
+# │  作用：True if position ``i`` in ``s`` begins a word (edge, non-letter before, camelCase/acronym boundary).
+# │  参数：s: str, i: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_word_start(s: str, i: int) -> bool:
     """True if position ``i`` in ``s`` begins a word (edge, non-letter before, camelCase/acronym boundary)."""
     if i == 0:
+        # ⤷ 出口 return：返回 True
         return True
     prev, cur = s[i - 1], s[i]
     if not prev.isalpha() or (cur.isupper() and prev.islower()):  # clientSecret
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 cur.isupper() and prev.isupper() and (i + 1 < len(s)) and s[…
     return cur.isupper() and prev.isupper() and i + 1 < len(s) and s[i + 1].islower()  # APIToken
 
 
+# ┌── 函数 def _is_word_end()
+# │  作用：True if position ``j`` (exclusive end) in ``s`` ends a word; one trailing ``s`` is absorbed.
+# │  参数：s: str, j: int, allow_plural: bool = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_word_end(s: str, j: int, *, allow_plural: bool = True) -> bool:
     """True if position ``j`` (exclusive end) in ``s`` ends a word; one trailing ``s`` is absorbed."""
     if j >= len(s):
+        # ⤷ 出口 return：返回 True
         return True
     cur = s[j]
     if not cur.isalpha() or (cur.isupper() and s[j - 1].islower()):  # secretKey
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 allow_plural and cur in 'sS' and _is_word_end(s, j + 1, allo…
     return allow_plural and cur in "sS" and _is_word_end(s, j + 1, allow_plural=False)
 
 
+# ┌── 函数 def _has_word_bounded_keyword()
+# │  作用：True if ``keyword_re`` matches ``key`` at a word boundary (see _KEY_KEYWORD_RE).
+# │  参数：key: str, keyword_re: 're.Pattern[str]'
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_word_bounded_keyword(key: str, keyword_re: "re.Pattern[str]") -> bool:
     """True if ``keyword_re`` matches ``key`` at a word boundary (see _KEY_KEYWORD_RE)."""
+    # ⤷ 出口 return：返回 any((_is_word_start(key, m.start()) and _is_word_end(key, m.…
     return any(_is_word_start(key, m.start()) and _is_word_end(key, m.end()) for m in keyword_re.finditer(key))
 
 
+# ┌── 函数 def _key_has_secret_keyword()
+# │  作用：Post-match key validator: ``API_KEY``/``DB_PW`` count, ``KEYBOARD``/``secretary`` do not.
+# │  参数：key: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _key_has_secret_keyword(key: str) -> bool:
     """Post-match key validator: ``API_KEY``/``DB_PW`` count, ``KEYBOARD``/``secretary`` do not."""
+    # ⤷ 出口 return：返回 _has_word_bounded_keyword(key, _KEY_KEYWORD_RE)
     return _has_word_bounded_keyword(key, _KEY_KEYWORD_RE)
 
 
+# ┌── 函数 def _looks_like_opaque_credential()
+# │  作用：Credential-like shape test for ambiguous ``token``/``key`` values, so short
+# │  参数：value: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _looks_like_opaque_credential(value: str) -> bool:
     """Credential-like shape test for ambiguous ``token``/``key`` values, so short
     technical scalars (``CPU``, ``local``) are not masked merely for their key name."""
     if value == "***" or value.startswith("«redacted:"):
+        # ⤷ 出口 return：返回 True
         return True
     if len(value) >= 16 and re.fullmatch(r"[A-Fa-f0-9]+", value):
+        # ⤷ 出口 return：返回 True
         return True
     if len(value) >= 20 and re.fullmatch(r"[A-Za-z0-9_./+=-]+", value):
+        # ⤷ 出口 return：返回 True
         return True
     if len(value) < 12:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 sum((bool(re.search(p, value)) for p in ('[a-z]', '[A-Z]', '…
     return sum(bool(re.search(p, value)) for p in (r"[a-z]", r"[A-Z]", r"[0-9]")) >= 2
 
 
+# ┌── 函数 def _should_redact_assignment()
+# │  作用：Shared gate for the ENV / JSON / YAML assignment passes: skip programmatic env
+# │  参数：key: str, value: str, check_keyword: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_redact_assignment(key: str, value: str, *, check_keyword: bool) -> bool:
     """Shared gate for the ENV / JSON / YAML assignment passes: skip programmatic env
     lookups used as values, optionally require a word-bounded keyword in the key,
@@ -356,9 +454,12 @@ def _should_redact_assignment(key: str, value: str, *, check_keyword: bool) -> b
     # Same programmatic-env-lookup exception as _redact_env above (issue #2852): api_key: os.getenv('X') is
     # a code snippet, not a leaked secret value.
     if _ENV_LOOKUP_VALUE_RE.match(value):
+        # ⤷ 出口 return：返回 False
         return False
     if check_keyword and not _key_has_secret_keyword(key):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 _has_word_bounded_keyword(key, _STRONG_KEY_KEYWORD_RE) or _l…
     return (_has_word_bounded_keyword(key, _STRONG_KEY_KEYWORD_RE)
             or _looks_like_opaque_credential(value))
 
@@ -515,13 +616,24 @@ _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202f\u2060\
 _TOKEN_BODY_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-.")
 
 
+# ┌── 函数 def _compile_prefix_matcher()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：patterns: list
+# │  返回：'re.Pattern[str]'
+# └──────────────────────────────────────────────────────────────
 def _compile_prefix_matcher(patterns: list) -> "re.Pattern[str]":
+    # ⤷ 出口 return：返回 re.compile('(?<![A-Za-z0-9_-])(' + '|'.join(patterns) + ')(?…
     return re.compile(r"(?<![A-Za-z0-9_-])(" + "|".join(patterns) + r")(?![A-Za-z0-9_-])")
 
 
 _PREFIX_RE = _compile_prefix_matcher(_PREFIX_PATTERNS)
 
 
+# ┌── 函数 def _mask_control_split_tokens()
+# │  作用：Mask tokens whose body is split by control/zero-width characters.
+# │  参数：text: str, mask_fn
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _mask_control_split_tokens(text: str, mask_fn) -> str:
     """Mask tokens whose body is split by control/zero-width characters.
 
@@ -535,6 +647,7 @@ def _mask_control_split_tokens(text: str, mask_fn) -> str:
     """
     stripped = _CONTROL_CHARS_RE.sub("", text)
     if stripped == text:
+        # ⤷ 出口 return：返回 text
         return text
     orig_idx = [i for i, c in enumerate(text) if not _CONTROL_CHARS_RE.match(c)]
     out, matches = list(text), []
@@ -555,6 +668,7 @@ def _mask_control_split_tokens(text: str, mask_fn) -> str:
             matches.append((start_orig, end_orig, mask_fn(m.group(1))))
     for start_orig, end_orig, replacement in reversed(matches):
         out[start_orig:end_orig] = list(replacement)
+    # ⤷ 出口 return：返回 ''.join(out)
     return "".join(out)
 
 
@@ -563,6 +677,11 @@ def _mask_control_split_tokens(text: str, mask_fn) -> str:
 _DISPLAY_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f\x80-\x9f\u200b-\u200f\u202a-\u202e\u2060-\u2064]")
 
 
+# ┌── 函数 def mask_secret()
+# │  作用：Mask a secret for display (``hermes config`` / ``status`` / ``dump``):
+# │  参数：value: str, head: int = ..., tail: int = ..., floor: int = ..., placeholder: str = ..., empty: str = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def mask_secret(value: str, *, head: int = 4, tail: int = 4, floor: int = 12,
                 placeholder: str = "***", empty: str = "") -> str:
     """Mask a secret for display (``hermes config`` / ``status`` / ``dump``):
@@ -570,23 +689,39 @@ def mask_secret(value: str, *, head: int = 4, tail: int = 4, floor: int = 12,
     ``placeholder``; falsy → ``empty``."""
     value = _DISPLAY_CONTROL_RE.sub("", value) if value else value
     if not value:
+        # ⤷ 出口 return：返回 empty
         return empty
+    # ⤷ 出口 return：返回 placeholder if len(value) < floor else f'{value[:head]}...{v…
     return placeholder if len(value) < floor else f"{value[:head]}...{value[-tail:]}"
 
 
+# ┌── 函数 def _mask_token()
+# │  作用：Mask a log token — 18-char floor, preserves 6 prefix / 4 suffix; empty → ``***``.
+# │  参数：token: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _mask_token(token: str) -> str:
     """Mask a log token — 18-char floor, preserves 6 prefix / 4 suffix; empty → ``***``."""
     if not token:
+        # ⤷ 出口 return：返回 '***'
         return "***"
+    # ⤷ 出口 return：返回 mask_secret(token, head=6, tail=4, floor=18)
     return mask_secret(token, head=6, tail=4, floor=18)
 
 
+# ┌── 函数 def _is_python_repr_secret_key()
+# │  作用：Return True for exact secret keys or credential-suffixed key names.
+# │  参数：key: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_python_repr_secret_key(key: str) -> bool:
     """Return True for exact secret keys or credential-suffixed key names."""
     folded = key.casefold()
     if folded in _PYTHON_REPR_SECRET_KEYS:
+        # ⤷ 出口 return：返回 True
         return True
     if key.isupper() and key.endswith(_PYTHON_REPR_ENV_SUFFIXES):
+        # ⤷ 出口 return：返回 True
         return True
     # Mixed/camel-case keys ending in a credential word (``UserPassword``,
     # ``sessionToken``, ``clientApiKey``) — the exact-set and uppercase-suffix
@@ -594,14 +729,21 @@ def _is_python_repr_secret_key(key: str) -> bool:
     # ``TOKEN_COUNT`` / ``PASSWORD_POLICY`` / ``SECRET_NAME`` untouched.
     # Class widened per OpenHands/software-agent-sdk#4508 (their dict-entry
     # redaction was uppercase-only and leaked mixed-case keys).
+    # ⤷ 出口 return：返回 folded.endswith(_PYTHON_REPR_CREDENTIAL_SUFFIXES)
     return folded.endswith(_PYTHON_REPR_CREDENTIAL_SUFFIXES)
 
 
+# ┌── 函数 def _redact_python_repr_fields()
+# │  作用：Fully mask credential fields in Python mapping ``repr`` output.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_python_repr_fields(text: str) -> str:
     """Fully mask credential fields in Python mapping ``repr`` output."""
     def _sub(match: re.Match) -> str:
         key = match.group("key")
         if not _is_python_repr_secret_key(key):
+            # ⤷ 出口 return：返回 match.group(0)
             return match.group(0)
 
         single_value = match.group("single_value")
@@ -617,20 +759,29 @@ def _redact_python_repr_fields(text: str) -> str:
         # Mapping repr can contain code-shaped fixture values too. Preserve
         # programmatic env lookups just like the ENV/JSON/YAML passes do.
         if _ENV_LOOKUP_VALUE_RE.match(value):
+            # ⤷ 出口 return：返回 match.group(0)
             return match.group(0)
         # An upstream pass (MCP probe header scrub, _mask_token) already masked this
         # value; re-masking would erase the scheme word it deliberately kept
         # (``'Authorization': 'Digest ***'`` → ``'***'``).
         if "***" in value or value.startswith("«redacted:"):
+            # ⤷ 出口 return：返回 match.group(0)
             return match.group(0)
         # Do not retain head/tail characters here: escaped repr atoms can cross
         # a slicing boundary and leave an unescaped quote behind. A full mask is
         # parseable for both str and bytes values and leaks no opaque bytes.
+        # ⤷ 出口 return：返回 f"'{key}'{match.group('sep')}{prefix}{quote}***{quote}"
         return f"'{key}'{match.group('sep')}{prefix}{quote}***{quote}"
 
+    # ⤷ 出口 return：返回 _PYTHON_REPR_FIELD_RE.sub(_sub, text)
     return _PYTHON_REPR_FIELD_RE.sub(_sub, text)
 
 
+# ┌── 函数 def _redact_python_diagnostic_repr_fields()
+# │  作用：Mask repr fields only on pytest/error lines in source-preserving output.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_python_diagnostic_repr_fields(text: str) -> str:
     """Mask repr fields only on pytest/error lines in source-preserving output."""
     lines = text.splitlines(keepends=True)
@@ -651,19 +802,32 @@ def _redact_python_diagnostic_repr_fields(text: str) -> str:
                 + _redact_python_repr_fields(match.group("body"))
                 + ending
             )
+    # ⤷ 出口 return：返回 ''.join(lines)
     return "".join(lines)
 
 
+# ┌── 函数 def _redact_query_string()
+# │  作用：Replace values of sensitive ``k=v&k=v`` params with ``***``; others pass through.
+# │  参数：query: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_query_string(query: str) -> str:
     """Replace values of sensitive ``k=v&k=v`` params with ``***``; others pass through."""
     if not query:
+        # ⤷ 出口 return：返回 query
         return query
+    # ⤷ 出口 return：返回 '&'.join((f'{key}=***' if sep and key.lower() in _SENSITIVE_…
     return "&".join(
         f"{key}=***" if sep and key.lower() in _SENSITIVE_QUERY_PARAMS else pair
         for pair in query.split("&") for key, sep, _ in (pair.partition("="),)
     )
 
 
+# ┌── 函数 def _canonical_url_param_name()
+# │  作用：Decode a URL parameter name (up to 3 unquote rounds) for case-insensitive matching.
+# │  参数：name: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _canonical_url_param_name(name: str) -> str:
     """Decode a URL parameter name (up to 3 unquote rounds) for case-insensitive matching."""
     decoded = name
@@ -672,20 +836,32 @@ def _canonical_url_param_name(name: str) -> str:
         if next_value == decoded:
             break
         decoded = next_value
+    # ⤷ 出口 return：返回 decoded.casefold().replace('-', '_')
     return decoded.casefold().replace("-", "_")
 
 
+# ┌── 函数 def _redact_strict_url_credentials()
+# │  作用：Strict egress-boundary redaction of URL credentials (absolute, relative and
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_strict_url_credentials(text: str) -> str:
     """Strict egress-boundary redaction of URL credentials (absolute, relative and
     network references); preserves keys, separators, public params, hosts, paths."""
     text = _STRICT_URL_PARAM_RE.sub(
         lambda m: f"{m.group(1)}{m.group(2)}=***"
         if _canonical_url_param_name(m.group(2)) in _SENSITIVE_QUERY_PARAMS else m.group(0), text)
+    # ⤷ 出口 return：返回 _STRICT_URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}{m.group…
     return _STRICT_URL_USERINFO_RE.sub(
         lambda m: f"{m.group(1)}{m.group(2).partition(':')[0]}:***@" if ":" in m.group(2) else f"{m.group(1)}***@",
         text)
 
 
+# ┌── 函数 def redact_cdp_url()
+# │  作用：Mask secrets in a CDP/browser endpoint URL before it is logged.
+# │  参数：value: object
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def redact_cdp_url(value: object) -> str:
     """Mask secrets in a CDP/browser endpoint URL before it is logged.
 
@@ -695,21 +871,35 @@ def redact_cdp_url(value: object) -> str:
     """
     text = redact_sensitive_text("" if value is None else str(value))
     if not text:
+        # ⤷ 出口 return：返回 text
         return text
     text = _URL_WITH_QUERY_RE.sub(
         lambda m: f"{m.group(1)}://{m.group(2)}{m.group(3)}?{_redact_query_string(m.group(4))}{m.group(5) or ''}",
         text,
     )
+    # ⤷ 出口 return：返回 _URL_USERINFO_RE.sub(lambda m: f'{m.group(1)}://{m.group(2)}…
     return _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}://{m.group(2)}:***@", text)
 
 
+# ┌── 函数 def _redact_form_body()
+# │  作用：Redact sensitive values when the ENTIRE text is a clean ``k=v&k=v`` body.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_form_body(text: str) -> str:
     """Redact sensitive values when the ENTIRE text is a clean ``k=v&k=v`` body."""
     if not text or "\n" in text or "&" not in text or not _FORM_BODY_RE.match(text.strip()):
+        # ⤷ 出口 return：返回 text
         return text
+    # ⤷ 出口 return：返回 _redact_query_string(text.strip())
     return _redact_query_string(text.strip())
 
 
+# ┌── 函数 def _mask_token_nonreusable()
+# │  作用：Redact a prefix-matched credential to a NON-REUSABLE sentinel: no head/tail
+# │  参数：token: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _mask_token_nonreusable(token: str) -> str:
     """Redact a prefix-matched credential to a NON-REUSABLE sentinel: no head/tail
     chars (an agent once wrote a truncated-looking mask back into a config file),
@@ -720,19 +910,33 @@ def _mask_token_nonreusable(token: str) -> str:
     still does not leak the secret material (no head/tail chars).
     """
     label = next((sub for sub in _PREFIX_SUBSTRINGS if token.startswith(sub)), "") if token else ""
+    # ⤷ 出口 return：返回 f'«redacted:{label}…»' if label else '«redacted-secret»'
     return f"«redacted:{label}…»" if label else "«redacted-secret»"
 
 
+# ┌── 函数 def _assignment_sub()
+# │  作用：re.sub callback: keep the match unless the key/value pair (groups[0], groups[-1]) needs redaction.
+# │  参数：render, check_keyword: bool
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _assignment_sub(render, *, check_keyword: bool):
     """re.sub callback: keep the match unless the key/value pair (groups[0], groups[-1]) needs redaction."""
     def _sub(m):
         groups = m.groups()
         if not _should_redact_assignment(groups[0], groups[-1], check_keyword=check_keyword):
+            # ⤷ 出口 return：返回 m.group(0)
             return m.group(0)
+        # ⤷ 出口 return：返回 render(groups)
         return render(groups)
+    # ⤷ 出口 return：返回 _sub
     return _sub
 
 
+# ┌── 函数 def _redact_assignments()
+# │  作用：ENV / config / JSON / YAML assignment passes (skipped for code files). Passes
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_assignments(text: str) -> str:
     """ENV / config / JSON / YAML assignment passes (skipped for code files). Passes
     that would match ``token=``/``key=`` URL params skip ``://`` text (web-URL query
@@ -772,9 +976,15 @@ def _redact_assignments(text: str) -> str:
     if ":" in text and "://" not in text:
         text = _YAML_ASSIGN_RE.sub(
             _assignment_sub(lambda g: f"{g[0]}{g[1]}{_mask_token(g[2])}", check_keyword=True), text)
+    # ⤷ 出口 return：返回 text
     return text
 
 
+# ┌── 函数 def _redact_url_credentials()
+# │  作用：DB connection-string passwords and bare-token URL userinfo (``://`` text only).
+# │  参数：text: str, code_file: bool
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_url_credentials(text: str, code_file: bool) -> str:
     """DB connection-string passwords and bare-token URL userinfo (``://`` text only)."""
     def _redact_db(m):
@@ -782,18 +992,32 @@ def _redact_url_credentials(text: str, code_file: bool) -> str:
         # (f"postgresql://{user}:{pass}@{host}"), not a literal credential.
         pw = m.group(2)
         if code_file and pw.startswith("{") and pw.endswith("}"):
+            # ⤷ 出口 return：返回 m.group(0)
             return m.group(0)
+        # ⤷ 出口 return：返回 f'{m.group(1)}***{m.group(3)}'
         return f"{m.group(1)}***{m.group(3)}"
     text = _DB_CONNSTR_RE.sub(_redact_db, text)
+    # ⤷ 出口 return：返回 _URL_BARE_TOKEN_RE.sub(lambda m: f'{m.group(1)}{_mask_token(…
     return _URL_BARE_TOKEN_RE.sub(lambda m: f"{m.group(1)}{_mask_token(m.group(2))}{m.group(3)}", text)
 
 
+# ┌── 函数 def _redact_phone()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：m
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _redact_phone(m):
     phone = m.group(1)
     keep = 2 if len(phone) <= 8 else 4
+    # ⤷ 出口 return：返回 phone[:keep] + '****' + phone[-keep:]
     return phone[:keep] + "****" + phone[-keep:]
 
 
+# ┌── 函数 def redact_sensitive_text()
+# │  作用：Apply all redaction patterns to a block of text.
+# │  参数：text: str, force: bool = ..., code_file: bool = ..., file_read: bool = ..., redact_url_credentials: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def redact_sensitive_text(text: str, *, force: bool = False, code_file: bool = False,
                           file_read: bool = False, redact_url_credentials: bool = False) -> str:
     """Apply all redaction patterns to a block of text.
@@ -824,13 +1048,16 @@ def redact_sensitive_text(text: str, *, force: bool = False, code_file: bool = F
     syntactically invalid as a token, so it can't be mistaken for a usable key or written back as one.
     """
     if text is None:
+        # ⤷ 出口 return：返回 None
         return None
     text = text if isinstance(text, str) else str(text)
     if not text:
+        # ⤷ 出口 return：返回 text
         return text
     # Vault secrets are a hard model-egress boundary: scrubbed regardless of the redact_secrets preference.
     text = redact_registered_vault_values(text)
     if not (force or _redact_enabled()):
+        # ⤷ 出口 return：返回 text
         return text
     code_file = code_file or file_read
 
@@ -886,6 +1113,7 @@ def redact_sensitive_text(text: str, *, force: bool = False, code_file: bool = F
     if "+" in text:
         text = _SIGNAL_PHONE_RE.sub(_redact_phone, text)
 
+    # ⤷ 出口 return：返回 text
     return text
 
 
@@ -920,6 +1148,11 @@ _HERMES_HOME_PREFIXES = ("$HERMES_HOME/", "${HERMES_HOME}/")
 _HOME_PREFIXES = ("$HOME/", "${HOME}/")
 
 
+# ┌── 函数 def _command_segments()
+# │  作用：Pipeline/sequence segments, split only on unquoted ``| ; &`` so an
+# │  参数：command: str
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _command_segments(command: str) -> list[str]:
     """Pipeline/sequence segments, split only on unquoted ``| ; &`` so an
     ``awk '{print $1; print $2}'`` program or ``grep 'foo|bar'`` pattern stays one
@@ -947,9 +1180,15 @@ def _command_segments(command: str) -> list[str]:
     seg = "".join(buf).strip()
     if seg:
         segments.append(seg)
+    # ⤷ 出口 return：返回 segments
     return segments
 
 
+# ┌── 函数 def _is_secret_file_arg()
+# │  作用：``.env``-style or shell rc basename anywhere; ``config.yaml`` only under a
+# │  参数：arg: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_secret_file_arg(arg: str) -> bool:
     """``.env``-style or shell rc basename anywhere; ``config.yaml`` only under a
     ``.hermes`` directory or ``$HERMES_HOME`` (never arbitrary YAML)."""
@@ -965,20 +1204,30 @@ def _is_secret_file_arg(arg: str) -> bool:
             path = path[len(prefix):]
             break
     if "$" in path:
+        # ⤷ 出口 return：返回 False
         return False
     parts = [part.lower() for part in path.split("/") if part]
     if not parts:
+        # ⤷ 出口 return：返回 False
         return False
     if parts[-1] in _ENV_FILE_BASENAMES or parts[-1] in _SHELL_RC_BASENAMES:
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 parts[-1] == 'config.yaml' and (hermes_home or '.hermes' in …
     return parts[-1] == "config.yaml" and (hermes_home or ".hermes" in parts[:-1])
 
 
+# ┌── 函数 def _command_reads_secret_file()
+# │  作用：True if ``command`` reads a secret-bearing file (see ``_is_secret_file_arg``) to
+# │  参数：command: str | None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _command_reads_secret_file(command: str | None) -> bool:
     """True if ``command`` reads a secret-bearing file (see ``_is_secret_file_arg``) to
     stdout. Defense-in-depth, not a boundary: indirect reads (``sudo cat .env``, ``$(cat
     .env)``, unresolved variable paths) are not detected, matching ``is_env_dump_command``."""
     if not command or not isinstance(command, str):
+        # ⤷ 出口 return：返回 False
         return False
     for seg in _command_segments(command):
         tokens = seg.split()  # not shlex: it mangles Windows paths (``C:\Users\...\.env``)
@@ -991,22 +1240,33 @@ def _command_reads_secret_file(command: str | None) -> bool:
         if reader in _PATTERN_FIRST_COMMANDS:
             positional = positional[1:]
         if any(_is_secret_file_arg(arg) for arg in positional):
+            # ⤷ 出口 return：返回 True
             return True
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def is_env_dump_command()
+# │  作用：True if any pipeline/sequence segment starts with an _ENV_DUMP_COMMANDS
+# │  参数：command: str | None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_env_dump_command(command: str | None) -> bool:
     """True if any pipeline/sequence segment starts with an _ENV_DUMP_COMMANDS
     token. Conservative: unrecognized → False (callers fall back to code_file=True)."""
     if not command or not isinstance(command, str):
+        # ⤷ 出口 return：返回 False
         return False
     for seg in _command_segments(command):
+        # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
         try:
             tokens = shlex.split(seg)
         except ValueError:
             tokens = seg.split()
         if tokens and tokens[0] in _ENV_DUMP_COMMANDS:
+            # ⤷ 出口 return：返回 True
             return True
+    # ⤷ 出口 return：返回 False
     return False
 
 
@@ -1017,27 +1277,41 @@ REDACTION_UNAVAILABLE = "[redaction-unavailable]"
 _BEARER_RESIDUE_RE = re.compile(r"\bBearer\s+(?:\[[^\]]+\]|[A-Za-z0-9._~+/-]{20,}=*)", re.IGNORECASE)
 
 
+# ┌── 函数 def redact_for_egress()
+# │  作用：The one scrub for text leaving the process for a remote reader (chat platforms, A2A peers,
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def redact_for_egress(text: str) -> str:
     """The one scrub for text leaving the process for a remote reader (chat platforms, A2A peers,
     telemetry). ``redact_sensitive_text(force=True)`` — the only secret-pattern list — plus a bearer
     sweep, because a ``Bearer <opaque>`` value with no vendor prefix carries no shape the prefix
     matcher can key on. Fails CLOSED: if the redactor raises, the raw text is never returned."""
     text = str(text or "")
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         text = redact_sensitive_text(text, force=True)
     except Exception:
+        # ⤷ 出口 return：返回 REDACTION_UNAVAILABLE
         return REDACTION_UNAVAILABLE
     if "earer" in text:
         text = _BEARER_RESIDUE_RE.sub("Bearer [redacted]", text)
+    # ⤷ 出口 return：返回 text
     return text
 
 
+# ┌── 函数 def redact_terminal_output()
+# │  作用：Single redaction policy for ALL terminal-output surfaces: the ENV/YAML-assignment
+# │  参数：output: str, command: str | None = None, force: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def redact_terminal_output(output: str, command: str | None = None, *, force: bool = False) -> str:
     """Single redaction policy for ALL terminal-output surfaces: the ENV/YAML-assignment
     pass runs only when ``command`` is an env dump or reads a secret-bearing file (``.env``,
     shell rc, Hermes ``config.yaml``); otherwise code_file=True avoids false positives on
     source/config dumps."""
     if not output:
+        # ⤷ 出口 return：返回 output
         return output
     code_file = not (is_env_dump_command(command) or _command_reads_secret_file(command))
     redacted = redact_sensitive_text(output, force=force, code_file=code_file)
@@ -1046,42 +1320,70 @@ def redact_terminal_output(output: str, command: str | None = None, *, force: bo
     # where {'BRAVE_API_KEY': '…'} leaks, not in source dumps.
     if code_file and (force or _redact_enabled()) and ":" in redacted and "'" in redacted:
         redacted = _redact_python_diagnostic_repr_fields(redacted)
+    # ⤷ 出口 return：返回 redacted
     return redacted
 
 
 # --- Prefix pre-screen: derived from _PREFIX_PATTERNS so a new prefix can't
 # silently break the gate (every match contains its pattern's literal prefix).
 
+# ┌── 函数 def _extract_literal_prefix()
+# │  作用：Leading literal chars of a regex (up to the first metacharacter).
+# │  参数：pattern: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _extract_literal_prefix(pattern: str) -> str:
     """Leading literal chars of a regex (up to the first metacharacter)."""
     meta = "[(\\.?*+|{^$"
     for i, ch in enumerate(pattern):
         if ch in meta:
+            # ⤷ 出口 return：返回 pattern[:i]
             return pattern[:i]
+    # ⤷ 出口 return：返回 pattern
     return pattern
 
 
+# ┌── 函数 def _skip_char_class()
+# │  作用：Given ``pattern[i] == "["``, return the index just past the closing ``]``.
+# │  参数：pattern: str, i: int
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _skip_char_class(pattern: str, i: int) -> int:
     """Given ``pattern[i] == "["``, return the index just past the closing ``]``."""
     i += 2 if pattern[i + 1:i + 2] == "]" else 1  # a leading "]" is literal
     while i < len(pattern) and pattern[i] != "]":
         i += 2 if pattern[i] == "\\" else 1
+    # ⤷ 出口 return：返回 i
     return i
 
 
+# ┌── 函数 def _unbounded_quantifier_follows()
+# │  作用：True if an open-ended quantifier (``*``, ``+``, ``{m,}``) starts at ``pattern[j]``.
+# │  参数：pattern: str, j: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _unbounded_quantifier_follows(pattern: str, j: int) -> bool:
     """True if an open-ended quantifier (``*``, ``+``, ``{m,}``) starts at ``pattern[j]``."""
     if j >= len(pattern):
+        # ⤷ 出口 return：返回 False
         return False
     if pattern[j] in "*+":
+        # ⤷ 出口 return：返回 True
         return True
     if pattern[j] == "{":
         k = pattern.find("}", j)
         body = pattern[j + 1:k] if k != -1 else ""
+        # ⤷ 出口 return：返回 body[:-1].isdigit() and body.endswith(',')
         return body[:-1].isdigit() and body.endswith(",")  # {m,} is open-ended; {m} / {m,n} bounded
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _pattern_structure()
+# │  作用：One scan → ``(has_top_level_alternation, has_nested_unbounded_repeat)``.
+# │  参数：pattern: str
+# │  返回：tuple[bool, bool]
+# └──────────────────────────────────────────────────────────────
 def _pattern_structure(pattern: str) -> tuple[bool, bool]:
     """One scan → ``(has_top_level_alternation, has_nested_unbounded_repeat)``.
 
@@ -1114,22 +1416,41 @@ def _pattern_structure(pattern: str) -> tuple[bool, bool]:
             if ch == "{":
                 i = pattern.find("}", i)  # skip the {m,} body
         i += 1
+    # ⤷ 出口 return：返回 (top_level_alt, nested)
     return top_level_alt, nested
 
 
+# ┌── 函数 def _has_top_level_alternation()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：pattern: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_top_level_alternation(pattern: str) -> bool:
+    # ⤷ 出口 return：返回 _pattern_structure(pattern)[0]
     return _pattern_structure(pattern)[0]
 
 
+# ┌── 函数 def _has_nested_unbounded_repeat()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：pattern: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_nested_unbounded_repeat(pattern: str) -> bool:
+    # ⤷ 出口 return：返回 _pattern_structure(pattern)[1]
     return _pattern_structure(pattern)[1]
 
 
 _PREFIX_SUBSTRINGS = tuple(_extract_literal_prefix(p) for p in _PREFIX_PATTERNS)
 
 
+# ┌── 函数 def _has_known_prefix_substring()
+# │  作用：Cheap pre-check before the expensive ``_PREFIX_RE``.
+# │  参数：text: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_known_prefix_substring(text: str) -> bool:
     """Cheap pre-check before the expensive ``_PREFIX_RE``."""
+    # ⤷ 出口 return：返回 any((p in text for p in _PREFIX_SUBSTRINGS))
     return any(p in text for p in _PREFIX_SUBSTRINGS)
 
 
@@ -1143,14 +1464,26 @@ _PLUGIN_PREFIX_PATTERNS: dict = {}
 _registry_lock = threading.Lock()
 
 
+# ┌── 函数 def _plugin_patterns()
+# │  作用：All plugin-registered patterns in registration order.
+# │  参数：无
+# │  返回：list
+# └──────────────────────────────────────────────────────────────
 def _plugin_patterns() -> list:
     """All plugin-registered patterns in registration order."""
+    # ⤷ 出口 return：返回 [p for patterns in _PLUGIN_PREFIX_PATTERNS.values() for p in…
     return [p for patterns in _PLUGIN_PREFIX_PATTERNS.values() for p in patterns]
 
 
+# ┌── 函数 def _rebuild_prefix_matcher()
+# │  作用：Recompile the prefix alternation and pre-screen substrings; callers read the
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _rebuild_prefix_matcher() -> None:
     """Recompile the prefix alternation and pre-screen substrings; callers read the
     module globals at call time, so the swap propagates immediately."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _PREFIX_RE, _PREFIX_SUBSTRINGS
     combined = _PREFIX_PATTERNS + _plugin_patterns()
     _PREFIX_RE = _compile_prefix_matcher(combined)
@@ -1173,6 +1506,11 @@ _PATTERN_REJECT_RULES = (
 )
 
 
+# ┌── 函数 def register_redaction_patterns()
+# │  作用：Additively register credential-token regexes; returns the count accepted.
+# │  参数：patterns, source: str = 'plugin'
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def register_redaction_patterns(patterns, source: str = "plugin") -> int:
     """Additively register credential-token regexes; returns the count accepted.
 
@@ -1186,6 +1524,7 @@ def register_redaction_patterns(patterns, source: str = "plugin") -> int:
             logger.warning("%s: skipping empty/non-string redaction pattern", source)
             continue
         pattern = pattern.strip()
+        # ⤷ 关键分支 try/except：捕获 re.error，出错走兜底而不是崩溃。
         try:
             re.compile(pattern)
         except re.error as exc:
@@ -1205,9 +1544,15 @@ def register_redaction_patterns(patterns, source: str = "plugin") -> int:
             _PLUGIN_PREFIX_PATTERNS.setdefault(source, []).extend(accepted)
             _rebuild_prefix_matcher()
         logger.info("%s: registered %d redaction pattern(s)", source, len(accepted))
+    # ⤷ 出口 return：返回 len(accepted)
     return len(accepted)
 
 
+# ┌── 函数 def _reset_plugin_redaction_patterns()
+# │  作用：Drop all plugin-registered patterns (tests/teardown only).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reset_plugin_redaction_patterns() -> None:
     """Drop all plugin-registered patterns (tests/teardown only)."""
     with _registry_lock:
@@ -1215,8 +1560,18 @@ def _reset_plugin_redaction_patterns() -> None:
         _rebuild_prefix_matcher()
 
 
+# ┌── 类 class RedactingFormatter（继承自：logging.Formatter）
+# │  说明：Log formatter that redacts secrets from all log messages.
+# │  成员：共 1 个方法；对外可用 1 个
+# └──────────────────────────────────────────────────────────────
 class RedactingFormatter(logging.Formatter):
     """Log formatter that redacts secrets from all log messages."""
 
+    # ┌── 函数 def format()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, record: logging.LogRecord
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def format(self, record: logging.LogRecord) -> str:
+        # ⤷ 出口 return：返回 redact_sensitive_text(super().format(record))
         return redact_sensitive_text(super().format(record))

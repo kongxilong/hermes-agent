@@ -1,4 +1,28 @@
 """Core NeMo Relay adapters for physical Hermes provider attempts."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/relay_llm.py（约 890 行）
+# 地位：把真实的模型调用包进 Relay 体系（做插桩、编解码、逻辑调用收尾）。
+#
+# 主要类型：
+#   class _ManagedAttempt     一次受管的调用尝试：invoke / invoke_async / run_managed / resolve_failure
+#   class ManagedLlmStream    流式响应的包装迭代器（17 个方法）
+#   class AnthropicStreamAccumulator   把 Anthropic 的流式事件累积成一个完整响应
+#                                      （observe → _on_message_start → _on_content_block_delta
+#                                       → _on_message_delta → finalize）
+#
+# 主要函数：execute(request, callback) / execute_async / stream_current(request, stream_factory)
+#
+# 技术点：
+#   - 编解码往返：_codec_round_trip_request_body / _provider_request_body
+#     请求要在「我们的格式」和「服务商格式」之间转换，还要保证往返一致（_json_equal 校验）
+#   - 逻辑调用收尾：complete_logical_call()
+#   - 取消判定：_is_cancellation(error)
+#
+# 初学建议：这个文件偏框架层，可以先跳过。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -31,26 +55,54 @@ _RELAY_PROTOCOL_BY_API_MODE = {
 }
 
 
+# ┌── 函数 def _api_mode()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：metadata: dict[str, Any] | None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _api_mode(metadata: dict[str, Any] | None) -> str:
+    # ⤷ 出口 return：返回 str((metadata or {}).get('api_mode') or '')
     return str((metadata or {}).get("api_mode") or "")
 
 
+# ┌── 函数 def _relay_operation_name()
+# │  作用：Return Relay's canonical operation name when Hermes knows the API mode.
+# │  参数：provider_name: str, metadata: dict[str, Any] | None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _relay_operation_name(provider_name: str, metadata: dict[str, Any] | None) -> str:
     """Return Relay's canonical operation name when Hermes knows the API mode."""
     protocol = _RELAY_PROTOCOL_BY_API_MODE.get(_api_mode(metadata))
+    # ⤷ 出口 return：返回 protocol[0] if protocol is not None else provider_name
     return protocol[0] if protocol is not None else provider_name
 
 
+# ┌── 函数 def _relay_metadata()
+# │  作用：Preserve the physical provider when the operation name is canonicalized.
+# │  参数：provider_name: str, metadata: dict[str, Any] | None
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _relay_metadata(provider_name: str, metadata: dict[str, Any] | None) -> dict[str, Any]:
     """Preserve the physical provider when the operation name is canonicalized."""
     relay_metadata = _jsonable_dict(metadata or {})
     relay_metadata.setdefault("hermes.provider", provider_name)
+    # ⤷ 出口 return：返回 relay_metadata
     return relay_metadata
 
 
+# ┌── 类 class _ManagedAttempt
+# │  说明：Relay request state shared by the sync, async, and streaming adapters.
+# │  成员：共 12 个方法；对外可用 8 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _ManagedAttempt:
     """Relay request state shared by the sync, async, and streaming adapters."""
 
+    # ┌── 函数 def resolve()
+    # │  作用：Return the managed attempt for ``session_id`` (None: the inherited turn's), or None to run unmanaged.
+    # │  参数：cls, session_id: str | None, request: dict[str, Any], metadata: dict[str, Any] | None, name: str, model_name: str
+    # │  返回：'_ManagedAttempt | None'
+    # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
+    # └──────────────────────────────────────────────────────────────
     @classmethod
     def resolve(
         cls, session_id: str | None, request: dict[str, Any], metadata: dict[str, Any] | None,
@@ -60,12 +112,20 @@ class _ManagedAttempt:
         if session_id is None:
             session_id = _current_session_id()
         if not session_id:
+            # ⤷ 出口 return：返回 None
             return None
         runtime, session, parent = relay_runtime.resolve_execution_context(session_id)
         if runtime is None or session is None or not runtime.managed_execution_enabled():
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 cls(runtime, session, parent, request, metadata, name=name, …
         return cls(runtime, session, parent, request, metadata, name=name, model_name=model_name)
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, runtime: relay_runtime.RelayRuntime, session: Any, parent: Any, request: dict[str, Any], metadata: dict[str, Any] | None, name: str, model_name: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(
         self, runtime: relay_runtime.RelayRuntime, session: Any, parent: Any,
         request: dict[str, Any], metadata: dict[str, Any] | None, *, name: str, model_name: str,
@@ -87,12 +147,23 @@ class _ManagedAttempt:
         self.raw_response: dict[str, Any] = {}
         self.context = contextvars.copy_context()
 
+    # ┌── 函数 def provider_request()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, next_request: Any
+    # │  返回：dict[str, Any]
+    # └──────────────────────────────────────────────────────────────
     def provider_request(self, next_request: Any) -> dict[str, Any]:
+        # ⤷ 出口 return：返回 _provider_request(self.request, next_request, relay_request_…
         return _provider_request(
             self.request, next_request, relay_request_body=self.body,
             codec_baseline_body=self.codec_baseline, metadata=self.metadata,
         )
 
+    # ┌── 函数 def run_callback()
+    # │  作用：Run a Hermes callback in a fresh copy of the captured context.
+    # │  参数：self, callback: Callable[..., Any], *args
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def run_callback(self, callback: Callable[..., Any], *args: Any) -> Any:
         """Run a Hermes callback in a fresh copy of the captured context.
         Relay can invoke callbacks while another still owns the captured Context (hence the
@@ -103,77 +174,147 @@ class _ManagedAttempt:
             # Hermes-side callbacks run while the native pipeline drives this stream; nested relay calls
             # they make must bypass managed execution (#77244).
             with relay_runtime.managed_callback_guard():
+                # ⤷ 出口 return：返回 callback(*args)
                 return callback(*args)
 
+        # ⤷ 出口 return：返回 self.context.copy().run(guarded)
         return self.context.copy().run(guarded)
 
+    # ┌── 函数 def _record()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, raw: Any
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _record(self, raw: Any) -> Any:
         self.raw_response["value"] = raw
         self.raw_response["json"] = _jsonable(raw)
+        # ⤷ 出口 return：返回 self.raw_response['json']
         return self.raw_response["json"]
 
+    # ┌── 函数 def _recording_errors()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：Iterator[None]
+    # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+    # └──────────────────────────────────────────────────────────────
     @contextlib.contextmanager
     def _recording_errors(self) -> Iterator[None]:
+        # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
         try:
+            # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
             yield
         except BaseException as exc:
             self.raw_response["error"] = exc
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
 
+    # ┌── 函数 def invoke()
+    # │  作用：Provider callback handed to Relay: run ``callback`` on Relay's (possibly rewritten) request.
+    # │  参数：self, callback: Callable[..., Any], next_request: Any
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def invoke(self, callback: Callable[..., Any], next_request: Any) -> Any:
         """Provider callback handed to Relay: run ``callback`` on Relay's (possibly rewritten) request."""
         with self._recording_errors():
             raw = self.run_callback(callback, self.provider_request(next_request))
+        # ⤷ 出口 return：返回 self._record(raw)
         return self._record(raw)
 
+    # ┌── 异步函数（协程） def invoke_async()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, callback: Callable[..., Any], next_request: Any
+    # │  返回：Any
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def invoke_async(self, callback: Callable[..., Any], next_request: Any) -> Any:
         async def call_provider() -> Any:
             with relay_runtime.managed_callback_guard():  # nested relay calls run unmanaged
+                # ⤷ 出口 return：返回 await callback(final_request)
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 return await callback(final_request)
 
         with self._recording_errors():
             final_request = self.provider_request(next_request)
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             raw = await self.context.copy().run(asyncio.create_task, call_provider())
+        # ⤷ 出口 return：返回 self._record(raw)
         return self._record(raw)
 
+    # ┌── 函数 def run_managed()
+    # │  作用：Return the awaitable running ``relay_call`` inside the session context.
+    # │  参数：self, relay_call: Callable[..., Any], *callbacks
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def run_managed(self, relay_call: Callable[..., Any], *callbacks: Any) -> Any:
         """Return the awaitable running ``relay_call`` inside the session context."""
+        # ⤷ 出口 return：返回 self.runtime.run_in_session_async(self.session, relay_call, …
         return self.runtime.run_in_session_async(
             self.session, relay_call, self.operation, self.relay_request, *callbacks, **self.relay_kwargs,
         )
 
+    # ┌── 函数 def resolve_failure()
+    # │  作用：Re-raise the provider's own error, or recover a completed provider result.
+    # │  参数：self, exc: BaseException, defer_logical_completion: bool
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def resolve_failure(self, exc: BaseException, defer_logical_completion: bool) -> Any:
         """Re-raise the provider's own error, or recover a completed provider result.
         Must be called from the ``except`` handling ``exc`` (bare ``raise``)."""
         callback_error = self.raw_response.get("error")
         if callback_error is not None and relay_runtime._is_relay_wrapped_callback_error(exc, callback_error):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise callback_error
         if not isinstance(exc, Exception) or callback_error is not None or "value" not in self.raw_response:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         logger.warning(
             "NeMo Relay LLM post-processing failed after provider success; returning the provider response",
             exc_info=True,
         )
         self._complete(defer_logical_completion)
+        # ⤷ 出口 return：返回 self.raw_response['value']
         return self.raw_response["value"]
 
+    # ┌── 函数 def result()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, managed: Any, defer_logical_completion: bool
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def result(self, managed: Any, defer_logical_completion: bool) -> Any:
         self._complete(defer_logical_completion)
         if "value" in self.raw_response and _json_equal(managed, self.raw_response["json"]):
+            # ⤷ 出口 return：返回 self.raw_response['value']
             return self.raw_response["value"]
+        # ⤷ 出口 return：返回 _namespace(managed)
         return _namespace(managed)
 
+    # ┌── 函数 def _complete()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, defer_logical_completion: bool
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _complete(self, defer_logical_completion: bool) -> None:
         if not defer_logical_completion:
             _complete_logical(self.logical, outcome="success")
 
 
+# ┌── 函数 def _current_session_id()
+# │  作用：Return the inherited Hermes turn's session id, or None outside a live turn.
+# │  参数：无
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _current_session_id() -> str | None:
     """Return the inherited Hermes turn's session id, or None outside a live turn."""
     turn = relay_runtime.active_turn()
+    # ⤷ 出口 return：返回 None if turn is None else turn.lease.session_id
     return None if turn is None else turn.lease.session_id
 
 
+# ┌── 函数 def execute()
+# │  作用：Run one non-streaming physical provider attempt through Relay.
+# │  参数：request: dict[str, Any], callback: Callable[[dict[str, Any]], Any], name: str, model_name: str, session_id: str | None = ..., metadata: dict[str, Any] | None = ..., defer_logical_completion: bool = ...
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def execute(
     request: dict[str, Any], callback: Callable[[dict[str, Any]], Any], *, name: str, model_name: str,
     session_id: str | None = None, metadata: dict[str, Any] | None = None, defer_logical_completion: bool = False,
@@ -182,16 +323,26 @@ def execute(
     ``session_id`` defaults to the inherited Hermes turn's session (unmanaged when there is none)."""
     attempt = _ManagedAttempt.resolve(session_id, request, metadata, name=name, model_name=model_name)
     if attempt is None:
+        # ⤷ 出口 return：返回 callback(request)
         return callback(request)
+    # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
     try:
         managed = _run_awaitable(attempt.run_managed(
             attempt.runtime.relay.llm.execute, partial(attempt.invoke, callback)
         ))
     except BaseException as exc:
+        # ⤷ 出口 return：返回 attempt.resolve_failure(exc, defer_logical_completion)
         return attempt.resolve_failure(exc, defer_logical_completion)
+    # ⤷ 出口 return：返回 attempt.result(managed, defer_logical_completion)
     return attempt.result(managed, defer_logical_completion)
 
 
+# ┌── 异步函数（协程） def execute_async()
+# │  作用：Async ``execute``.
+# │  参数：request: dict[str, Any], callback: Callable[[dict[str, Any]], Any], name: str, model_name: str, session_id: str | None = ..., metadata: dict[str, Any] | None = ..., defer_logical_completion: bool = ...
+# │  返回：Any
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def execute_async(
     request: dict[str, Any], callback: Callable[[dict[str, Any]], Any], *, name: str, model_name: str,
     session_id: str | None = None, metadata: dict[str, Any] | None = None, defer_logical_completion: bool = False,
@@ -199,11 +350,17 @@ async def execute_async(
     """Async ``execute``."""
     attempt = _ManagedAttempt.resolve(session_id, request, metadata, name=name, model_name=model_name)
     if attempt is None:
+        # ⤷ 出口 return：返回 await callback(request)
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         return await callback(request)
+    # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
     try:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         managed = await attempt.run_managed(attempt.runtime.relay.llm.execute, partial(attempt.invoke_async, callback))
     except BaseException as exc:
+        # ⤷ 出口 return：返回 attempt.resolve_failure(exc, defer_logical_completion)
         return attempt.resolve_failure(exc, defer_logical_completion)
+    # ⤷ 出口 return：返回 attempt.result(managed, defer_logical_completion)
     return attempt.result(managed, defer_logical_completion)
 
 
@@ -212,12 +369,24 @@ execute_current = execute
 execute_current_async = execute_async
 
 
+# ┌── 函数 def _has_running_event_loop()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_running_event_loop() -> bool:
     with contextlib.suppress(RuntimeError):
+        # ⤷ 出口 return：返回 asyncio.get_running_loop() is not None
         return asyncio.get_running_loop() is not None
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def stream_current()
+# │  作用：Run a provider stream under the inherited Hermes turn when present.
+# │  参数：request: dict[str, Any], stream_factory: Callable[[dict[str, Any]], Any], name: str, model_name: str, finalizer: Callable[[], Any], metadata: dict[str, Any] | None = ..., defer_logical_completion: bool = ..., completed_response_predicate: Callable[[Any], bool] | None = ...
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def stream_current(
     request: dict[str, Any], stream_factory: Callable[[dict[str, Any]], Any], *, name: str, model_name: str,
     finalizer: Callable[[], Any], metadata: dict[str, Any] | None = None,
@@ -239,6 +408,7 @@ def stream_current(
     # Inside a managed callback (on the Relay session's loop) a nested ManagedLlmStream would be
     # iterated synchronously on that loop, which asyncio forbids; the outer stream tracks this attempt.
     if session_id is None or _has_running_event_loop():
+        # ⤷ 出口 return：返回 stream_factory(request)
         return stream_factory(request)
     managed = stream(
         request, stream_factory, session_id=session_id, name=name, model_name=model_name,
@@ -248,9 +418,15 @@ def stream_current(
     if completed_response_predicate is not None:
         # Relay may defer the provider callback until the first pull; prime once (a real first chunk is buffered).
         managed._prime_completed_response()
+    # ⤷ 出口 return：返回 managed.final_response if managed.final_response is not None…
     return managed.final_response if managed.final_response is not None else managed
 
 
+# ┌── 函数 def _aclose_on_loop()
+# │  作用：Await ``stream.aclose()`` on ``loop`` when the stream exposes one.
+# │  参数：loop: asyncio.AbstractEventLoop, stream: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _aclose_on_loop(loop: asyncio.AbstractEventLoop, stream: Any) -> None:
     """Await ``stream.aclose()`` on ``loop`` when the stream exposes one."""
     close = getattr(stream, "aclose", None)
@@ -258,11 +434,16 @@ def _aclose_on_loop(loop: asyncio.AbstractEventLoop, stream: Any) -> None:
         return
 
     async def close_stream() -> None:  # create the coroutine on ``loop``, not the caller's thread
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await close()
 
     loop.run_until_complete(close_stream())
 
 
+# ┌── 类 class ManagedLlmStream（继承自：Iterator[Any]）
+# │  说明：Synchronous view of one Relay-managed provider stream, driven from the worker thread.
+# │  成员：共 17 个方法；对外可用 1 个；含魔术方法 __init__, __iter__, __next__, __del__
+# └──────────────────────────────────────────────────────────────
 class ManagedLlmStream(Iterator[Any]):
     """Synchronous view of one Relay-managed provider stream, driven from the worker thread."""
 
@@ -275,6 +456,11 @@ class ManagedLlmStream(Iterator[Any]):
     _logical: _LogicalCall | None = None
     _logical_response_model_name: str | None = None
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, request: dict[str, Any], stream_factory: Callable[[dict[str, Any]], Any], session_id: str, name: str, model_name: str, finalizer: Callable[[], Any], on_stream_created: Callable[[Any], None] | None = ...  …共 14 个
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(
         self, request: dict[str, Any], stream_factory: Callable[[dict[str, Any]], Any], *, session_id: str,
         name: str, model_name: str, finalizer: Callable[[], Any],
@@ -299,6 +485,11 @@ class ManagedLlmStream(Iterator[Any]):
         self._logical = attempt.logical
         self._start_managed(attempt)
 
+    # ┌── 函数 def _start_unmanaged()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, request: dict[str, Any]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _start_unmanaged(self, request: dict[str, Any]) -> None:
         raw_stream = self._stream_factory(request)
         predicate = self._completed_response_predicate
@@ -311,10 +502,17 @@ class ManagedLlmStream(Iterator[Any]):
             self._on_stream_created(raw_stream)
         self._stream = iter(raw_stream)
 
+    # ┌── 异步函数（协程） def _provider_stream()
+    # │  作用：Relay's provider callback: run the factory and yield JSON-encoded chunks.
+    # │  参数：self, attempt: _ManagedAttempt, next_request: Any
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _provider_stream(self, attempt: _ManagedAttempt, next_request: Any):
         """Relay's provider callback: run the factory and yield JSON-encoded chunks."""
         run_callback = attempt.run_callback
         raw_stream = None
+        # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
         try:
             raw_stream = run_callback(self._stream_factory, attempt.provider_request(next_request))
             predicate = self._completed_response_predicate
@@ -326,6 +524,7 @@ class ManagedLlmStream(Iterator[Any]):
                 run_callback(self._on_stream_created, raw_stream)
             raw_iterator = run_callback(iter, raw_stream)
             while True:
+                # ⤷ 关键分支 try/except：捕获 StopIteration，出错走兜底而不是崩溃。
                 try:
                     chunk = run_callback(next, raw_iterator)
                 except StopIteration:
@@ -334,36 +533,54 @@ class ManagedLlmStream(Iterator[Any]):
                     break
                 encoded_chunk = _jsonable(chunk)
                 self._raw_chunks.append((encoded_chunk, chunk))
+                # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
                 yield encoded_chunk
             self._provider_completed = True
         except BaseException as exc:
             self._callback_error = exc
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         finally:
             close = getattr(raw_stream, "close", None)
             if callable(close):
+                # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
                 try:
                     run_callback(close)
                 except BaseException as exc:
                     self._close_error = exc
+                    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                     raise
 
+    # ┌── 函数 def _relay_finalizer()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, attempt: _ManagedAttempt
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _relay_finalizer(self, attempt: _ManagedAttempt) -> Any:
         # Relay may call this while unwinding a provider-stream failure; keep the original
         # error instead of a secondary "missing terminal response".
         if self._callback_error is not None:
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
         try:
             response = self.final_response
             if response is None:
                 response = attempt.run_callback(self._finalizer)
             if self._logical_model_name is not None:
                 self._logical_response_model_name = _response_model_name(response)
+            # ⤷ 出口 return：返回 _jsonable(response)
             return _jsonable(response)
         except BaseException as exc:
             self._callback_error = exc
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
 
+    # ┌── 函数 def _start_managed()
+    # │  作用：Open Relay's stream on a private event loop owned by this iterator.
+    # │  参数：self, attempt: _ManagedAttempt
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _start_managed(self, attempt: _ManagedAttempt) -> None:
         """Open Relay's stream on a private event loop owned by this iterator."""
 
@@ -372,6 +589,7 @@ class ManagedLlmStream(Iterator[Any]):
                 attempt.run_callback(self._on_chunk, _jsonable(chunk))
 
         self._runtime_lease = attempt.runtime.acquire_operation_lease()
+        # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
         try:
             self._loop = loop = asyncio.new_event_loop()
             self._stream = loop.run_until_complete(
@@ -384,6 +602,7 @@ class ManagedLlmStream(Iterator[Any]):
             if self._loop is not None and self._recoverable_relay_failure(exc):
                 self._preserve_pending_provider_chunks()
                 return
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
                 if self._loop is not None:
                     self._finish_logical("cancelled" if _is_cancellation(exc) else "failed")
@@ -391,17 +610,34 @@ class ManagedLlmStream(Iterator[Any]):
             finally:
                 self._loop = None
                 self._release_runtime_lease()
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
 
+    # ┌── 函数 def __iter__()
+    # │  作用：魔术方法 __iter__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：'ManagedLlmStream'
+    # └──────────────────────────────────────────────────────────────
     def __iter__(self) -> "ManagedLlmStream":
+        # ⤷ 出口 return：返回 self
         return self
 
+    # ┌── 函数 def _prime_completed_response()
+    # │  作用：Advance once while preserving a genuine first chunk.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _prime_completed_response(self) -> None:
         """Advance once while preserving a genuine first chunk."""
         if not self._closed and not self._prefetched_chunks:
             with contextlib.suppress(StopIteration):
                 self._prefetched_chunks.append(next(self))
 
+    # ┌── 函数 def _recoverable_relay_failure()
+    # │  作用：Relay post-processing failed after the provider already succeeded.
+    # │  参数：self, exc: BaseException
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _recoverable_relay_failure(self, exc: BaseException) -> bool:
         """Relay post-processing failed after the provider already succeeded."""
         recoverable = isinstance(exc, Exception) and self._provider_completed and self._callback_error is None
@@ -410,8 +646,14 @@ class ManagedLlmStream(Iterator[Any]):
                 "NeMo Relay stream post-processing failed after provider success; preserving the provider result",
                 exc_info=True,
             )
+        # ⤷ 出口 return：返回 recoverable
         return recoverable
 
+    # ┌── 函数 def _finish_logical()
+    # │  作用：Complete the logical LLM scope unless the caller deferred it.
+    # │  参数：self, outcome: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _finish_logical(self, outcome: str) -> None:
         """Complete the logical LLM scope unless the caller deferred it."""
         if self._defer_logical_completion:
@@ -423,21 +665,31 @@ class ManagedLlmStream(Iterator[Any]):
         )
         self._logical = None
 
+    # ┌── 函数 def __next__()
+    # │  作用：魔术方法 __next__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def __next__(self) -> Any:
         if self._closed:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise StopIteration
         if self._prefetched_chunks:
+            # ⤷ 出口 return：返回 self._prefetched_chunks.pop()
             return self._prefetched_chunks.pop()
         if self._loop is None:
             chunk = next(self._stream, self)  # self: exhausted sentinel
             if chunk is self or (self._accept_chunk is not None and not self._accept_chunk(chunk)):
                 self._close(logical_outcome="cancelled")
                 raise StopIteration
+            # ⤷ 出口 return：返回 chunk
             return chunk
 
         async def next_chunk() -> Any:
+            # ⤷ 出口 return：返回 await anext(self._stream)
             return await anext(self._stream)
 
+        # ⤷ 关键分支 try/except：捕获 StopAsyncIteration、BaseException，出错走兜底而不是崩溃。
         try:
             chunk = self._loop.run_until_complete(next_chunk())
         except StopAsyncIteration:
@@ -463,23 +715,37 @@ class ManagedLlmStream(Iterator[Any]):
                 del self._raw_chunks[: index + 1]
                 return raw
         self.output_modified = True
+        # ⤷ 出口 return：返回 self._chunk_adapter(chunk)
         return self._chunk_adapter(chunk)
 
+    # ┌── 函数 def close()
+    # │  作用：Close an explicitly abandoned stream and cancel its logical call.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def close(self) -> None:
         """Close an explicitly abandoned stream and cancel its logical call."""
         self._close(logical_outcome="cancelled")
         close_error, self._close_error = self._close_error, None
         if close_error is not None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise close_error
 
+    # ┌── 函数 def _preserve_pending_provider_chunks()
+    # │  作用：Switch a failed Relay stream to its undelivered provider chunks.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _preserve_pending_provider_chunks(self) -> None:
         """Switch a failed Relay stream to its undelivered provider chunks."""
         pending = [raw for _encoded, raw in self._raw_chunks]
         self._raw_chunks.clear()
         loop, relay_stream = self._loop, self._stream
         self._loop, self._stream, self._raw_stream_resource, self._accept_chunk = None, iter(pending), None, None
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             if loop is not None:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     _aclose_on_loop(loop, relay_stream)
                 except Exception:
@@ -489,10 +755,20 @@ class ManagedLlmStream(Iterator[Any]):
         finally:
             self._release_runtime_lease()
 
+    # ┌── 函数 def _keep_first_close_error()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, exc: BaseException
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _keep_first_close_error(self, exc: BaseException) -> None:
         if self._close_error is None:
             self._close_error = exc
 
+    # ┌── 函数 def _close_provider_resources()
+    # │  作用：Close the unmanaged provider stream/resource once each (they may be the same object).
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_provider_resources(self) -> None:
         """Close the unmanaged provider stream/resource once each (they may be the same object)."""
         resources = {id(r): r for r in (self._stream, self._raw_stream_resource) if r is not None}
@@ -500,6 +776,7 @@ class ManagedLlmStream(Iterator[Any]):
         self._raw_stream_resource = None
         for resource in resources.values():
             close = getattr(resource, "close", None)
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 if callable(close):
                     close()
@@ -507,16 +784,23 @@ class ManagedLlmStream(Iterator[Any]):
                 self._keep_first_close_error(exc)
                 logger.debug("Provider stream cleanup failed", exc_info=True)
 
+    # ┌── 函数 def _close()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, logical_outcome: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close(self, *, logical_outcome: str) -> None:
         if self._closed:
             return
         self._closed = True
         self._prefetched_chunks.clear()
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             loop, self._loop = self._loop, None
             if loop is None:
                 self._close_provider_resources()
             else:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     _aclose_on_loop(loop, self._stream)
                 except Exception as exc:
@@ -527,11 +811,21 @@ class ManagedLlmStream(Iterator[Any]):
         finally:
             self._release_runtime_lease()
 
+    # ┌── 函数 def _release_runtime_lease()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _release_runtime_lease(self) -> None:
         lease, self._runtime_lease = self._runtime_lease, None
         if lease is not None:
             lease.release()
 
+    # ┌── 函数 def __del__()
+    # │  作用：魔术方法 __del__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __del__(self) -> None:
         self._close(logical_outcome="cancelled")
 
@@ -542,13 +836,27 @@ stream = ManagedLlmStream
 _ANTHROPIC_APPEND_DELTAS = {"text_delta": "text", "thinking_delta": "thinking", "signature_delta": "signature"}
 
 
+# ┌── 类 class AnthropicStreamAccumulator
+# │  说明：Rebuild an Anthropic Message from post-intercept SSE events.
+# │  成员：共 8 个方法；对外可用 3 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class AnthropicStreamAccumulator:
     """Rebuild an Anthropic Message from post-intercept SSE events."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self) -> None:
         self._message: dict[str, Any] = {}
         self._blocks: dict[int, dict[str, Any]] = {}
 
+    # ┌── 函数 def observe()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, event: Any
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def observe(self, event: Any) -> None:
         payload = _jsonable(event)
         if isinstance(payload, dict):
@@ -556,16 +864,31 @@ class AnthropicStreamAccumulator:
             if handler is not None:
                 handler(self, payload)
 
+    # ┌── 函数 def _on_message_start()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, payload: dict[str, Any]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_message_start(self, payload: dict[str, Any]) -> None:
         message = payload.get("message")
         if isinstance(message, dict):
             self._message.update({k: message[k] for k in ("id", "type", "role", "model", "usage") if k in message})
 
+    # ┌── 函数 def _on_content_block_start()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, payload: dict[str, Any]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_content_block_start(self, payload: dict[str, Any]) -> None:
         index, block = payload.get("index"), payload.get("content_block")
         if isinstance(index, int) and isinstance(block, dict):
             self._blocks[index] = dict(block)
 
+    # ┌── 函数 def _on_content_block_delta()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, payload: dict[str, Any]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_content_block_delta(self, payload: dict[str, Any]) -> None:
         index, delta = payload.get("index"), payload.get("delta")
         if not isinstance(index, int) or not isinstance(delta, dict):
@@ -580,6 +903,11 @@ class AnthropicStreamAccumulator:
         elif delta_type == "citations_delta" and "citation" in delta:
             block.setdefault("citations", []).append(delta["citation"])
 
+    # ┌── 函数 def _on_message_delta()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, payload: dict[str, Any]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_message_delta(self, payload: dict[str, Any]) -> None:
         delta = payload.get("delta")
         if isinstance(delta, dict):
@@ -595,6 +923,11 @@ class AnthropicStreamAccumulator:
         "content_block_delta": _on_content_block_delta, "message_delta": _on_message_delta,
     }
 
+    # ┌── 函数 def finalize()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：dict[str, Any]
+    # └──────────────────────────────────────────────────────────────
     def finalize(self) -> dict[str, Any]:
         blocks = [dict(self._blocks[index]) for index in sorted(self._blocks)]
         for block in blocks:
@@ -603,8 +936,14 @@ class AnthropicStreamAccumulator:
                 with contextlib.suppress(TypeError, ValueError):
                     partial = json.loads(partial)
                 block["input"] = partial
+        # ⤷ 出口 return：返回 {**self._message, 'content': blocks}
         return {**self._message, "content": blocks}
 
+    # ┌── 函数 def response()
+    # │  作用：Return the attribute-shaped response consumed by Hermes.
+    # │  参数：self, base: Any = None
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def response(self, base: Any = None) -> Any:
         """Return the attribute-shaped response consumed by Hermes."""
         assembled = self.finalize()
@@ -612,9 +951,15 @@ class AnthropicStreamAccumulator:
         merged = {**_jsonable_dict(base), **assembled}
         if content or "content" not in merged:
             merged["content"] = content
+        # ⤷ 出口 return：返回 _namespace(merged)
         return _namespace(merged)
 
 
+# ┌── 函数 def _logical_parent()
+# │  作用：Return (turn, handle, request_id) for the turn's logical LLM scope, pushing it once.
+# │  参数：runtime: relay_runtime.RelayRuntime, session: Any, parent: Any, metadata: dict[str, Any] | None
+# │  返回：_LogicalCall | None
+# └──────────────────────────────────────────────────────────────
 def _logical_parent(
     runtime: relay_runtime.RelayRuntime, session: Any, parent: Any, metadata: dict[str, Any] | None
 ) -> _LogicalCall | None:
@@ -622,9 +967,11 @@ def _logical_parent(
     turn = relay_runtime.active_turn(session.session_id)
     request_id = str((metadata or {}).get("api_request_id") or "")
     if turn is None or not request_id or turn.lease.host is not runtime:
+        # ⤷ 出口 return：返回 None
         return None
     with turn.finalize_lock:
         if turn.closed:
+            # ⤷ 出口 return：返回 None
             return None
         with turn.logical_llm_lock:
             handle = turn.logical_llm_calls.get(request_id)
@@ -635,9 +982,15 @@ def _logical_parent(
                     runtime.relay.ScopeType.Function, handle=parent, input={},
                     metadata=relay_runtime.runtime_metadata(runtime.runtime_id, **{"hermes.call_role": call_role}),
                 )
+    # ⤷ 出口 return：返回 (turn, handle, request_id)
     return turn, handle, request_id
 
 
+# ┌── 函数 def _complete_logical()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：logical: _LogicalCall | None, outcome: str, model_name: str | None = ..., provider_name: str | None = ..., response_model_name: str | None = ..., operation_lease: relay_runtime.RelayOperationLease | None = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _complete_logical(
     logical: _LogicalCall | None, *, outcome: str, model_name: str | None = None, provider_name: str | None = None,
     response_model_name: str | None = None, operation_lease: relay_runtime.RelayOperationLease | None = None,
@@ -659,6 +1012,7 @@ def _complete_logical(
                 return
         if lease.session is None:
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             (operation_lease or lease.host).run_in_session(
                 lease.session, relay_runtime.pop_relay_scope, lease.host.relay, handle,
@@ -673,10 +1027,21 @@ def _complete_logical(
                 del turn.logical_llm_calls[request_id]
 
 
+# ┌── 函数 def _is_cancellation()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：error: BaseException
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_cancellation(error: BaseException) -> bool:
+    # ⤷ 出口 return：返回 isinstance(error, (asyncio.CancelledError, InterruptedError,…
     return isinstance(error, (asyncio.CancelledError, InterruptedError, KeyboardInterrupt))
 
 
+# ┌── 函数 def complete_logical_call()
+# │  作用：Complete the active turn's logical LLM call after caller validation.
+# │  参数：api_request_id: str, outcome: str, model_name: str | None = ..., provider_name: str | None = ..., response_model_name: str | None = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def complete_logical_call(
     api_request_id: str, *, outcome: str, model_name: str | None = None,
     provider_name: str | None = None, response_model_name: str | None = None,
@@ -694,12 +1059,23 @@ def complete_logical_call(
         )
 
 
+# ┌── 函数 def _response_model_name()
+# │  作用：Return a provider-reported model name when one is available.
+# │  参数：response: Any
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _response_model_name(response: Any) -> str | None:
     """Return a provider-reported model name when one is available."""
     value = response.get("model") if isinstance(response, dict) else getattr(response, "model", None)
+    # ⤷ 出口 return：返回 value if isinstance(value, str) and value.strip() else None
     return value if isinstance(value, str) and value.strip() else None
 
 
+# ┌── 函数 def _provider_request()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：original: dict[str, Any], request: Any, relay_request_body: dict[str, Any], codec_baseline_body: dict[str, Any] | None, metadata: dict[str, Any] | None
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _provider_request(
     original: dict[str, Any], request: Any, *, relay_request_body: dict[str, Any],
     codec_baseline_body: dict[str, Any] | None, metadata: dict[str, Any] | None,
@@ -730,9 +1106,15 @@ def _provider_request(
         headers = {k: v for k, v in headers.items() if str(k).lower() != "traceparent"}
     if headers:
         final["extra_headers"] = {**dict(final.get("extra_headers") or {}), **headers}
+    # ⤷ 出口 return：返回 final
     return final
 
 
+# ┌── 函数 def _rewrite_tools()
+# │  作用：Rewrite each dict tool that ``match``es (in place on ``body["tools"]`` when it is a list).
+# │  参数：body: dict[str, Any], match: Callable[[dict], bool], rewrite: Callable[[dict], dict]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _rewrite_tools(body: dict[str, Any], match: Callable[[dict], bool], rewrite: Callable[[dict], dict]) -> None:
     """Rewrite each dict tool that ``match``es (in place on ``body["tools"]`` when it is a list)."""
     tools = body.get("tools")
@@ -740,6 +1122,11 @@ def _rewrite_tools(body: dict[str, Any], match: Callable[[dict], bool], rewrite:
         body["tools"] = [rewrite(t) if isinstance(t, dict) and match(t) else t for t in tools]
 
 
+# ┌── 函数 def _codex_codec_tools()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：body: dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _codex_codec_tools(body: dict[str, Any]) -> None:
     # The Responses SDK accepts ``tools=None`` as "no tools" while Relay's typed codec
     # wants an array or an absent field; only the codec-facing copy is normalized.
@@ -751,6 +1138,11 @@ def _codex_codec_tools(body: dict[str, Any]) -> None:
     )
 
 
+# ┌── 函数 def _chat_codec_tools()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：body: dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _chat_codec_tools(body: dict[str, Any]) -> None:
     _rewrite_tools(body, lambda t: "function" in t and "type" not in t, lambda t: {"type": "function", **t})
 
@@ -759,6 +1151,11 @@ def _chat_codec_tools(body: dict[str, Any]) -> None:
 _CODEC_TOOL_NORMALIZERS = {"codex_responses": _codex_codec_tools, "chat_completions": _chat_codec_tools}
 
 
+# ┌── 函数 def _relay_request_body()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：request: dict[str, Any], metadata: dict[str, Any] | None
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _relay_request_body(request: dict[str, Any], metadata: dict[str, Any] | None) -> dict[str, Any]:
     body = _jsonable_dict(request)
     # ``timeout`` configures the SDK client, not the wire: never expose it to intercepts.
@@ -766,9 +1163,15 @@ def _relay_request_body(request: dict[str, Any], metadata: dict[str, Any] | None
     normalize = _CODEC_TOOL_NORMALIZERS.get(_api_mode(metadata))
     if normalize is not None:
         normalize(body)
+    # ⤷ 出口 return：返回 body
     return body
 
 
+# ┌── 函数 def _restore_provider_message_extensions()
+# │  作用：Restore provider wire fields that Relay's typed codec cannot represent.
+# │  参数：original: dict[str, Any], final: dict[str, Any], baseline: dict[str, Any], intercepted: dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _restore_provider_message_extensions(
     original: dict[str, Any], final: dict[str, Any], *, baseline: dict[str, Any], intercepted: dict[str, Any],
 ) -> None:
@@ -787,25 +1190,40 @@ def _restore_provider_message_extensions(
                 final_message[key] = original_message[key]
 
 
+# ┌── 函数 def _codec_round_trip_request_body()
+# │  作用：Return the codec-only request shape used to identify real rewrites.
+# │  参数：relay: Any, relay_request: Any, relay_request_body: dict[str, Any], metadata: dict[str, Any] | None
+# │  返回：dict[str, Any] | None
+# └──────────────────────────────────────────────────────────────
 def _codec_round_trip_request_body(
     relay: Any, relay_request: Any, *, relay_request_body: dict[str, Any], metadata: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     """Return the codec-only request shape used to identify real rewrites."""
     codec = _codec(relay, metadata)
     if codec is None:
+        # ⤷ 出口 return：返回 _provider_request_body(relay_request_body, metadata)
         return _provider_request_body(relay_request_body, metadata)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         encoded = codec.encode(codec.decode(relay_request), relay_request)
         content = getattr(encoded, "content", encoded)
     except Exception:
         logger.warning("NeMo Relay request codec baseline failed; ignoring request rewrites", exc_info=True)
+        # ⤷ 出口 return：返回 None
         return None
     if isinstance(content, dict):
+        # ⤷ 出口 return：返回 _provider_request_body(content, metadata)
         return _provider_request_body(content, metadata)
     logger.warning("NeMo Relay request codec returned an unsupported baseline; ignoring request rewrites")
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _provider_request_body()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：content: dict[str, Any], metadata: dict[str, Any] | None
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _provider_request_body(content: dict[str, Any], metadata: dict[str, Any] | None) -> dict[str, Any]:
     body = dict(content)
     if _api_mode(metadata) == "codex_responses":
@@ -813,24 +1231,40 @@ def _provider_request_body(content: dict[str, Any], metadata: dict[str, Any] | N
             body, lambda t: t.get("type") == "function" and isinstance(t.get("function"), dict),
             lambda t: {"type": "function", **dict(t["function"])},
         )
+    # ⤷ 出口 return：返回 body
     return body
 
 
+# ┌── 函数 def _codec()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：relay: Any, metadata: dict[str, Any] | None
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _codec(relay: Any, metadata: dict[str, Any] | None) -> Any:
     protocol = _RELAY_PROTOCOL_BY_API_MODE.get(_api_mode(metadata))
     codec = getattr(getattr(relay, "codecs", None), protocol[1], None) if protocol is not None else None
+    # ⤷ 出口 return：返回 codec() if callable(codec) else None
     return codec() if callable(codec) else None
 
 
+# ┌── 函数 def _jsonable()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _jsonable(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
+        # ⤷ 出口 return：返回 value
         return value
     if isinstance(value, dict):
+        # ⤷ 出口 return：返回 {str(key): _jsonable(item) for key, item in value.items()}
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
+        # ⤷ 出口 return：返回 [_jsonable(item) for item in value]
         return [_jsonable(item) for item in value]
     model_dump = getattr(type(value), "model_dump", None)
     if callable(model_dump):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # warnings=False: pydantic's generic-union warning would leak to the terminal
             # mid-response; TypeError = duck-typed model_dump without pydantic's signature.
@@ -840,45 +1274,83 @@ def _jsonable(value: Any) -> Any:
                 return _jsonable(value.model_dump())
         except Exception:
             pass
+    # ⤷ 关键分支 try/except：捕获 (TypeError, AttributeError)，出错走兜底而不是崩溃。
     try:
         attributes = {str(key): item for key, item in vars(value).items() if not str(key).startswith("_")}
     except (TypeError, AttributeError):
         return str(value)
+    # ⤷ 出口 return：返回 _jsonable(attributes) if attributes else str(value)
     return _jsonable(attributes) if attributes else str(value)
 
 
+# ┌── 函数 def _jsonable_dict()
+# │  作用：``_jsonable`` for values that must be a JSON object; anything else becomes ``{}``.
+# │  参数：value: Any
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _jsonable_dict(value: Any) -> dict[str, Any]:
     """``_jsonable`` for values that must be a JSON object; anything else becomes ``{}``."""
     payload = _jsonable(value)
+    # ⤷ 出口 return：返回 payload if isinstance(payload, dict) else {}
     return payload if isinstance(payload, dict) else {}
 
 
+# ┌── 函数 def _namespace()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _namespace(value: Any) -> Any:
     if isinstance(value, dict):
+        # ⤷ 出口 return：返回 SimpleNamespace(**{str(key): _namespace(item) for key, item …
         return SimpleNamespace(**{str(key): _namespace(item) for key, item in value.items()})
     if isinstance(value, list):
+        # ⤷ 出口 return：返回 [_namespace(item) for item in value]
         return [_namespace(item) for item in value]
+    # ⤷ 出口 return：返回 value
     return value
 
 
+# ┌── 函数 def _canonical_json()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any, encode: Callable[[Any], Any] = _jsonable
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _canonical_json(value: Any, encode: Callable[[Any], Any] = _jsonable) -> str:
+    # ⤷ 出口 return：返回 json.dumps(encode(value), sort_keys=True, separators=(',', '…
     return json.dumps(encode(value), sort_keys=True, separators=(",", ":"))
 
 
+# ┌── 函数 def _json_equal()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：left: Any, right: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _json_equal(left: Any, right: Any) -> bool:
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 _canonical_json(left) == _canonical_json(right)
         return _canonical_json(left) == _canonical_json(right)
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _run_awaitable()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any, loop_error: str = ...
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _run_awaitable(
     value: Any, *, loop_error: str = "Synchronous Relay LLM execution cannot run on an event-loop thread",
 ) -> Any:
     if not inspect.isawaitable(value):
+        # ⤷ 出口 return：返回 value
         return value
     if _has_running_event_loop():
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(loop_error)
+    # ⤷ 出口 return：返回 asyncio.run(value)
     return asyncio.run(value)
 
 

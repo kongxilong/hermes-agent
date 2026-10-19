@@ -2,6 +2,34 @@
 background tasks, MCP reload. Bound onto ``GatewayRunner`` via the MRO; ``gateway.run`` internals
 are imported lazily inside method bodies (import cycle) so ``patch("gateway.run.X")`` still works.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：gateway/run_turn.py（约 4021 行）
+# 地位：网关里「一轮对话怎么执行」的实现。
+#
+# 核心类：class GatewayTurnMixin（97 个方法），通过 MRO 绑定到 GatewayRunner。
+#
+# 主入口：_handle_message_with_agent（源码注释里提到的方法）
+#   流程大概是：收到平台消息 → 找到/创建会话 → 组装历史 → 调 Agent → 把回复发回平台
+#
+# 方法命名规律（看懂这个规律，4021 行就不吓人了）：
+#   _hmwa_* 前缀 = _handle_message_with_agent 的拆分步骤
+#     _hmwa_resolve_session          定位会话
+#     _hmwa_open_session             打开会话
+#     _hmwa_auto_load_skills         自动加载技能
+#     _hmwa_acquire_turn_lease       拿这一轮的租约（防止并发冲突）
+#     _hmwa_hygiene_read_config      卫生检查（清理/压缩）相关配置
+#   这种「一个大函数拆成一堆带前缀的小函数」是超长流程的标准组织方式。
+#
+# 其他：
+#   is_context_overflow_failure_result()   判断失败是不是上下文溢出导致
+#   _resolve_session_agent_runtime()       每个会话用哪个运行时
+#
+# 注意：源码注释说明——gateway.run 的内部符号是在方法体里「懒导入」的，
+#   为了避免循环导入，同时保证 patch('gateway.run.X') 依然有效。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -52,6 +80,11 @@ _CONTEXT_OVERFLOW_ERROR_PHRASES = (
 )
 
 
+# ┌── 函数 def is_context_overflow_failure_result()
+# │  作用：One verdict for "this failed turn is a context overflow", shared by transcript persistence
+# │  参数：agent_result: dict, history_len: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_context_overflow_failure_result(agent_result: dict, history_len: int) -> bool:
     """One verdict for "this failed turn is a context overflow", shared by transcript persistence
     (#1630 skip) and the user-facing reply so the two can never disagree.
@@ -59,16 +92,28 @@ def is_context_overflow_failure_result(agent_result: dict, history_len: int) -> 
     Multi-word phrases (not bare "exceed"/"token") avoid matching "rate limit exceeded" or
     "invalid authentication token"; a bare 400 only counts on a long session."""
     if not agent_result.get("failed"):
+        # ⤷ 出口 return：返回 False
         return False
     if agent_result.get("compression_exhausted"):
+        # ⤷ 出口 return：返回 True
         return True
     err = str(agent_result.get("error") or "").lower()
+    # ⤷ 出口 return：返回 any((p in err for p in _CONTEXT_OVERFLOW_ERROR_PHRASES)) or …
     return any(p in err for p in _CONTEXT_OVERFLOW_ERROR_PHRASES) or ("400" in err and history_len > 50)
 
 
+# ┌── 类 class GatewayTurnMixin
+# │  说明：Agent-turn execution for GatewayRunner (see module docstring).
+# │  成员：共 97 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class GatewayTurnMixin:
     """Agent-turn execution for GatewayRunner (see module docstring)."""
 
+    # ┌── 函数 def _resolve_session_agent_runtime()
+    # │  作用：Resolve model/runtime for a session.
+    # │  参数：self, source: Optional[SessionSource] = ..., session_key: Optional[str] = ..., user_config: Optional[dict] = ...
+    # │  返回：tuple[str, dict]
+    # └──────────────────────────────────────────────────────────────
     def _resolve_session_agent_runtime(
         self, *, source: Optional[SessionSource] = None, session_key: Optional[str] = None,
         user_config: Optional[dict] = None,
@@ -104,6 +149,7 @@ class GatewayTurnMixin:
                     "Session model override (fast): session=%s config_model=%s -> override_model=%s provider=%s",
                     skey or "", model, override_model, override_runtime.get("provider"),
                 )
+                # ⤷ 出口 return：返回 (override_model, override_runtime)
                 return override_model, override_runtime
             # No api_key on the override: env-based resolution below, override model/provider on top.
             logger.debug(
@@ -179,8 +225,14 @@ class GatewayTurnMixin:
                 self._session_state(skey).conversation.last_resolved_model = model
             self._session_state("*").conversation.last_resolved_model = model
 
+        # ⤷ 出口 return：返回 (model, runtime_kwargs)
         return model, runtime_kwargs
 
+    # ┌── 函数 def _resolve_turn_agent_config()
+    # │  作用：Effective model/runtime config for one turn. With `/fast` priority on, fast-mode
+    # │  参数：self, user_message: str, model: str, runtime_kwargs: dict
+    # │  返回：dict
+    # └──────────────────────────────────────────────────────────────
     def _resolve_turn_agent_config(self, user_message: str, model: str, runtime_kwargs: dict) -> dict:
         """Effective model/runtime config for one turn. With `/fast` priority on, fast-mode
         ``request_overrides`` are deep-merged OVER the per-provider ones so both reach the model."""
@@ -207,7 +259,9 @@ class GatewayTurnMixin:
         if getattr(self, "_service_tier", None) != "priority":
             # None / auto / cold: the bounded window is applied per request by agent.fast_mode.
             route["request_overrides"] = base_request_overrides
+            # ⤷ 出口 return：返回 route
             return route
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             overrides = resolve_fast_mode_overrides(
                 route["model"], provider=runtime["provider"], base_url=runtime["base_url"],
@@ -216,8 +270,14 @@ class GatewayTurnMixin:
             overrides = None
         # Fast-mode keys (service_tier / speed) are top-level and don't collide with extra_body.
         route["request_overrides"] = _deep_merge_request_overrides(base_request_overrides, overrides or {})
+        # ⤷ 出口 return：返回 route
         return route
 
+    # ┌── 函数 def _sync_session_model_from_agent()
+    # │  作用：Persist the runtime model/provider a gateway turn actually used (provider fallback can
+    # │  参数：self, session_id: str, agent: Any
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _sync_session_model_from_agent(self, session_id: str, agent: Any) -> None:
         """Persist the runtime model/provider a gateway turn actually used (provider fallback can
         switch them after the row was created). Runs in the ``run_sync`` executor thread, so it
@@ -230,6 +290,7 @@ class GatewayTurnMixin:
         runtime = {k: getattr(agent, k, None) for k in ("provider", "base_url", "api_mode")}
         runtime["fallback_active"] = bool(getattr(agent, "_fallback_activated", False))
         runtime = {k: v for k, v in runtime.items() if v not in (None, "")}
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             db = self._session_db._db
             row = db.get_session(session_id)
@@ -255,27 +316,57 @@ class GatewayTurnMixin:
         except Exception:
             logger.debug("Failed to sync gateway session model metadata", exc_info=True)
 
+    # ┌── 函数 def _event_thread_metadata()
+    # │  作用：Thread metadata for a send that replies to ``event`` on ``source``.
+    # │  参数：self, event, source
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _event_thread_metadata(self, event, source):
         """Thread metadata for a send that replies to ``event`` on ``source``."""
+        # ⤷ 出口 return：返回 self._thread_metadata_for_source(source, self._reply_anchor_…
         return self._thread_metadata_for_source(source, self._reply_anchor_for_event(event))
 
+    # ┌── 函数 def _pop_post_delivery_callback()
+    # │  作用：Pop the adapter's deferred post-delivery callback for ``key`` (legacy dict fallback).
+    # │  参数：adapter, key, generation
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _pop_post_delivery_callback(adapter, key, generation):
         """Pop the adapter's deferred post-delivery callback for ``key`` (legacy dict fallback)."""
         if getattr(type(adapter), "pop_post_delivery_callback", None) is not None:
+            # ⤷ 出口 return：返回 adapter.pop_post_delivery_callback(key, generation=generatio…
             return adapter.pop_post_delivery_callback(key, generation=generation)
         if adapter and hasattr(adapter, "_post_delivery_callbacks"):
+            # ⤷ 出口 return：返回 adapter._post_delivery_callbacks.pop(key, None)
             return adapter._post_delivery_callbacks.pop(key, None)
+        # ⤷ 出口 return：返回 None
         return None
 
+    # ┌── 函数 def _is_intentional_silence()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：agent_result, response
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _is_intentional_silence(agent_result, response) -> bool:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from gateway.response_filters import is_intentional_silence_agent_result
+            # ⤷ 出口 return：返回 is_intentional_silence_agent_result(agent_result, response)
             return is_intentional_silence_agent_result(agent_result, response)
         except Exception:
+            # ⤷ 出口 return：返回 False
             return False
 
+    # ┌── 异步函数（协程） def _hmwa_resolve_session()
+    # │  作用：Resolve ``source`` to its session entry (topic recovery, internal-route guards, Telegram
+    # │  参数：self, event, source
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_resolve_session(self, event, source):
         """Resolve ``source`` to its session entry (topic recovery, internal-route guards, Telegram
         topic-binding heal). Returns ``(source, session_entry, session_key)`` or ``None`` to drop
@@ -284,6 +375,7 @@ class GatewayTurnMixin:
         # cross-topic Reply doesn't fragment the conversation.
         event_metadata = getattr(event, "metadata", None) or {}
         expected_session_key = str(event_metadata.get("gateway_session_key") or "").strip()
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         recovered = (await asyncio.to_thread(self._recover_telegram_topic_thread_id, source)
                      if not expected_session_key else None)
         if recovered is not None:
@@ -307,6 +399,7 @@ class GatewayTurnMixin:
         strict_session = bool(event_metadata.get("gateway_session_strict"))
         pinned_session_id = str(event_metadata.get("gateway_session_id") or "").strip()
         if strict_session:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             session_entry = await self.async_session_store.lookup_by_session_key(expected_session_key)
             if session_entry is None or not pinned_session_id or session_entry.session_id != pinned_session_id:
                 logger.warning(
@@ -317,27 +410,38 @@ class GatewayTurnMixin:
         else:
             # Internal wakes observe reset policy without counting as user activity, or periodic
             # notifications keep the routing key alive across every daily/idle boundary.
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             session_entry = await self.async_session_store.get_or_create_session(
                 source, touch_activity=not bool(getattr(event, "internal", False)),
             )
         session_key = session_entry.session_key
         if not strict_session and pinned_session_id:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             resolved_entry = await self._resolve_async_delegation_session(session_entry, pinned_session_id)
             if resolved_entry is None:
                 return
             session_entry = resolved_entry
         self._cache_session_source(session_key, source)
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         if await asyncio.to_thread(self._is_telegram_topic_lane, source):
             session_entry = await self._hmwa_heal_telegram_topic_binding(source, session_entry, session_key)
         from gateway.run_heartbeat_acceptance import resolve_heartbeat_owner
         if not await resolve_heartbeat_owner(self, event, session_entry):
             return
+        # ⤷ 出口 return：返回 (source, session_entry, session_key)
         return source, session_entry, session_key
 
+    # ┌── 异步函数（协程） def _hmwa_heal_telegram_topic_binding()
+    # │  作用：Follow the (chat_id, thread_id) topic binding — healed to its compression tip — or record
+    # │  参数：self, source, session_entry, session_key
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_heal_telegram_topic_binding(self, source, session_entry, session_key):
         """Follow the (chat_id, thread_id) topic binding — healed to its compression tip — or record
         a fresh one. Returns the (possibly switched) session entry."""
         binding = None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             if self._session_db:
                 binding = await self._session_db.get_telegram_topic_binding(
@@ -347,10 +451,12 @@ class GatewayTurnMixin:
         except Exception:
             logger.debug("Failed to read Telegram topic binding", exc_info=True)
         if not binding:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 await asyncio.to_thread(self._record_telegram_topic_binding, source, session_entry)
             except Exception:
                 logger.debug("Failed to record Telegram topic binding", exc_info=True)
+            # ⤷ 出口 return：返回 session_entry
             return session_entry
         stored_session_id = str(binding.get("session_id") or "")
         bound_session_id = stored_session_id
@@ -359,6 +465,7 @@ class GatewayTurnMixin:
         # Returns the input unchanged when the session isn't a compression parent, so this is cheap and
         # safe. See #20470, #29712, #33414.
         if bound_session_id and self._session_db is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 canonical_session_id = await self._session_db.get_compression_tip(bound_session_id)
             except Exception:
@@ -369,6 +476,7 @@ class GatewayTurnMixin:
         if bound_session_id and bound_session_id != session_entry.session_id:
             # Route through SessionStore so the key → id mapping persists and the previous lane
             # session ends cleanly (in-place mutation split-brained the JSON index).
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             switched = await self.async_session_store.switch_session(session_key, bound_session_id)
             if switched is not None:
                 session_entry = switched
@@ -377,8 +485,15 @@ class GatewayTurnMixin:
             await asyncio.to_thread(
                 self._sync_telegram_topic_binding, source, session_entry, reason="compression-tip-walk",
             )
+        # ⤷ 出口 return：返回 session_entry
         return session_entry
 
+    # ┌── 异步函数（协程） def _hmwa_open_session()
+    # │  作用：Consume auto-reset / fresh-reset flags and emit ``session:start`` for new sessions.
+    # │  参数：self, session_entry, session_key, source
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_open_session(self, session_entry, session_key, source):
         """Consume auto-reset / fresh-reset flags and emit ``session:start`` for new sessions.
         Returns ``(_was_auto_reset, _is_new_session)``."""
@@ -404,20 +519,29 @@ class GatewayTurnMixin:
             # See #6508.
             session_entry.is_fresh_reset = False
         if _is_new_session:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self.hooks.emit("session:start", {
                 "platform": source.platform.value if source.platform else "",
                 "user_id": source.user_id,
                 "session_id": session_entry.session_id,
                 "session_key": session_key,
             })
+        # ⤷ 出口 return：返回 (_was_auto_reset, _is_new_session)
         return _was_auto_reset, _is_new_session
 
+    # ┌── 异步函数（协程） def _hmwa_deliver_auto_reset_notice()
+    # │  作用：Stage the auto-reset sidecar note for the agent and notify the user (policy-gated).
+    # │  参数：self, session_entry, source, turn_sidecar_notes
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_deliver_auto_reset_notice(self, session_entry, source, turn_sidecar_notes):
         """Stage the auto-reset sidecar note for the agent and notify the user (policy-gated)."""
         from gateway.run import _AUTO_RESET_CONTEXT_NOTES
         reset_reason = getattr(session_entry, 'auto_reset_reason', None) or 'suspended'
         context_note = _AUTO_RESET_CONTEXT_NOTES.get(reset_reason, _AUTO_RESET_CONTEXT_NOTES["suspended"])
         # Long-lived channels: point the agent at the prior same-channel session for session_search.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Returns None (appends nothing) for other platforms or when there's no prior activity to
             # recall. Deterministic — no extra API/DB calls (#36220).
@@ -428,6 +552,7 @@ class GatewayTurnMixin:
             context_note = context_note + "\n\n" + continuity_note
         turn_sidecar_notes.append(context_note)
 
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             should_notify = reset_reason == "suspended"
             adapter = self._adapter_for_source(source) if should_notify else None
@@ -438,9 +563,11 @@ class GatewayTurnMixin:
                     f"Use /resume to browse and restore a previous session.\n"
                 )
                 with suppress(Exception):
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     session_info = await asyncio.to_thread(self._reset_notice_session_info, source)
                     if session_info:
                         notice = f"{notice}\n\n{session_info}"
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await adapter.send(source.chat_id, notice, metadata=self._thread_metadata_for_source(source))
         except Exception as e:
             logger.debug("Auto-reset notification failed (non-fatal): %s", e)
@@ -448,9 +575,15 @@ class GatewayTurnMixin:
         # was_auto_reset was consumed in _hmwa_open_session; only the reason needs clearing.
         session_entry.auto_reset_reason = None
 
+    # ┌── 函数 def _hmwa_auto_load_skills()
+    # │  作用：Prepend topic/channel-bound skill payload(s) to ``event.text`` on a new session.
+    # │  参数：self, event, _auto, _quick_key, session_key
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_auto_load_skills(self, event, _auto, _quick_key, session_key):
         """Prepend topic/channel-bound skill payload(s) to ``event.text`` on a new session."""
         _skill_names = [_auto] if isinstance(_auto, str) else list(_auto)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.skill_commands import _load_skill_payload, _build_skill_message
             _combined_parts: list[str] = []
@@ -476,6 +609,12 @@ class GatewayTurnMixin:
         except Exception as e:
             logger.warning("[Gateway] Failed to auto-load skill(s) %s: %s", _skill_names, e)
 
+    # ┌── 异步函数（协程） def _hmwa_acquire_turn_lease()
+    # │  作用：Serialize [load history → run → flush] per resolved SESSION_ID so another routing key on
+    # │  参数：self, _quick_key, run_generation, session_entry, _session_env_tokens
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_acquire_turn_lease(self, _quick_key, run_generation, session_entry, _session_env_tokens):
         """Serialize [load history → run → flush] per resolved SESSION_ID so another routing key on
         the same session waits for the prior flush. Fail-closed on timeout (outer dispatch returns
@@ -485,7 +624,9 @@ class GatewayTurnMixin:
         _lease_registry = getattr(self, "_turn_leases", None)
         if _lease_registry is None:
             return
+        # ⤷ 关键分支 try/except：捕获 TurnLeaseTimeoutError，出错走兜底而不是崩溃。
         try:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             _lease_token = await _lease_registry.acquire(
                 session_entry.session_id, owner_key=_quick_key, generation=run_generation,
                 timeout=_float_env("HERMES_TURN_LEASE_TIMEOUT", DEFAULT_LEASE_WAIT),
@@ -493,10 +634,15 @@ class GatewayTurnMixin:
         except TurnLeaseTimeoutError:
             # The cleanup finally starts later; restore the tokens here or this exit leaks identity.
             self._clear_session_env(_session_env_tokens)
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         if _lease_token is not None:
             self._session_state(_quick_key).turn.lease_tokens[run_generation] = _lease_token
 
+    # ┌── 类 class _HygienePlan
+    # │  说明：Hygiene pre-check outcome for one turn.
+    # │  成员：共 0 个方法；全部是下划线开头的内部方法
+    # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
     class _HygienePlan:
         """Hygiene pre-check outcome for one turn."""
@@ -506,6 +652,12 @@ class GatewayTurnMixin:
         msg_count: int
         warn_token_threshold: int
 
+    # ┌── 函数 def _hmwa_hygiene_read_config()
+    # │  作用：Apply model / compression knobs from the gateway config onto ``hs`` (invalid values keep the defaults).
+    # │  参数：hs, data
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _hmwa_hygiene_read_config(hs, data):
         """Apply model / compression knobs from the gateway config onto ``hs`` (invalid values keep the defaults)."""
@@ -531,11 +683,15 @@ class GatewayTurnMixin:
         def _knob(key, current, cast, allow_zero=False):
             raw = _comp_cfg.get(key)
             if raw is None:
+                # ⤷ 出口 return：返回 current
                 return current
+            # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
             try:
                 parsed = cast(raw)
             except (TypeError, ValueError):
+                # ⤷ 出口 return：返回 current
                 return current
+            # ⤷ 出口 return：返回 parsed if (parsed >= 0 if allow_zero else parsed > 0) else c…
             return parsed if (parsed >= 0 if allow_zero else parsed > 0) else current
 
         hs.hard_msg_limit = _knob("hygiene_hard_message_limit", hs.hard_msg_limit, int)
@@ -548,6 +704,12 @@ class GatewayTurnMixin:
             "hygiene_failure_cooldown_seconds", hs.failure_cooldown_seconds, float, allow_zero=True,
         )
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_settings()
+    # │  作用：Resolve model/provider/context-length + hygiene knobs (fail-soft: errors keep defaults).
+    # │  参数：self, source, session_key
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_settings(self, source, session_key):
         """Resolve model/provider/context-length + hygiene knobs (fail-soft: errors keep defaults).
 
@@ -561,6 +723,7 @@ class GatewayTurnMixin:
             max_turn_hold_seconds=10.0, failure_cooldown_seconds=300.0, config_context_length=None,
             provider=None, base_url=None, api_key=None, data={},
         )
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             hs.data = _load_gateway_config()
             if hs.data:
@@ -577,9 +740,11 @@ class GatewayTurnMixin:
                 hs.api_key = _hyg_runtime.get("api_key") or hs.api_key
 
             if hs.config_context_length is not None:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     from hermes_cli.route_identity import should_clear_context_pin_async
 
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     if await should_clear_context_pin_async(
                         configured_model, hs.model, configured_base_url, hs.base_url,
                         configured_provider, hs.provider,
@@ -591,6 +756,7 @@ class GatewayTurnMixin:
             # custom_providers per-model context_length fallback (as in run_agent.py); needs base_url.
             if hs.config_context_length is None and hs.base_url:
                 with suppress(TypeError, ValueError):
+                    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                     try:
                         from hermes_cli.config import (
                             get_compatible_custom_providers as _gw_gcp,
@@ -608,12 +774,20 @@ class GatewayTurnMixin:
                         hs.config_context_length = int(_hyg_custom_ctx)
         except Exception:
             pass
+        # ⤷ 出口 return：返回 hs
         return hs
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_plan()
+    # │  作用：Decide whether hygiene compression fires this turn (token/message thresholds, DB-backed
+    # │  参数：self, hs, history, session_entry, session_key
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_plan(self, hs, history, session_entry, session_key):
         """Decide whether hygiene compression fires this turn (token/message thresholds, DB-backed
         failure cooldown, in-flight compression)."""
         from agent.model_metadata import estimate_messages_tokens_rough, get_model_context_length_async
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _hyg_context_length = await get_model_context_length_async(
             hs.model, base_url=hs.base_url or "", api_key=hs.api_key or "",
             config_context_length=hs.config_context_length, provider=hs.provider or "",
@@ -666,6 +840,7 @@ class GatewayTurnMixin:
                     )
                     _needs_compress = False
 
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         if _needs_compress and await self._session_has_compression_in_flight(session_key):
             # A prior compression still holds the durable lock (e.g. a shielded worker left by /stop):
             # another attempt would wait up to 600s behind a commit the fence will refuse.
@@ -682,8 +857,15 @@ class GatewayTurnMixin:
                 _msg_count, f"{_approx_tokens:,}", _token_source,
                 int(hs.threshold_pct * 100), f"{_hyg_context_length:,}", f"{_compress_token_threshold:,}",
             )
+        # ⤷ 出口 return：返回 self._HygienePlan(_needs_compress, _approx_tokens, _msg_coun…
         return self._HygienePlan(_needs_compress, _approx_tokens, _msg_count, _warn_token_threshold)
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_wait_for_summary()
+    # │  作用：Progress-aware inline wait for the detached hygiene compressor. Returns the compressed
+    # │  参数：self, attempt, hs, session_entry
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_wait_for_summary(self, attempt, hs, session_entry):
         """Progress-aware inline wait for the detached hygiene compressor. Returns the compressed
         transcript; raises ``HygieneTurnHoldExceeded`` (turn-hold budget) or
@@ -694,6 +876,7 @@ class GatewayTurnMixin:
         fence = attempt.commit_fence
         while True:
             if fence.is_cancelled:
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise asyncio.TimeoutError
             # Charge the idle budget from the LAST PROGRESS event, else silence can approach 2x timeout.
             _hyg_waited = time.monotonic() - attempt.wait_started
@@ -708,11 +891,15 @@ class GatewayTurnMixin:
             # Short poll so a /stop or /restart cancel is not stuck behind a full idle window.
             _idle_left = max(hs.timeout_seconds - fence.seconds_since_progress(), 0.005)
             _slice = min(_slice, 0.25)
+            # ⤷ 关键分支 try/except：捕获 asyncio.TimeoutError，出错走兜底而不是崩溃。
             try:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 _compressed, _ = await asyncio.wait_for(asyncio.shield(attempt.future), timeout=_slice)
+                # ⤷ 出口 return：返回 _compressed
                 return _compressed
             except asyncio.TimeoutError:
                 if fence.is_cancelled:
+                    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                     raise
                 _hyg_waited = time.monotonic() - attempt.wait_started
                 _idle = fence.seconds_since_progress()
@@ -740,8 +927,15 @@ class GatewayTurnMixin:
                             session_entry.session_id, _hyg_waited, _idle, hs.total_ceiling_seconds,
                         )
                     continue
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_cancel_or_adopt()
+    # │  作用：Cancel the worker at the commit fence; on success release its lease and defer agent
+    # │  参数：self, attempt, context
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_cancel_or_adopt(self, attempt, context):
         """Cancel the worker at the commit fence; on success release its lease and defer agent
         cleanup, returning ``None``. When the worker already crossed into its commit, consume and
@@ -752,46 +946,82 @@ class GatewayTurnMixin:
         while not fence.commit_in_flight:
             cancelled = fence.try_cancel_before_commit()
             if cancelled is None:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await asyncio.sleep(0.025)
             elif cancelled:
                 fence.release_cancelled_compression_lock()
                 self._hmwa_hygiene_defer_cleanup(attempt, context)
+                # ⤷ 出口 return：返回 None
                 return None
             else:
                 break
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _compressed, _ = await attempt.future
+        # ⤷ 出口 return：返回 _compressed
         return _compressed
 
+    # ┌── 函数 def _hmwa_hygiene_defer_cleanup()
+    # │  作用：Hand the agent's cleanup to the still-running worker future and mark it deferred.
+    # │  参数：self, attempt, context
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_hygiene_defer_cleanup(self, attempt, context):
         """Hand the agent's cleanup to the still-running worker future and mark it deferred."""
         self._defer_agent_cleanup_until_future_done(attempt.future, attempt.agent, context=context)
         attempt.cleanup_deferred = True
 
+    # ┌── 函数 def _hmwa_hygiene_stamp()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：agent, desc, provenance_name, debug_label
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _hmwa_hygiene_stamp(agent, desc, provenance_name, debug_label):
         from agent.session_activity import ActivityProvenance
         from gateway.run import _stamp_hygiene_compression_provenance
         _stamp_hygiene_compression_provenance(agent, desc, getattr(ActivityProvenance, provenance_name), debug_label)
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_notify()
+    # │  作用：Best-effort user notice on the hygiene thread; failure is logged, never raised.
+    # │  参数：self, source, meta, message, what
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_notify(self, source, meta, message, what):
         """Best-effort user notice on the hygiene thread; failure is logged, never raised."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _adapter = self._adapter_for_source(source)
             if _adapter and source.chat_id:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await _adapter.send(source.chat_id, message, metadata=meta)
         except Exception as _werr:
             logger.warning("Failed to deliver %s to user: %s", what, _werr)
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_record_failure_cooldown()
+    # │  作用：Escalate the failure streak (off-loop) and persist the cooldown, when enabled.
+    # │  参数：self, hs, session_key, session_id, reason
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_record_failure_cooldown(self, hs, session_key, session_id, reason):
         """Escalate the failure streak (off-loop) and persist the cooldown, when enabled."""
         from gateway.run import _hygiene_cooldown_for_failure, _record_hygiene_cooldown
         if hs.failure_cooldown_seconds < 0:
             return
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _hyg_cooldown = await asyncio.to_thread(
             _hygiene_cooldown_for_failure, self, session_key, hs.failure_cooldown_seconds,
         )
         _record_hygiene_cooldown(self, session_id, _hyg_cooldown, reason)
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_on_turn_hold()
+    # │  作用：``except HygieneTurnHoldExceeded`` body: keep or cancel the worker's commit admission,
+    # │  参数：self, attempt, hs, session_entry, session_key, source
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_on_turn_hold(self, attempt, hs, session_entry, session_key, source):
         """``except HygieneTurnHoldExceeded`` body: keep or cancel the worker's commit admission,
         notify the user, and re-raise; returns the compressed transcript only when the worker
@@ -816,6 +1046,7 @@ class GatewayTurnMixin:
             _sid, _skey, _agent = session_entry.session_id, session_key, attempt.agent
 
             def _hyg_adopt_or_space_retry(_fut, _gw=self, _sid=_sid, _skey=_skey, _agent=_agent):
+                # ⤷ 关键分支 try/except：捕获 (asyncio.CancelledError, Exception)，出错走兜底而不是崩溃。
                 try:
                     _exc = _fut.exception()
                 except (asyncio.CancelledError, Exception):
@@ -831,6 +1062,7 @@ class GatewayTurnMixin:
                         "turn-hold was released — summary adopted at the watermark-fenced "
                         "commit boundary (#97963)", _sid,
                     )
+                    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                     try:
                         _reset_hygiene_failure_streak(_gw, _skey)
                     except Exception as _rs_err:
@@ -850,8 +1082,10 @@ class GatewayTurnMixin:
                 "will be adopted when it finishes"
             )
         else:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             _adopted = await self._hmwa_hygiene_cancel_or_adopt(attempt, "session hygiene turn-hold")
             if _adopted is not None:
+                # ⤷ 出口 return：返回 _adopted
                 return _adopted
             # Short flat retry-after, else every turn re-spawns, holds and cancels a compressor.
             _record_hygiene_cooldown(
@@ -869,11 +1103,19 @@ class GatewayTurnMixin:
             "proceeding without compression this turn%s",
             session_entry.session_id, time.monotonic() - attempt.wait_started, _log_suffix,
         )
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._hmwa_hygiene_notify(
             source, attempt.meta, t("gateway.compress.turnhold_deferred"), "compression-turnhold notice",
         )
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_on_timeout()
+    # │  作用：``except asyncio.TimeoutError`` body: cancel at the commit fence, record the failure
+    # │  参数：self, attempt, hs, session_entry, session_key, source
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_on_timeout(self, attempt, hs, session_entry, session_key, source):
         """``except asyncio.TimeoutError`` body: cancel at the commit fence, record the failure
         cooldown, warn the user, and re-raise; returns the compressed transcript only when the
@@ -888,9 +1130,12 @@ class GatewayTurnMixin:
             fence.retain_compression_lock_until_worker_done()
         # Capture fence state BEFORE try_cancel (which itself sets is_cancelled).
         _hyg_fence_cancelled = fence.is_cancelled
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _adopted = await self._hmwa_hygiene_cancel_or_adopt(attempt, "session hygiene timeout")
         if _adopted is not None:
+            # ⤷ 出口 return：返回 _adopted
             return _adopted
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._hmwa_hygiene_record_failure_cooldown(
             hs, session_key, session_entry.session_id,
             "session hygiene compression " + (
@@ -910,6 +1155,7 @@ class GatewayTurnMixin:
                 "Session hygiene compression for session %s was cancelled at the "
                 "commit fence; continuing without compression", session_entry.session_id,
             )
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         _hyg_elapsed = time.monotonic() - attempt.wait_started
         if _hyg_total_exhausted:
@@ -924,6 +1170,7 @@ class GatewayTurnMixin:
                 "(total wait %.1fs, ceiling %.1fs); continuing without compression",
                 session_entry.session_id, fence.seconds_since_progress(), _hyg_elapsed, hs.total_ceiling_seconds,
             )
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._hmwa_hygiene_notify(
             source, attempt.meta,
             _hygiene_compression_timeout_message(
@@ -932,8 +1179,14 @@ class GatewayTurnMixin:
             ),
             "compression-timeout warning",
         )
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
 
+    # ┌── 函数 def _hmwa_hygiene_on_unwind()
+    # │  作用：``except BaseException`` body (caller re-raises): revoke commit admission BEFORE the host
+    # │  参数：self, attempt, hs, session_entry, session_key
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_hygiene_on_unwind(self, attempt, hs, session_entry, session_key):
         """``except BaseException`` body (caller re-raises): revoke commit admission BEFORE the host
         unwinds so the detached worker can never commit later, and record a cooldown — otherwise
@@ -943,6 +1196,7 @@ class GatewayTurnMixin:
         if not attempt.cleanup_deferred:
             self._hmwa_hygiene_defer_cleanup(attempt, "session hygiene unwind")
         if hs.failure_cooldown_seconds >= 0:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 _record_hygiene_cooldown(
                     self, session_entry.session_id,
@@ -952,6 +1206,12 @@ class GatewayTurnMixin:
             except Exception as _cd_err:
                 logger.debug("hygiene unwind cooldown record failed: %s", _cd_err)
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_adopt_transcript()
+    # │  作用：Adopt a finished compression (rotation / in-place / refused); publishes the transcript to
+    # │  参数：self, attempt, _compressed, history, plan, session_entry, source, _quick_key  …共 9 个
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_adopt_transcript(
         self, attempt, _compressed, history, plan, *, session_entry, source, _quick_key, run_generation,
     ):
@@ -994,6 +1254,7 @@ class GatewayTurnMixin:
         # conversation silently vanishes. Persist the child transcript first; only then rebind the live
         # entry.
         if _hyg_rotated:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             if not await self.async_session_store.rewrite_transcript(_hyg_new_sid, _compressed):
                 logger.error(
                     "Session hygiene: failed to persist compressed transcript for rotated session "
@@ -1007,7 +1268,9 @@ class GatewayTurnMixin:
                 session_entry.session_id = _hyg_new_sid
                 # The held turn lease follows the rotation (alias keys still serialize on this turn).
                 self._rebind_turn_lease(_quick_key, run_generation, _hyg_new_sid)
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self.async_session_store._save()
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await asyncio.to_thread(
                     self._sync_telegram_topic_binding, source, session_entry, reason="hygiene-compression",
                 )
@@ -1034,8 +1297,15 @@ class GatewayTurnMixin:
         )
         if _new_tokens >= plan.warn_token_threshold:
             logger.warning("Session hygiene: still ~%s tokens after compression", f"{_new_tokens:,}")
+        # ⤷ 出口 return：返回 (_hyg_rotated, _hyg_in_place, _new_count, _new_tokens)
         return _hyg_rotated, _hyg_in_place, _new_count, _new_tokens
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_apply_result()
+    # │  作用：Adopt a finished hygiene compression, rebind the session + turn lease, record
+    # │  参数：self, attempt, hs, _compressed, history, plan, session_entry, session_key  …共 11 个
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_apply_result(
         self, attempt, hs, _compressed, history, plan, *,
         session_entry, session_key, source, _quick_key, run_generation,
@@ -1043,6 +1313,7 @@ class GatewayTurnMixin:
         """Adopt a finished hygiene compression, rebind the session + turn lease, record
         streak/cooldown, and warn the user on abort."""
         from gateway.run import _reset_hygiene_failure_streak, hygiene_compaction_recovered
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _hyg_rotated, _hyg_in_place, _new_count, _new_tokens = await self._hmwa_hygiene_adopt_transcript(
             attempt, _compressed, history, plan, session_entry=session_entry, source=source,
             _quick_key=_quick_key, run_generation=run_generation,
@@ -1064,8 +1335,10 @@ class GatewayTurnMixin:
             msg_count=plan.msg_count, new_count=_new_count, approx_tokens=plan.approx_tokens,
             new_tokens=_new_tokens,
         ):
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await asyncio.to_thread(_reset_hygiene_failure_streak, self, session_key)
         if _hyg_aborted:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._hmwa_hygiene_record_failure_cooldown(
                 hs, session_key, session_entry.session_id,
                 "session hygiene compression cancelled at commit fence" if _hyg_fence_cancelled
@@ -1079,6 +1352,7 @@ class GatewayTurnMixin:
                 # Force-redact: provider exception text may contain credentials; this reaches users.
                 from agent.redact import redact_sensitive_text
                 _err = redact_sensitive_text(getattr(_comp, "_last_summary_error", None) or "unknown error", force=True)
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._hmwa_hygiene_notify(
                     source, attempt.meta, "⚠️ Context compression aborted "
                     f"({_err}). No messages were dropped — "
@@ -1090,6 +1364,7 @@ class GatewayTurnMixin:
         elif _comp is not None and getattr(_comp, "_last_aux_model_failure_model", None):
             _aux_model = getattr(_comp, "_last_aux_model_failure_model", "")
             _aux_err = getattr(_comp, "_last_aux_model_failure_error", None) or "unknown error"
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._hmwa_hygiene_notify(
                 source, attempt.meta, f"ℹ️ Configured compression model `{_aux_model}` "
                 f"failed ({_aux_err}). Recovered using your main "
@@ -1098,6 +1373,12 @@ class GatewayTurnMixin:
                 "aux-model-fallback notice",
             )
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_codex_compaction()
+    # │  作用：codex app-server runtime: the real context is the server-side thread, not the transcript
+    # │  参数：self, hs, plan, history, session_entry, session_key, _hyg_runtime
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_codex_compaction(self, hs, plan, history, session_entry, session_key, _hyg_runtime):
         """codex app-server runtime: the real context is the server-side thread, not the transcript
         mirror. The detached-agent path would only rewrite the mirror and its finally-eviction
@@ -1110,6 +1391,7 @@ class GatewayTurnMixin:
         _hyg_comp_cfg = hs.data.get("compression") if isinstance(hs.data, dict) else None
         if isinstance(_hyg_comp_cfg, dict):
             _hyg_codex_auto = str(_hyg_comp_cfg.get("codex_app_server_auto", "native") or "native")
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _hyg_codex_outcome = await run_codex_hygiene_compaction(
             self, session_key, session_entry.session_id, auto_mode=_hyg_codex_auto, history=history,
             approx_tokens=plan.approx_tokens, timeout_seconds=hs.total_ceiling_seconds,
@@ -1120,12 +1402,20 @@ class GatewayTurnMixin:
             _hyg_codex_outcome, session_entry.session_id, _hyg_codex_auto, f"{plan.approx_tokens:,}",
         )
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_build_agent()
+    # │  作用：Build the detached hygiene ``AIAgent`` with the live session's system prompt. Returns
+    # │  参数：self, _hyg_model, _hyg_runtime, session_entry
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_build_agent(self, _hyg_model, _hyg_runtime, session_entry):
         """Build the detached hygiene ``AIAgent`` with the live session's system prompt. Returns
         ``(agent, sync_session_db)``."""
         from gateway.run import _GATEWAY_HYGIENE_PLATFORM, _seed_hygiene_system_prompt
         from run_agent import AIAgent
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             _hyg_session_row = await self._session_db.get_session(session_entry.session_id)
         except Exception as exc:
             _hyg_session_row = None
@@ -1151,8 +1441,15 @@ class GatewayTurnMixin:
         _seed_hygiene_system_prompt(_hyg_agent, _hyg_session_row)
         # A rebuilt (not retained) prompt is deliberately stale for every real gateway surface.
         _hyg_agent.platform = _GATEWAY_HYGIENE_PLATFORM
+        # ⤷ 出口 return：返回 (_hyg_agent, _hyg_session_db)
         return _hyg_agent, _hyg_session_db
 
+    # ┌── 异步函数（协程） def _hmwa_hygiene_detached_attempt()
+    # │  作用：Run one detached hygiene compression attempt end to end; publishes the transcript to
+    # │  参数：self, attempt, hs, plan, history, _hyg_msgs, _hyg_model, _hyg_runtime  …共 13 个
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_hygiene_detached_attempt(
         self, attempt, hs, plan, history, _hyg_msgs, _hyg_model, _hyg_runtime,
         source, session_entry, session_key, _quick_key, run_generation,
@@ -1161,8 +1458,10 @@ class GatewayTurnMixin:
         continue with (compressed or original) on ``attempt.history``."""
         from gateway.run import HygieneTurnHoldExceeded
         from agent.conversation_compression import CompressionCommitFence
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _hyg_agent, _hyg_session_db = await self._hmwa_hygiene_build_agent(_hyg_model, _hyg_runtime, session_entry)
         attempt.agent = _hyg_agent
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             # Hygiene owns the session binding, so prefer in-place compaction over minting a
             # continuation child. Without a SessionDB this stays False.
@@ -1192,7 +1491,9 @@ class GatewayTurnMixin:
                 ),
             )
             attempt.wait_started = time.monotonic()
+            # ⤷ 关键分支 try/except：捕获 HygieneTurnHoldExceeded、asyncio.TimeoutError、BaseException，出错走兜底而不是崩溃。
             try:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 _compressed = await self._hmwa_hygiene_wait_for_summary(attempt, hs, session_entry)
             except HygieneTurnHoldExceeded:
                 _compressed = await self._hmwa_hygiene_on_turn_hold(attempt, hs, session_entry, session_key, source)
@@ -1200,8 +1501,10 @@ class GatewayTurnMixin:
                 _compressed = await self._hmwa_hygiene_on_timeout(attempt, hs, session_entry, session_key, source)
             except BaseException:
                 self._hmwa_hygiene_on_unwind(attempt, hs, session_entry, session_key)
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
 
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._hmwa_hygiene_apply_result(
                 attempt, hs, _compressed, history, plan, session_entry=session_entry,
                 session_key=session_key, source=source, _quick_key=_quick_key,
@@ -1213,6 +1516,12 @@ class GatewayTurnMixin:
             if not attempt.cleanup_deferred:
                 await self._cleanup_agent_resources_off_loop(_hyg_agent, context="session hygiene")
 
+    # ┌── 异步函数（协程） def _hmwa_run_session_hygiene()
+    # │  作用：Auto-compress pathologically large transcripts before the agent starts so oversized
+    # │  参数：self, event, source, session_entry, session_key, history, _quick_key, run_generation
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_run_session_hygiene(
         self, event, source, session_entry, session_key, history, _quick_key, run_generation,
     ):
@@ -1221,16 +1530,21 @@ class GatewayTurnMixin:
         prompt_tokens from the last turn, else a char/4 estimate."""
         from gateway.run import HygieneTurnHoldExceeded
         if not history or len(history) < 4:
+            # ⤷ 出口 return：返回 history
             return history
 
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         hs = await self._hmwa_hygiene_settings(source, session_key)
         if not hs.compression_enabled:
+            # ⤷ 出口 return：返回 history
             return history
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         plan = await self._hmwa_hygiene_plan(hs, history, session_entry, session_key)
         if not plan.needs_compress:
             return history
 
         attempt = self._HygieneAttempt(agent=None, meta=self._event_thread_metadata(event, source), history=history)
+        # ⤷ 关键分支 try/except：捕获 HygieneTurnHoldExceeded、Exception，出错走兜底而不是崩溃。
         try:
             _hyg_model, _hyg_runtime = self._resolve_session_agent_runtime(
                 source=source, session_key=session_key,
@@ -1254,8 +1568,15 @@ class GatewayTurnMixin:
             pass
         except Exception as e:
             logger.warning("Session hygiene auto-compress failed: %s", e)
+        # ⤷ 出口 return：返回 attempt.history
         return attempt.history
 
+    # ┌── 异步函数（协程） def _hmwa_first_contact_notes()
+    # │  作用：First-ever-message onboarding note + one-time 'no home channel' prompt (both only when
+    # │  参数：self, source, history, turn_sidecar_notes
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_first_contact_notes(self, source, history, turn_sidecar_notes):
         """First-ever-message onboarding note + one-time 'no home channel' prompt (both only when
         the session has no history). Delivered on the user message (sidecar), NOT the ephemeral
@@ -1263,6 +1584,7 @@ class GatewayTurnMixin:
         from gateway.run import _hermes_home, _home_target_env_var, _load_gateway_config
         if history:
             return
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         if not await self.async_session_store.has_any_sessions():
             _intro_note = (
                 "[System note: This is the user's very first message ever. "
@@ -1271,6 +1593,7 @@ class GatewayTurnMixin:
             )
             # onboarding.profile_build == "ask" (default) and not yet offered: swap the plain intro for
             # a consent-gated profile-build directive. Fires at most once.
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from agent.onboarding import (
                     PROFILE_BUILD_FLAG, is_seen, mark_seen, profile_build_directive,
@@ -1312,6 +1635,7 @@ class GatewayTurnMixin:
         if not home_env:
             # Slack routes every command through the parent `/hermes`; bare `/sethome` would fail.
             sethome_cmd = "/hermes sethome" if source.platform == Platform.SLACK else "/sethome"
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._deliver_platform_notice(
                 source, f"📬 No home channel is set for {platform_name.title()}. "
                 f"A home channel is where Hermes delivers cron job results and cross-platform "
@@ -1319,6 +1643,11 @@ class GatewayTurnMixin:
                 f"to skip.",
             )
 
+    # ┌── 函数 def _hmwa_apply_message_timestamp()
+    # │  作用：Capture the platform event time as message metadata and keep the persisted transcript
+    # │  参数：self, event, message_text
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_apply_message_timestamp(self, event, message_text):
         """Capture the platform event time as message metadata and keep the persisted transcript
         clean (strip any leading timestamp prefix) regardless of the toggle; only the in-context
@@ -1326,6 +1655,7 @@ class GatewayTurnMixin:
         from gateway.run import _load_gateway_config, _message_timestamps_enabled
         persist_user_message = None
         persist_user_timestamp = None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_time import get_timezone as _get_evt_tz
             from gateway.message_timestamps import (
@@ -1346,8 +1676,15 @@ class GatewayTurnMixin:
                     message_text = _clean_message_text
         except Exception as _ts_err:
             logger.debug("Message timestamp injection failed (non-fatal): %s", _ts_err)
+        # ⤷ 出口 return：返回 (message_text, persist_user_message, persist_user_timestamp)
         return message_text, persist_user_message, persist_user_timestamp
 
+    # ┌── 异步函数（协程） def _hmwa_stop_typing_for_turn()
+    # │  作用：Stop the typing indicator (never raises). Slack AI status is scoped to a thread/
+    # │  参数：self, event, source
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_stop_typing_for_turn(self, event, source):
         """Stop the typing indicator (never raises). Slack AI status is scoped to a thread/
         workspace, so preserve the routing metadata used by the response delivery path."""
@@ -1355,10 +1692,18 @@ class GatewayTurnMixin:
             _typing_adapter = self._adapter_for_source(source)
             _kind = type(_typing_adapter)
             if _typing_adapter and callable(getattr(_kind, "_stop_typing_with_metadata", None)):
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await _typing_adapter._stop_typing_with_metadata(source.chat_id, self._event_thread_metadata(event, source))
             elif _typing_adapter and callable(getattr(_kind, "stop_typing", None)):
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await _typing_adapter.stop_typing(source.chat_id)
 
+    # ┌── 异步函数（协程） def _hmwa_shape_agent_response()
+    # │  作用：Turn the raw agent result into the outbound text: sentinel/silence handling, response
+    # │  参数：self, agent_result, source, history, session_entry, session_key, _quick_key, run_generation  …共 11 个
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_shape_agent_response(
         self, agent_result, source, history, session_entry, session_key,
         _quick_key, run_generation, _run_start_session_id, _platform_name, _msg_start_time,
@@ -1394,8 +1739,11 @@ class GatewayTurnMixin:
         # Successful turn: clear the consecutive-restart stuck-loop counter and resume_pending (set
         # by drain-timeout shutdown) so later messages don't get the restart-interruption note.
         if session_key and _should_clear_resume_pending_after_turn(agent_result):
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._clear_restart_failure_count(session_key)
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self.async_session_store.clear_resume_pending(session_key)
             except Exception as _e:
                 logger.debug("clear_resume_pending failed for %s: %s", session_key, _e)
@@ -1413,7 +1761,9 @@ class GatewayTurnMixin:
                 session_entry.session_id = agent_result["session_id"]
                 # The held turn lease follows the rotation (persistence writes to the NEW id).
                 self._rebind_turn_lease(_quick_key, run_generation, session_entry.session_id)
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self.async_session_store._save()
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self.async_session_store._record_gateway_session_peer(
                     session_entry.session_id, session_key, source,
                 )
@@ -1426,6 +1776,7 @@ class GatewayTurnMixin:
                     "moved from %s to %s before compression finished",
                     session_key or "?", _run_start_session_id, session_entry.session_id,
                 )
+        # ⤷ 出口 return：返回 (response, _intentional_silence, agent_messages)
         return response, _intentional_silence, agent_messages
 
     # reasoning_style → (header line, per-line quote prefix for blank / non-blank lines)
@@ -1433,10 +1784,16 @@ class GatewayTurnMixin:
         "subtext": ("-# 💭 Reasoning", "-# ", "-#"), "blockquote": ("> 💭 **Reasoning:**", "> ", ">")
     }
 
+    # ┌── 函数 def _hmwa_prepend_reasoning()
+    # │  作用：Prepend the last reasoning block when show_reasoning is on for this platform. Mattermost
+    # │  参数：self, agent_result, response, source, _intentional_silence
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_prepend_reasoning(self, agent_result, response, source, _intentional_silence):
         """Prepend the last reasoning block when show_reasoning is on for this platform. Mattermost
         requires an explicit per-platform opt-in (scratch text, not final-answer content)."""
         from gateway.run import _load_gateway_config, _platform_config_key, _resolve_gateway_display_bool
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _show_reasoning_effective = _resolve_gateway_display_bool(
                 _load_gateway_config(), _platform_config_key(source.platform), "show_reasoning",
@@ -1449,6 +1806,7 @@ class GatewayTurnMixin:
             )
         last_reasoning = agent_result.get("last_reasoning")
         if not (_show_reasoning_effective and response and not _intentional_silence and last_reasoning):
+            # ⤷ 出口 return：返回 response
             return response
         from gateway.stream_consumer_fences import escape_code_fences_for_display
         # Collapse long reasoning to keep messages readable
@@ -1458,6 +1816,7 @@ class GatewayTurnMixin:
         else:
             display_reasoning = last_reasoning.strip()
         # Per-platform render style: Discord defaults to "-# " subtext, others keep the code block.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from gateway.display_config import resolve_display_setting
             _reasoning_style = resolve_display_setting(
@@ -1469,17 +1828,26 @@ class GatewayTurnMixin:
         if _quote:
             header, prefix, empty = _quote
             _quoted = "\n".join(f"{prefix}{ln}" if ln else empty for ln in display_reasoning.splitlines())
+            # ⤷ 出口 return：返回 f'{header}\n{_quoted}\n\n{response}'
             return f"{header}\n{_quoted}\n\n{response}"
         # Escape ``` inside reasoning so inner fences don't break the outer code block.
         display_reasoning = escape_code_fences_for_display(display_reasoning)
+        # ⤷ 出口 return：返回 f'💭 **Reasoning:**\n```\n{display_reasoning}\n```\n\n{respon…
         return f"💭 **Reasoning:**\n```\n{display_reasoning}\n```\n\n{response}"
 
+    # ┌── 函数 def _hmwa_runtime_footer_line()
+    # │  作用：Runtime-metadata footer for the FINAL message of the turn; off by default
+    # │  参数：self, agent_result, source, _turn_seconds
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_runtime_footer_line(self, agent_result, source, _turn_seconds):
         """Runtime-metadata footer for the FINAL message of the turn; off by default
         (display.runtime_footer.enabled=false)."""
         from gateway.run import _load_gateway_config, _platform_config_key, _terminal_scope_cwd
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from gateway.runtime_footer import build_footer_line as _bfl
+            # ⤷ 出口 return：返回 _bfl(user_config=_load_gateway_config(), platform_key=_platf…
             return _bfl(
                 user_config=_load_gateway_config(),
                 platform_key=_platform_config_key(source.platform), model=agent_result.get("model"),
@@ -1489,16 +1857,25 @@ class GatewayTurnMixin:
             )
         except Exception as _footer_err:
             logger.debug("runtime_footer build failed: %s", _footer_err)
+            # ⤷ 出口 return：返回 ''
             return ""
 
+    # ┌── 异步函数（协程） def _hmwa_post_turn_hooks()
+    # │  作用：agent:end hook, process-watcher scheduling, and watch-notification drain.
+    # │  参数：self, hook_ctx, agent_result, response
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_post_turn_hooks(self, hook_ctx, agent_result, response):
         """agent:end hook, process-watcher scheduling, and watch-notification drain."""
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self.hooks.emit("agent:end", {
             **hook_ctx, "response": (response or "")[:500], "model": agent_result.get("model", ""),
             "provider": agent_result.get("provider", ""),
         })
 
         # Pending process watchers (check_interval on background processes)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.process_registry import process_registry
             # Detach the batch atomically (reassign, not clear()) so concurrent appends aren't dropped.
@@ -1507,14 +1884,17 @@ class GatewayTurnMixin:
             for i, watcher in enumerate(watchers):
                 asyncio.create_task(self._run_process_watcher(watcher))
                 if i % 100 == 99:
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await asyncio.sleep(0)
         except Exception as e:
             logger.error("Process watcher setup error: %s", e)
 
         # Drain watch notifications that arrived during the run; the queue also carries process /
         # async-delegation completions owned elsewhere — inject only watch-type events.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.process_registry import process_registry as _pr
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._drain_watch_notifications(_pr.completion_queue)
         except Exception as e:
             logger.debug("Watch queue drain error: %s", e)
@@ -1527,11 +1907,22 @@ class GatewayTurnMixin:
         "before resending."
     )
 
+    # ┌── 函数 def _hmwa_add_failed_turn_notice()
+    # │  作用：Make failed-turn delivery explicit without replacing the provider-specific guidance.
+    # │  参数：self, response, notice
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_add_failed_turn_notice(self, response, notice):
         """Make failed-turn delivery explicit without replacing the provider-specific guidance."""
         response = str(response or "").strip()
+        # ⤷ 出口 return：返回 f'{response}\n\n{notice}' if response else notice
         return f"{response}\n\n{notice}" if response else notice
 
+    # ┌── 函数 def _hmwa_failed_turn_notice()
+    # │  作用：Choose retry guidance without assuming completed tool effects can be repeated safely.
+    # │  参数：self, agent_result
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_failed_turn_notice(self, agent_result):
         """Choose retry guidance without assuming completed tool effects can be repeated safely."""
         from gateway.media_repair import _current_turn_messages
@@ -1545,9 +1936,17 @@ class GatewayTurnMixin:
             or (message.get("role") == "assistant" and message.get("tool_calls"))
             for message in turn_messages
         ):
+            # ⤷ 出口 return：返回 self._PARTIAL_FAILED_TURN_NOTICE
             return self._PARTIAL_FAILED_TURN_NOTICE
+        # ⤷ 出口 return：返回 self._FAILED_TURN_NOTICE
         return self._FAILED_TURN_NOTICE
 
+    # ┌── 异步函数（协程） def _hmwa_close_failed_turn()
+    # │  作用：Append the gateway-owned assistant boundary iff the durable tail is an open user row.
+    # │  参数：self, session_id, notice
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_close_failed_turn(self, session_id, notice):
         """Append the gateway-owned assistant boundary iff the durable tail is an open user row.
 
@@ -1555,12 +1954,19 @@ class GatewayTurnMixin:
         agent's turn-start flush already persisted the row (so the platform-id dedupe skips the
         gateway write), and a platform redelivery of an already-closed turn must not stack a
         second assistant row."""
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         if await self.async_session_store.transcript_tail_role(session_id) != "user":
             return
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self.async_session_store.append_to_transcript(session_id, {
             "role": "assistant", "content": notice, "timestamp": time.time(),
         })
 
+    # ┌── 函数 def _hmwa_classify_turn_failure()
+    # │  作用：Classify a finished turn for transcript persistence. Returns
+    # │  参数：self, agent_result, history, session_entry
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_classify_turn_failure(self, agent_result, history, session_entry):
         """Classify a finished turn for transcript persistence. Returns
         ``(agent_failed_early, hidden_reasoning_incomplete, is_context_overflow_failure)``.
@@ -1595,8 +2001,15 @@ class GatewayTurnMixin:
                 "Suppressing hidden-reasoning-only incomplete gateway turn for session %s: %s",
                 session_entry.session_id, agent_result.get("error", "processing incomplete"),
             )
+        # ⤷ 出口 return：返回 (agent_failed_early, hidden_reasoning_incomplete, is_context…
         return agent_failed_early, hidden_reasoning_incomplete, is_context_overflow_failure
 
+    # ┌── 异步函数（协程） def _hmwa_compression_exhaustion_reset()
+    # │  作用：Auto-reset a permanently oversized session so the next message starts fresh instead of
+    # │  参数：self, agent_result, response, session_entry, session_key, source
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_compression_exhaustion_reset(
         self, agent_result, response, session_entry, session_key, source,
     ):
@@ -1616,6 +2029,7 @@ class GatewayTurnMixin:
             )
         elif agent_result.get("compression_exhausted") and session_entry and session_key:
             logger.info("Auto-resetting session %s after compression exhaustion.", session_entry.session_id)
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             new_entry = await self.async_session_store.reset_session(session_key)
             self._evict_cached_agent(session_key)
             # Conversation boundary: the funnel clears every conversation-scoped per-session dict.
@@ -1632,6 +2046,7 @@ class GatewayTurnMixin:
                 # oversized transcript, and re-triggers compression exhaustion forever (#35809 — regression
                 # of the #9893/#10063 auto-reset).
                 session_entry = new_entry
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await asyncio.to_thread(
                     self._sync_telegram_topic_binding, source, session_entry, reason="compression-exhausted-reset",
                 )
@@ -1639,8 +2054,15 @@ class GatewayTurnMixin:
                 "\n\n🔄 Session auto-reset — the conversation exceeded the maximum context size and "
                 "could not be compressed further. Your next message will start a fresh session."
             )
+        # ⤷ 出口 return：返回 (response, session_entry)
         return response, session_entry
 
+    # ┌── 函数 def _hmwa_user_transcript_entry()
+    # │  作用：Transcript row for the inbound user turn (clean text + event time when captured).
+    # │  参数：event, prepared, ts
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _hmwa_user_transcript_entry(event, prepared, ts):
         """Transcript row for the inbound user turn (clean text + event time when captured)."""
@@ -1662,8 +2084,15 @@ class GatewayTurnMixin:
             _user_entry["display_metadata"] = {"gateway_input_owner": prepared.persistence_owner}
         if getattr(event, "message_id", None):
             _user_entry["message_id"] = str(event.message_id)
+        # ⤷ 出口 return：返回 _user_entry
         return _user_entry
 
+    # ┌── 异步函数（协程） def _hmwa_persist_turn_transcript()
+    # │  作用：Persist this turn to the transcript (session_meta on first turn, closed failed turn on
+    # │  参数：self, event, source, session_entry, session_key, agent_result, agent_messages, prepared  …共 12 个
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_persist_turn_transcript(
         self, *, event, source, session_entry, session_key, agent_result, agent_messages,
         prepared, response, agent_failed_early, hidden_reasoning_incomplete, is_context_overflow_failure,
@@ -1694,6 +2123,7 @@ class GatewayTurnMixin:
             if not history:
                 # Fresh session: the tool definitions (as sent in the API request) make the transcript
                 # self-describing.
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await store.append_to_transcript(sid, {
                     "role": "session_meta",
                     "tools": agent_result.get("tools", []) or [],
@@ -1705,15 +2135,18 @@ class GatewayTurnMixin:
                 # Transient failure / hidden-reasoning incomplete: persist the user message without
                 # the provider error text (a gateway hint, not model output). Dedupe on platform
                 # message_id (Telegram retries after transient failures).
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 if event.message_id and await store.has_platform_message_id(sid, str(event.message_id)):
                     logger.info(
                         "Skipping duplicate user turn (message_id=%s) in session %s",
                         event.message_id, sid,
                     )
                 else:
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await store.append_to_transcript(sid, _user_row, skip_db=agent_persisted)
                 # Close the failed turn: a user-only tail lets alternation repair merge this request
                 # into an unrelated future message and replay stale side effects (#107070).
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._hmwa_close_failed_turn(sid, self._hmwa_failed_turn_notice(agent_result))
             else:
                 # Only the NEW messages: history_offset (what the agent saw), not len(history), which
@@ -1747,6 +2180,7 @@ class GatewayTurnMixin:
                         await store.append_to_transcript(sid, entry, skip_db=agent_persisted)
 
         # The agent persists token counts/model itself; keep only last_prompt_tokens for hygiene.
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await store.update_session(
             session_entry.session_key, last_prompt_tokens=agent_result.get("last_prompt_tokens", 0),
             touch_activity=not bool(getattr(event, "internal", False)),
@@ -1755,8 +2189,15 @@ class GatewayTurnMixin:
         # Re-baseline the cached agent's message_count now that ALL of this turn's writes are done:
         # the coherence guard snapshots at agent-BUILD time, so our own writes would otherwise
         # trigger a rebuild next turn (destroying prompt caching).
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._refresh_agent_cache_message_count(session_key, sid)
 
+    # ┌── 异步函数（协程） def _hmwa_deliver_turn_response()
+    # │  作用：Final delivery decisions: intentional silence, voice reply, streamed-turn media/footer.
+    # │  参数：self, event, source, session_entry, session_key, run_generation, agent_result, agent_messages  …共 11 个
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_deliver_turn_response(
         self, event, source, session_entry, session_key, run_generation,
         agent_result, agent_messages, response, _footer_line, _intentional_silence,
@@ -1776,16 +2217,20 @@ class GatewayTurnMixin:
         if not _streaming_tts_done and self._should_send_voice_reply(
             event, response, agent_messages, already_sent=bool(agent_result.get("already_sent")),
         ):
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._send_voice_reply(event, response)
 
         # Streamed responses still need MEDIA: files delivered (chunks carry the tags verbatim). Never
         # skip when the agent failed: the error text is new content streaming didn't show.
         if agent_result.get("already_sent") and not agent_result.get("failed"):
             if response and adapter:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._deliver_media_from_response(response, event, adapter)
             # Streaming delivered the body, but the footer was held back (`not already_sent` gate).
             if _footer_line and adapter:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await adapter.send(source.chat_id, _footer_line, metadata=self._event_thread_metadata(event, source))
                 except Exception as _e:
                     logger.debug("trailing footer send failed: %s", _e)
@@ -1793,8 +2238,10 @@ class GatewayTurnMixin:
             # /loop and /goal hooks that read the return value.
             with suppress(Exception):
                 event._streamed_final_response = str(response or "")
+            # ⤷ 出口 return：返回 None
             return None
 
+        # ⤷ 出口 return：返回 response
         return response
 
     _STATUS_HINTS = {
@@ -1803,23 +2250,33 @@ class GatewayTurnMixin:
         529: " The API is temporarily overloaded. Please try again shortly.",
     }
 
+    # ┌── 异步函数（协程） def _hmwa_agent_error_reply()
+    # │  作用：``except Exception`` body of the agent turn: stop typing, log, persist the inbound user
+    # │  参数：self, e, event, source, session_entry, session_key, prepared
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_agent_error_reply(self, e, event, source, session_entry, session_key, prepared):
         """``except Exception`` body of the agent turn: stop typing, log, persist the inbound user
         turn once and close it, and build the sanitized user-facing error reply."""
         # Retain Slack thread/workspace routing so a failed turn cannot leave its status visible.
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._hmwa_stop_typing_for_turn(event, source)
         logger.exception("Agent error in session %s", session_key)
         status_code = getattr(e, "status_code", None)
         if status_code in {400, 500} and len(prepared.history) > 50:
             # Context overflow / payload too large: a deterministic rejection (#107567), and the same
             # no-grow rule as the persist path (#1630) — nothing is written into an oversized session.
+            # ⤷ 出口 return：返回 "⚠️ Session too large for the model's context window.\nUse /…
             return (
                 "⚠️ Session too large for the model's context window.\nUse /compact to "
                 "compress the conversation, or /reset to start fresh."
             )
         # Replay can coalesce inputs; only this input's durable marker establishes ownership.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             if prepared.message_text is not None and session_entry is not None:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 _owned = await self.async_session_store.has_input_owner(
                     prepared.persistence_session_id, prepared.persistence_owner,
                 )
@@ -1828,6 +2285,7 @@ class GatewayTurnMixin:
                         session_entry.session_id, self._hmwa_user_transcript_entry(event, prepared, time.time()),
                     )
                 # Tool effects are unknown after an exception.
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._hmwa_close_failed_turn(session_entry.session_id, self._PARTIAL_FAILED_TURN_NOTICE)
         except Exception:
             logger.debug("Failed to persist inbound user message after agent exception", exc_info=True)
@@ -1850,12 +2308,18 @@ class GatewayTurnMixin:
                 status_hint = " Your plan's usage limit has been reached. Please wait until it resets."
         elif status_code == 400:
             status_hint = " The request was rejected by the API."
+        # ⤷ 出口 return：返回 self._hmwa_add_failed_turn_notice(f'Sorry, I encountered an …
         return self._hmwa_add_failed_turn_notice(
             f"Sorry, I encountered an unexpected error.{status_hint}\n"
             "Try again or use /reset to start a fresh session.",
             self._PARTIAL_FAILED_TURN_NOTICE,
         )
 
+    # ┌── 函数 def _hmwa_discard_stale_result()
+    # │  作用：A newer run generation superseded this turn: drop its deferred post-delivery callback.
+    # │  参数：self, source, _quick_key, run_generation
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _hmwa_discard_stale_result(self, source, _quick_key, run_generation):
         """A newer run generation superseded this turn: drop its deferred post-delivery callback."""
         logger.info(
@@ -1864,6 +2328,10 @@ class GatewayTurnMixin:
         )
         self._pop_post_delivery_callback(self._adapter_for_source(source), _quick_key, run_generation)
 
+    # ┌── 类 class _PreparedTurn
+    # │  说明：Inputs to the agent run assembled by ``_hmwa_prepare_turn``.
+    # │  成员：共 0 个方法；全部是下划线开头的内部方法
+    # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
     class _PreparedTurn:
         """Inputs to the agent run assembled by ``_hmwa_prepare_turn``."""
@@ -1877,12 +2345,19 @@ class GatewayTurnMixin:
         persistence_session_id: Optional[str] = None
         persistence_owner: Optional[str] = None
 
+    # ┌── 异步函数（协程） def _hmwa_prepare_turn()
+    # │  作用：Everything between session resolution and the agent run: session open, task-local env,
+    # │  参数：self, event, source, session_entry, session_key, _quick_key, run_generation
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _hmwa_prepare_turn(self, event, source, session_entry, session_key, _quick_key, run_generation):
         """Everything between session resolution and the agent run: session open, task-local env,
         context prompt, sidecar notes, turn lease, transcript load + hygiene, inbound text. Returns
         ``(_PreparedTurn, env_tokens)``; a ``str`` first element is a reply to send instead of
         running (history unreadable); ``None`` drops the turn (inbound text rejected)."""
         from gateway.run import _load_gateway_config
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         _was_auto_reset, _is_new_session = await self._hmwa_open_session(session_entry, session_key, source)
         context = build_session_context(source, self.config, session_entry)
         # Session context variables for tools (task-local, concurrency-safe)
@@ -1909,14 +2384,17 @@ class GatewayTurnMixin:
         if _is_new_session and _auto:
             self._hmwa_auto_load_skills(event, _auto, _quick_key, session_key)
 
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._hmwa_acquire_turn_lease(_quick_key, run_generation, session_entry, _session_env_tokens)
 
         # A turn becomes durable recovery work only after it owns the per-session lease; marking
         # earlier would falsely recover a message that never began processing.
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._mark_durable_active_turn(event, session_entry.session_key)
 
         # An unreadable store is not an empty conversation: stop before the agent invents continuity
         # from []. Restore task-local context here (before the broad cleanup finally).
+        # ⤷ 关键分支 try/except：捕获 TranscriptReadError，出错走兜底而不是崩溃。
         try:
             history = await self.async_session_store.load_transcript(session_entry.session_id)
             history = await self._hmwa_run_session_hygiene(
@@ -1930,6 +2408,7 @@ class GatewayTurnMixin:
                 "Use /reset only if you intentionally want to start a new conversation."
             ), _session_env_tokens
 
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._hmwa_first_contact_notes(source, history, turn_sidecar_notes)
 
         # Voice channel state rides the user message ONLY when changed (in the system prompt it
@@ -1964,11 +2443,18 @@ class GatewayTurnMixin:
                      source.chat_id, source.thread_id, str(event.message_id)]
         owner = (str(uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(namespace)))
                  if event.message_id else str(uuid.uuid4()))
+        # ⤷ 出口 return：返回 (self._PreparedTurn(history, context_prompt, message_text, p…
         return self._PreparedTurn(
             history, context_prompt, message_text, persist_user_message, persist_user_timestamp,
             persist_user_display_kind, session_entry.session_id, owner,
         ), _session_env_tokens
 
+    # ┌── 异步函数（协程） def _handle_message_with_agent()
+    # │  作用：Inner handler that runs under the _running_agents sentinel guard.
+    # │  参数：self, event, source, _quick_key: str, run_generation: int
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _handle_message_with_agent(self, event, source, _quick_key: str, run_generation: int):
         """Inner handler that runs under the _running_agents sentinel guard."""
         _msg_start_time = time.time()
@@ -1981,17 +2467,21 @@ class GatewayTurnMixin:
             (getattr(event, "reply_to_text", None) or "")[:80].replace("\n", " "),
         )
 
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         resolved = await self._hmwa_resolve_session(event, source)
         if resolved is None:
             return
         source, session_entry, session_key = resolved
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         prepared, _session_env_tokens = await self._hmwa_prepare_turn(
             event, source, session_entry, session_key, _quick_key, run_generation,
         )
         if not isinstance(prepared, self._PreparedTurn):
+            # ⤷ 出口 return：返回 prepared
             return prepared
         history, message_text = prepared.history, prepared.message_text
 
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             hook_ctx = {
                 "platform": source.platform.value if source.platform else "",
@@ -2002,6 +2492,7 @@ class GatewayTurnMixin:
                 "session_id": session_entry.session_id,
                 "message": message_text[:500],
             }
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self.hooks.emit("agent:start", hook_ctx)
 
             # Capture the launch session id so post-run compression publication is identity-guarded
@@ -2069,6 +2560,7 @@ class GatewayTurnMixin:
                 hidden_reasoning_incomplete=hidden_reasoning_incomplete,
                 is_context_overflow_failure=is_context_overflow_failure,
             )
+            # ⤷ 出口 return：返回 await self._hmwa_deliver_turn_response(event, source, sessio…
             return await self._hmwa_deliver_turn_response(
                 event, source, session_entry, session_key, run_generation,
                 agent_result, agent_messages, response, _footer_line, _intentional_silence,
@@ -2080,6 +2572,11 @@ class GatewayTurnMixin:
             # Restore session context variables to their pre-handler state
             self._clear_session_env(_session_env_tokens)
 
+    # ┌── 函数 def _profile_scope_for_source()
+    # │  作用：``_profile_runtime_scope`` for ``source``'s profile when multiplexing, else a no-op context.
+    # │  参数：self, source: SessionSource
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _profile_scope_for_source(self, source: SessionSource):
         """``_profile_runtime_scope`` for ``source``'s profile when multiplexing, else a no-op context.
 
@@ -2087,9 +2584,16 @@ class GatewayTurnMixin:
         come from its secret scope (never process-global ``os.environ``)."""
         from gateway.run import _profile_runtime_scope
         if getattr(getattr(self, "config", None), "multiplex_profiles", False):
+            # ⤷ 出口 return：返回 _profile_runtime_scope(self._resolve_profile_home_for_source…
             return _profile_runtime_scope(self._resolve_profile_home_for_source(source))
+        # ⤷ 出口 return：返回 nullcontext()
         return nullcontext()
 
+    # ┌── 函数 def _media_delivery_scope_for_source()
+    # │  作用：Home + terminal-policy scope for validating a turn's MEDIA / local-file paths on the
+    # │  参数：self, source: SessionSource
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _media_delivery_scope_for_source(self, source: SessionSource):
         """Home + terminal-policy scope for validating a turn's MEDIA / local-file paths on the
         adapter's delivery side, which runs after the routed turn scope was reset.
@@ -2100,18 +2604,31 @@ class GatewayTurnMixin:
         resolves against the default profile's sandbox and mounts (#109024). No secret hydration:
         path validation reads no credentials and this runs on the event loop."""
         if not getattr(getattr(self, "config", None), "multiplex_profiles", False):
+            # ⤷ 出口 return：返回 nullcontext()
             return nullcontext()
         from gateway.run import _profile_runtime_scope
+        # ⤷ 出口 return：返回 _profile_runtime_scope(self._resolve_profile_home_for_source…
         return _profile_runtime_scope(self._resolve_profile_home_for_source(source), {})
 
+    # ┌── 函数 def _reset_notice_session_info()
+    # │  作用：Session-info block for the auto-reset notice, resolved inside the profile serving ``source``.
+    # │  参数：self, source: SessionSource
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _reset_notice_session_info(self, source: SessionSource) -> str:
         """Session-info block for the auto-reset notice, resolved inside the profile serving ``source``.
 
         Call via ``asyncio.to_thread``: resolution can block (credential refresh, context-length
         probes), and the scope is entered here so contextvars behave in the worker thread."""
         with self._profile_scope_for_source(source):
+            # ⤷ 出口 return：返回 self._format_session_info()
             return self._format_session_info()
 
+    # ┌── 函数 def _format_session_info()
+    # │  作用：Model / provider / context-length / endpoint block so users can spot bad context detection.
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _format_session_info(self) -> str:
         """Model / provider / context-length / endpoint block so users can spot bad context detection."""
         from gateway.run import _resolve_gateway_model_context
@@ -2133,8 +2650,15 @@ class GatewayTurnMixin:
         base_url = resolved.base_url
         if base_url and base_url_hostname(base_url) in ("localhost", "127.0.0.1", "0.0.0.0"):
             lines.append(f"◆ Endpoint: {base_url}")
+        # ⤷ 出口 return：返回 '\n'.join(lines)
         return "\n".join(lines)
 
+    # ┌── 异步函数（协程） def _run_background_task()
+    # │  作用：Profile-scoping wrapper around the background agent task (mirrors ``_run_agent``).
+    # │  参数：self, prompt: str, source: 'SessionSource', task_id: str, event_message_id: Optional[str] = None, media_urls: Optional[List[str]] = None, media_types: Optional[List[str]] = None
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_background_task(
         self, prompt: str, source: "SessionSource", task_id: str,
         event_message_id: Optional[str] = None, media_urls: Optional[List[str]] = None,
@@ -2142,10 +2666,17 @@ class GatewayTurnMixin:
     ) -> None:
         """Profile-scoping wrapper around the background agent task (mirrors ``_run_agent``)."""
         with self._profile_scope_for_source(source):
+            # ⤷ 出口 return：返回 await self._run_background_task_inner(prompt, source, task_i…
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             return await self._run_background_task_inner(
                 prompt, source, task_id, event_message_id, media_urls, media_types,
             )
 
+    # ┌── 函数 def _resolve_enabled_toolsets_for_source()
+    # │  作用：Enabled toolsets for an agent run, honoring an adapter ``toolsets_for_source()`` override
+    # │  参数：self, user_config: dict, source: 'SessionSource', platform_key: str
+    # │  返回：list
+    # └──────────────────────────────────────────────────────────────
     def _resolve_enabled_toolsets_for_source(
         self, user_config: dict, source: "SessionSource", platform_key: str,
     ) -> list:
@@ -2153,6 +2684,7 @@ class GatewayTurnMixin:
         validated through the SAME ``_get_platform_tools`` path (unknown / platform-restricted
         toolsets dropped, not trusted)."""
         from hermes_cli.tools_config import _get_platform_tools
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             adapter = self._adapter_for_source(source)
             override = adapter.toolsets_for_source(source) if adapter is not None else None
@@ -2162,15 +2694,28 @@ class GatewayTurnMixin:
             pts = dict(user_config.get("platform_toolsets") or {})
             pts[platform_key] = [str(x) for x in override]
             user_config = {**user_config, "platform_toolsets": pts}
+        # ⤷ 出口 return：返回 sorted(_get_platform_tools(user_config, platform_key))
         return sorted(_get_platform_tools(user_config, platform_key))
 
+    # ┌── 函数 def _resolve_turn_toolsets()
+    # │  作用：``(enabled_toolsets, disabled_toolsets)`` for an agent run on ``source``.
+    # │  参数：self, user_config: dict, source: 'SessionSource', platform_key: str
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _resolve_turn_toolsets(self, user_config: dict, source: "SessionSource", platform_key: str):
         """``(enabled_toolsets, disabled_toolsets)`` for an agent run on ``source``."""
         from agent.skill_utils import parse_config_string_list
         enabled = self._resolve_enabled_toolsets_for_source(user_config, source, platform_key)
         disabled = parse_config_string_list((user_config.get("agent") or {}).get("disabled_toolsets")) or None
+        # ⤷ 出口 return：返回 (enabled, disabled)
         return enabled, disabled
 
+    # ┌── 异步函数（协程） def _run_background_task_inner()
+    # │  作用：Execute a background agent task and deliver the result to the chat.
+    # │  参数：self, prompt: str, source: 'SessionSource', task_id: str, event_message_id: Optional[str] = None, media_urls: Optional[List[str]] = None, media_types: Optional[List[str]] = None
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_background_task_inner(
         self, prompt: str, source: "SessionSource", task_id: str,
         event_message_id: Optional[str] = None, media_urls: Optional[List[str]] = None,
@@ -2190,10 +2735,12 @@ class GatewayTurnMixin:
             return
         _thread_metadata = self._thread_metadata_for_source(source, event_message_id)
 
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             user_config = _load_gateway_config()
             model, runtime_kwargs = self._resolve_session_agent_runtime(source=source, user_config=user_config)
             if not runtime_kwargs.get("api_key"):
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await adapter.send(
                     source.chat_id,
                     f"❌ Background task {task_id} failed: no provider credentials configured.",
@@ -2217,6 +2764,7 @@ class GatewayTurnMixin:
                 if (media_types[i] if i < len(media_types) else "").startswith("image/")
             ]
             if image_paths:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     enriched_prompt = await self._enrich_message_with_vision(prompt, image_paths)
                 except Exception as e:
@@ -2251,11 +2799,14 @@ class GatewayTurnMixin:
                     # See #60955.
                     fallback_model=self._refresh_fallback_model(),
                 )
+                # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
                 try:
+                    # ⤷ 出口 return：返回 agent.run_conversation(user_message=enriched_prompt, task_id…
                     return agent.run_conversation(user_message=enriched_prompt, task_id=task_id)
                 finally:
                     self._cleanup_agent_resources(agent)
 
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             result = await self._run_in_executor_with_context(run_sync)
 
             response = result.get("final_response", "") if result else ""
@@ -2311,10 +2862,16 @@ class GatewayTurnMixin:
                     metadata=_thread_metadata,
                 )
 
+    # ┌── 函数 def _mcp_reload_refresh_cached_agents()
+    # │  作用：Refresh cached agents so existing sessions see new MCP tools on their next turn without
+    # │  参数：self, multiplex: bool, profile
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _mcp_reload_refresh_cached_agents(self, multiplex: bool, profile) -> None:
         """Refresh cached agents so existing sessions see new MCP tools on their next turn without
         a history-destroying ``/new``. Each agent keeps its build-time toolset selection EXACTLY: a
         session built with restricted enabled_toolsets (e.g. ["safe"]) must NOT silently gain tools."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.mcp_tool_agent import refresh_agent_mcp_tools
             _cache = getattr(self, "_agent_cache", None)
@@ -2333,6 +2890,12 @@ class GatewayTurnMixin:
         except Exception as _exc:
             logger.debug("Failed to update cached agent tools after MCP reload: %s", _exc)
 
+    # ┌── 异步函数（协程） def _execute_mcp_reload()
+    # │  作用：Disconnect, reconnect, and notify MCP tool changes (shared by button / text / no-confirm paths).
+    # │  参数：self, event: MessageEvent
+    # │  返回：str
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _execute_mcp_reload(self, event: MessageEvent) -> str:
         """Disconnect, reconnect, and notify MCP tool changes (shared by button / text / no-confirm paths).
 
@@ -2346,7 +2909,10 @@ class GatewayTurnMixin:
         if multiplex and not get_hermes_home_override():
             profile_home = self._resolve_profile_home_for_source(event.source)
             with _profile_runtime_scope(Path(profile_home)):
+                # ⤷ 出口 return：返回 await self._execute_mcp_reload(event)
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 return await self._execute_mcp_reload(event)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.mcp_tool_lifecycle import shutdown_mcp_servers
             from tools.mcp_tool_discovery import discover_mcp_tools
@@ -2365,6 +2931,7 @@ class GatewayTurnMixin:
                     }
 
             old_servers = _scoped_server_names()
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._run_in_executor_with_context(lambda: shutdown_mcp_servers(scope=reload_scope))
             # Explicit reload also re-probes tool availability (check_fn).
             reprobe_tool_availability()
@@ -2410,12 +2977,19 @@ class GatewayTurnMixin:
                 session_entry = await self.async_session_store.get_or_create_session(event.source)
                 await self.async_session_store.append_to_transcript(session_entry.session_id, reload_msg)
 
+            # ⤷ 出口 return：返回 '\n'.join(lines)
             return "\n".join(lines)
 
         except Exception as e:
             logger.warning("MCP reload failed: %s", e)
+            # ⤷ 出口 return：返回 t('gateway.reload_mcp.failed', error=e)
             return t("gateway.reload_mcp.failed", error=e)
 
+    # ┌── 函数 def _get_proxy_url()
+    # │  作用：Proxy URL if proxy mode is configured (GATEWAY_PROXY_URL env wins over ``gateway.proxy_url``).
+    # │  参数：self
+    # │  返回：Optional[str]
+    # └──────────────────────────────────────────────────────────────
     def _get_proxy_url(self) -> Optional[str]:
         """Proxy URL if proxy mode is configured (GATEWAY_PROXY_URL env wins over ``gateway.proxy_url``).
         Per-profile like GATEWAY_PROXY_KEY: under multiplex a raw environ read would ship a secondary's
@@ -2423,14 +2997,21 @@ class GatewayTurnMixin:
         the key — only ``UnscopedSecretError`` (the unscoped default-profile path) reads the env."""
         from gateway.run import _load_gateway_config
         from agent.secret_scope import UnscopedSecretError, get_secret
+        # ⤷ 关键分支 try/except：捕获 UnscopedSecretError，出错走兜底而不是崩溃。
         try:
             url = (get_secret("GATEWAY_PROXY_URL") or "").strip()
         except UnscopedSecretError:
             url = os.getenv("GATEWAY_PROXY_URL", "").strip()
         if not url:
             url = ((_load_gateway_config().get("gateway") or {}).get("proxy_url") or "").strip()
+        # ⤷ 出口 return：返回 url.rstrip('/') if url else None
         return url.rstrip("/") if url else None
 
+    # ┌── 函数 def _build_stream_consumer_config()
+    # │  作用：Build the shared ``StreamConsumerConfig`` and optional Telegram pause-typing closure.
+    # │  参数：self, source: 'SessionSource', scfg: Any, adapter: Any, on_missing_cursor: str
+    # │  返回：'tuple[Any, Optional[Callable[[], None]]]'
+    # └──────────────────────────────────────────────────────────────
     def _build_stream_consumer_config(
         self, source: "SessionSource", scfg: Any, adapter: Any, *, on_missing_cursor: str,
     ) -> "tuple[Any, Optional[Callable[[], None]]]":
@@ -2447,6 +3028,7 @@ class GatewayTurnMixin:
         _adapter_supports_edit = getattr(adapter, "SUPPORTS_MESSAGE_EDITING", True)
         _adapter_supports_native_stream = bool(getattr(adapter, "SUPPORTS_NATIVE_STREAMING", False))
         if not _adapter_supports_edit and not _adapter_supports_native_stream and on_missing_cursor == "raise":
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise RuntimeError("skip streaming for non-editable platform")
         _effective_cursor = scfg.cursor if _adapter_supports_edit else ""
         # Some Matrix clients render the cursor as tofu: stream text, no cursor.
@@ -2467,20 +3049,41 @@ class GatewayTurnMixin:
             fresh_final_after_seconds=_fresh_final_secs, transport=scfg.transport or "edit",
             chat_type=getattr(source, "chat_type", "") or "",
         )
+        # ⤷ 出口 return：返回 (_consumer_cfg, _pause_typing_before_finalize)
         return _consumer_cfg, _pause_typing_before_finalize
 
+    # ┌── 函数 def _run_still_current_fn()
+    # │  作用：Predicate: does this run's generation still own ``session_key``? (always True when untracked).
+    # │  参数：self, session_key: Optional[str], run_generation: Optional[int]
+    # │  返回：Callable[[], bool]
+    # └──────────────────────────────────────────────────────────────
     def _run_still_current_fn(self, session_key: Optional[str], run_generation: Optional[int]) -> Callable[[], bool]:
         """Predicate: does this run's generation still own ``session_key``? (always True when untracked)."""
         def _run_still_current() -> bool:
             if run_generation is None or not session_key:
+                # ⤷ 出口 return：返回 True
                 return True
+            # ⤷ 出口 return：返回 self._is_session_run_current(session_key, run_generation)
             return self._is_session_run_current(session_key, run_generation)
+        # ⤷ 出口 return：返回 _run_still_current
         return _run_still_current
 
+    # ┌── 函数 def _proxy_error_result()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：text: str
+    # │  返回：Dict[str, Any]
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _proxy_error_result(text: str) -> Dict[str, Any]:
+        # ⤷ 出口 return：返回 {'final_response': text, 'messages': [], 'api_calls': 0, 'to…
         return {"final_response": text, "messages": [], "api_calls": 0, "tools": []}
 
+    # ┌── 函数 def _proxy_stream_consumer()
+    # │  作用：Platform stream consumer for the proxy path when streaming is enabled, else ``None``.
+    # │  参数：self, source: 'SessionSource', event_message_id, _thread_metadata, _run_still_current
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _proxy_stream_consumer(self, source: "SessionSource", event_message_id, _thread_metadata, _run_still_current):
         """Platform stream consumer for the proxy path when streaming is enabled, else ``None``."""
         from gateway.run import _load_gateway_config, _platform_config_key
@@ -2497,15 +3100,19 @@ class GatewayTurnMixin:
             _scfg.enabled and _scfg.transport != "off" if _plat_streaming is None else bool(_plat_streaming)
         )
         if not _streaming_enabled:
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from gateway.stream_consumer import GatewayStreamConsumer
             _adapter = self._adapter_for_source(source)
             if not _adapter:
+                # ⤷ 出口 return：返回 None
                 return None
             _consumer_cfg, _pause_typing_before_finalize = self._build_stream_consumer_config(
                 source, _scfg, _adapter, on_missing_cursor="fallback",
             )
+            # ⤷ 出口 return：返回 GatewayStreamConsumer(adapter=_adapter, chat_id=source.chat_…
             return GatewayStreamConsumer(
                 adapter=_adapter, chat_id=source.chat_id, config=_consumer_cfg,
                 metadata=_thread_metadata, on_before_finalize=_pause_typing_before_finalize,
@@ -2513,8 +3120,15 @@ class GatewayTurnMixin:
             )
         except Exception as _sc_err:
             logger.debug("Proxy: could not set up stream consumer: %s", _sc_err)
+            # ⤷ 出口 return：返回 None
             return None
 
+    # ┌── 异步函数（协程） def _run_agent_via_proxy()
+    # │  作用：Forward the message to a remote Hermes API server instead of running a local AIAgent.
+    # │  参数：self, message: str, context_prompt: str, history: List[Dict[str, Any]], source: 'SessionSource', session_id: str, session_key: str = None, run_generation: Optional[int] = None  …共 9 个
+    # │  返回：Dict[str, Any]
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_via_proxy(
         self, message: str, context_prompt: str, history: List[Dict[str, Any]],
         source: "SessionSource", session_id: str, session_key: str = None,
@@ -2525,6 +3139,7 @@ class GatewayTurnMixin:
         Lets a Docker container handle Matrix E2EE while the agent runs on the host with full
         access to local files, memory, skills, and a unified session store."""
         from gateway.run import _GATEWAY_PROXY_SSE_BUFFER_MAX_CHARS
+        # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
         try:
             from aiohttp import ClientSession as _AioClientSession, ClientTimeout
         except ImportError:
@@ -2532,14 +3147,17 @@ class GatewayTurnMixin:
 
         proxy_url = self._get_proxy_url()
         if not proxy_url:
+            # ⤷ 出口 return：返回 self._proxy_error_result('⚠️ Proxy URL not configured (GATEW…
             return self._proxy_error_result("⚠️ Proxy URL not configured (GATEWAY_PROXY_URL or gateway.proxy_url)")
 
         # The proxy key is a per-profile credential: honor the installed secret scope under multiplex.
         # Only UnscopedSecretError / import failures fall back to the env; any other get_secret()
         # error propagates (same as BASE) rather than silently degrading to the ambient key.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.secret_scope import UnscopedSecretError, get_secret
 
+            # ⤷ 关键分支 try/except：捕获 UnscopedSecretError，出错走兜底而不是崩溃。
             try:
                 proxy_key = (get_secret("GATEWAY_PROXY_KEY") or "").strip()
             except UnscopedSecretError:
@@ -2611,6 +3229,7 @@ class GatewayTurnMixin:
                     _stream_consumer.on_delta(content)
             return False
 
+        # ⤷ 关键分支 try/except：捕获 asyncio.CancelledError、Exception，出错走兜底而不是崩溃。
         try:
             # sock_connect bounds the TCP connect phase so an unreachable proxy host
             # (DNS fail, firewall, remote down) fails fast instead of hanging on the OS default.
@@ -2676,6 +3295,7 @@ class GatewayTurnMixin:
             "proxy response: url=%s session=%s time=%.1fs response=%d chars",
             proxy_url, (session_id or "")[:20], _elapsed, len(full_response),
         )
+        # ⤷ 出口 return：返回 {'final_response': full_response or '(No response from remot…
         return {
             "final_response": full_response or "(No response from remote agent)",
             "messages": [
@@ -2689,6 +3309,12 @@ class GatewayTurnMixin:
             "response_previewed": _stream_consumer is not None and bool(full_response),
         }
 
+    # ┌── 异步函数（协程） def _run_agent()
+    # │  作用：Profile-scoping wrapper around ``_run_agent_inner`` (same keyword parameters; pass-through
+    # │  参数：self, message: str, context_prompt: str, history: List[Dict[str, Any]], source: SessionSource, session_id: str, **turn_kwargs
+    # │  返回：Dict[str, Any]
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent(
         self, message: str, context_prompt: str, history: List[Dict[str, Any]],
         source: SessionSource, session_id: str, **turn_kwargs,
@@ -2696,8 +3322,15 @@ class GatewayTurnMixin:
         """Profile-scoping wrapper around ``_run_agent_inner`` (same keyword parameters; pass-through
         when multiplexing is off)."""
         with self._profile_scope_for_source(source):
+            # ⤷ 出口 return：返回 await self._run_agent_inner(message, context_prompt, history…
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             return await self._run_agent_inner(message, context_prompt, history, source, session_id, **turn_kwargs)
 
+    # ┌── 函数 def _run_agent_display_settings()
+    # │  作用：Resolve per-platform display, progress, status and streaming-surface settings for a turn.
+    # │  参数：self, source: SessionSource
+    # │  返回：'GatewayRunner._RunAgentDisplay'
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_display_settings(self, source: SessionSource) -> "GatewayRunner._RunAgentDisplay":
         """Resolve per-platform display, progress, status and streaming-surface settings for a turn."""
         from gateway.run import (
@@ -2744,11 +3377,15 @@ class GatewayTurnMixin:
                     return "off"
             value = resolve_display_setting(user_config, platform_key, setting, default)
             if isinstance(value, str) and value.strip().lower() == "generic":
+                # ⤷ 出口 return：返回 'generic' if allow_generic else 'off'
                 return "generic" if allow_generic else "off"
+            # ⤷ 出口 return：返回 'raw' if bool(value) else 'off'
             return "raw" if bool(value) else "off"
 
         def _generic_status_phrase(kind: str, *, tool_name: str | None = None, preview: str | None = None, args: Any = None) -> str:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
+                # ⤷ 出口 return：返回 choose_status_phrase(kind, tool_name=tool_name, preview=prev…
                 return choose_status_phrase(
                     kind, tool_name=tool_name, preview=preview, args=args,
                     recent=_generic_status_recent, catalog=_generic_status_catalog,
@@ -2791,10 +3428,12 @@ class GatewayTurnMixin:
             and hasattr(adapter, "native_task_cards_enabled")
             and not (_tool_progress_explicit and progress_mode == "off")
         ):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 _native_slack_task_cards = bool(adapter.native_task_cards_enabled())
             except Exception:
                 logger.debug("Slack native task-card config check failed", exc_info=True)
+        # ⤷ 出口 return：返回 self._RunAgentDisplay(user_config=user_config, platform_key=…
         return self._RunAgentDisplay(
             user_config=user_config, platform_key=platform_key, enabled_toolsets=enabled_toolsets,
             disabled_toolsets=disabled_toolsets, resolve_display_setting=resolve_display_setting,
@@ -2817,6 +3456,11 @@ class GatewayTurnMixin:
         "interim_assistant_messages_enabled", "needs_progress_queue", "_native_slack_task_cards",
     )
 
+    # ┌── 函数 def _run_agent_build_turn_context()
+    # │  作用：Build the ``TurnContext`` and its ``TurnRunner``; ``turn_params`` (history, context_prompt,
+    # │  参数：self, disp: 'GatewayRunner._RunAgentDisplay', AIAgent: Any, message: str, source: SessionSource, session_key: Optional[str], run_generation: Optional[int], **turn_params
+    # │  返回：Tuple[TurnContext, TurnRunner, Any]
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_build_turn_context(
         self, disp: "GatewayRunner._RunAgentDisplay", AIAgent: Any, *, message: str, source: SessionSource,
         session_key: Optional[str], run_generation: Optional[int], **turn_params,
@@ -2864,8 +3508,14 @@ class GatewayTurnMixin:
         turn_ctx.voice_ack_callback = turn_runner.voice_ack_callback
         turn_ctx.native_tool_start_callback = turn_runner.combined_tool_start_callback
         turn_ctx.native_tool_complete_callback = turn_runner.native_tool_complete_callback
+        # ⤷ 出口 return：返回 (turn_ctx, turn_runner, _cleanup_adapter)
         return turn_ctx, turn_runner, _cleanup_adapter
 
+    # ┌── 函数 def _thread_metadata_for_progress()
+    # │  作用：Thread metadata for a progress-lane send; relay Discord auto-thread lane falls back to the reply anchor.
+    # │  参数：self, source: SessionSource, event_message_id: Optional[str], _progress_thread_id: Any, _relay_prospective_thread_id: Optional[str]
+    # │  返回：Optional[Dict[str, Any]]
+    # └──────────────────────────────────────────────────────────────
     def _thread_metadata_for_progress(
         self, source: SessionSource, event_message_id: Optional[str], _progress_thread_id: Any,
         _relay_prospective_thread_id: Optional[str],
@@ -2885,8 +3535,14 @@ class GatewayTurnMixin:
             )
         if metadata is None and _relay_prospective_thread_id:
             metadata = {"reply_to_message_id": event_message_id}
+        # ⤷ 出口 return：返回 metadata
         return metadata
 
+    # ┌── 函数 def _run_agent_progress_threading()
+    # │  作用：Resolve where progress bubbles are threaded (platform-specific).
+    # │  参数：self, source: SessionSource, event_message_id: Optional[str], _native_slack_task_cards: bool
+    # │  返回：Tuple[Optional[dict], Optional[str], Optional[dict]]
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_progress_threading(
         self, source: SessionSource, event_message_id: Optional[str], _native_slack_task_cards: bool
     ) -> Tuple[Optional[dict], Optional[str], Optional[dict]]:
@@ -2901,6 +3557,7 @@ class GatewayTurnMixin:
         _progress_reply_in_thread = True
         _adapter = self._adapter_for_source(source) if source.platform == Platform.SLACK or is_buzz else None
         if _adapter is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 if is_buzz:
                     _progress_reply_in_thread = getattr(_adapter, "_reply_to_mode", "first") != "off"
@@ -2952,8 +3609,15 @@ class GatewayTurnMixin:
             _status_thread_metadata = self._thread_metadata_for_progress(
                 source, event_message_id, _progress_thread_id, _relay_prospective_thread_id,
             )
+        # ⤷ 出口 return：返回 (_progress_metadata, _progress_reply_to, _status_thread_meta…
         return _progress_metadata, _progress_reply_to, _status_thread_metadata
 
+    # ┌── 异步函数（协程） def _run_agent_write_tool_log()
+    # │  作用：Drain log_queue and append tool-call lines to tool_calls.log (tool_progress=log).
+    # │  参数：self, log_queue: Any
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_write_tool_log(self, log_queue: Any) -> None:
         """Drain log_queue and append tool-call lines to tool_calls.log (tool_progress=log).
 
@@ -2974,14 +3638,18 @@ class GatewayTurnMixin:
         tool_logger.setLevel(logging.INFO)
         tool_logger.propagate = False
         tool_logger.addHandler(file_handler)
+        # ⤷ 关键分支 try/except：捕获 asyncio.CancelledError，出错走兜底而不是崩溃。
         try:
             while True:
+                # ⤷ 关键分支 try/except：捕获 queue.Empty、Exception，出错走兜底而不是崩溃。
                 try:
                     tool_logger.info("%s", log_queue.get_nowait())
                 except queue.Empty:
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await asyncio.sleep(0.3)
                 except Exception as e:
                     logger.error("write_tool_log error: %s", e)
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await asyncio.sleep(1)
         except asyncio.CancelledError:
             pass
@@ -2995,6 +3663,11 @@ class GatewayTurnMixin:
                 file_handler.flush()
                 file_handler.close()
 
+    # ┌── 函数 def _run_agent_start_streaming_tts()
+    # │  作用：Start the streaming-TTS consumer for a voice-input turn on an auto-TTS chat.
+    # │  参数：self, source: SessionSource, message_type: Optional[str], _status_thread_metadata: Optional[Dict[str, Any]], streaming_tts_consumer_holder: list
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_start_streaming_tts(
         self, source: SessionSource, message_type: Optional[str],
         _status_thread_metadata: Optional[Dict[str, Any]], streaming_tts_consumer_holder: list,
@@ -3014,6 +3687,7 @@ class GatewayTurnMixin:
         )
         if _stts_adapter is None or not _is_voice_input or not _stts_adapter._should_auto_tts_for_chat(source.chat_id):
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from gateway.streaming_tts_consumer import StreamingTTSConsumer
             from tools.tts_tool import _load_tts_config
@@ -3028,29 +3702,54 @@ class GatewayTurnMixin:
         except Exception as _stts_err:
             logger.debug("Could not set up streaming TTS consumer: %s", _stts_err)
 
+    # ┌── 异步函数（协程） def _run_agent_stream_consumer_task()
+    # │  作用：Wait (up to 10s) for the stream consumer to be created inside run_sync, then run it.
+    # │  参数：self, stream_consumer_holder: list
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_stream_consumer_task(self, stream_consumer_holder: list) -> None:
         """Wait (up to 10s) for the stream consumer to be created inside run_sync, then run it."""
         for _ in range(200):
             if stream_consumer_holder[0] is not None:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await stream_consumer_holder[0].run()
                 return
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await asyncio.sleep(0.05)
 
+    # ┌── 异步函数（协程） def _await_stream_task()
+    # │  作用：Give the stream consumer task 5s to flush, then cancel it.
+    # │  参数：stream_task
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     async def _await_stream_task(stream_task) -> None:
         """Give the stream consumer task 5s to flush, then cancel it."""
+        # ⤷ 关键分支 try/except：捕获 (asyncio.TimeoutError, asyncio.CancelledError)，出错走兜底而不是崩溃。
         try:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await asyncio.wait_for(stream_task, timeout=5.0)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             stream_task.cancel()
             with suppress(asyncio.CancelledError):
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await stream_task
 
+    # ┌── 异步函数（协程） def _run_agent_track_agent()
+    # │  作用：Track this agent as running for the session (interrupt support) once it is created — only
+    # │  参数：self, turn_ctx: TurnContext
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_track_agent(self, turn_ctx: TurnContext) -> None:
         """Track this agent as running for the session (interrupt support) once it is created — only
         if this run is still current, else leave the newer run's slot alone."""
         session_key, run_generation, agent_holder = turn_ctx.session_key, turn_ctx.run_generation, turn_ctx.agent_holder
         while agent_holder[0] is None:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await asyncio.sleep(0.05)
         if not session_key:
             return
@@ -3064,6 +3763,12 @@ class GatewayTurnMixin:
         if self._draining:
             self._update_runtime_status("draining")
 
+    # ┌── 异步函数（协程） def _run_agent_fire_pending_interrupt()
+    # │  作用：Peek the adapter's pending event, transcribe voice, then signal the agent + abort streaming TTS.
+    # │  参数：self, adapter: Any, agent: Any, source: SessionSource, session_key: str, _interrupt_detected: 'asyncio.Event', streaming_tts_consumer_holder: list, log_context: str  …共 9 个
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_fire_pending_interrupt(
         self, adapter: Any, agent: Any, source: SessionSource, session_key: str,
         _interrupt_detected: "asyncio.Event", streaming_tts_consumer_holder: list, *,
@@ -3080,6 +3785,7 @@ class GatewayTurnMixin:
         if _peek_event is not None:
             pending_text = _peek_event.text or ""
             if self._pending_event_audio_paths(_peek_event):
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 pending_text, _ = await self._transcribe_and_echo_pending_voice(
                     _peek_event, adapter, source, pending_text, log_context=log_context,
                     metadata={"thread_id": source.thread_id} if source.thread_id else None,
@@ -3102,6 +3808,12 @@ class GatewayTurnMixin:
         if _stts is not None:
             _stts.abort("barge-in")
 
+    # ┌── 异步函数（协程） def _run_agent_monitor_for_interrupt()
+    # │  作用：Poll the adapter for interrupts (new messages) every 200ms and signal the agent.
+    # │  参数：self, turn_ctx: TurnContext, _interrupt_detected: 'asyncio.Event'
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_monitor_for_interrupt(self, turn_ctx: TurnContext, _interrupt_detected: "asyncio.Event") -> None:
         """Poll the adapter for interrupts (new messages) every 200ms and signal the agent.
 
@@ -3112,7 +3824,9 @@ class GatewayTurnMixin:
         if not session_key:
             return
         while True:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await asyncio.sleep(0.2)
+            # ⤷ 关键分支 try/except：捕获 asyncio.CancelledError、Exception，出错走兜底而不是崩溃。
             try:
                 # Re-resolve the adapter each iteration so reconnects don't leave a stale reference.
                 _adapter = self._adapter_for_source(source)
@@ -3121,6 +3835,7 @@ class GatewayTurnMixin:
                 if hasattr(_adapter, 'has_pending_interrupt') and _adapter.has_pending_interrupt(session_key):
                     agent = agent_holder[0]
                     if agent:
+                        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                         await self._run_agent_fire_pending_interrupt(
                             _adapter, agent, source, session_key, _interrupt_detected,
                             streaming_tts_consumer_holder, log_context="Voice-interrupt",
@@ -3128,10 +3843,17 @@ class GatewayTurnMixin:
                         )
                         break
             except asyncio.CancelledError:
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
             except Exception as _mon_err:
                 logger.debug("monitor_for_interrupt error (will retry): %s", _mon_err)
 
+    # ┌── 异步函数（协程） def _run_agent_backup_interrupt_check()
+    # │  作用：Backup interrupt check: if the monitor task died or missed the interrupt, catch it here.
+    # │  参数：self, turn_ctx: TurnContext, _interrupt_detected: 'asyncio.Event', interrupt_monitor: 'asyncio.Task'
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_backup_interrupt_check(
         self, turn_ctx: TurnContext, _interrupt_detected: "asyncio.Event", interrupt_monitor: "asyncio.Task",
     ) -> None:
@@ -3144,6 +3866,7 @@ class GatewayTurnMixin:
         if (_backup_adapter and _backup_agent
                 and hasattr(_backup_adapter, 'has_pending_interrupt')
                 and _backup_adapter.has_pending_interrupt(session_key)):
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._run_agent_fire_pending_interrupt(
                 _backup_adapter, _backup_agent, source, session_key, _interrupt_detected,
                 turn_ctx.streaming_tts_consumer_holder,
@@ -3154,29 +3877,46 @@ class GatewayTurnMixin:
                 ),
             )
 
+    # ┌── 函数 def _run_agent_stream_confirmed_final_delivery()
+    # │  作用：True only when the actual final reply reached the user: a finalize call may carry only the
+    # │  参数：consumer, final_text: str, previewed: bool = ...
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _run_agent_stream_confirmed_final_delivery(consumer, final_text: str, *, previewed: bool = False) -> bool:
         """True only when the actual final reply reached the user: a finalize call may carry only the
         last preview snapshot, so reconcile against the recorded payload — a demonstrable mismatch
         (False) overrides the flag; None keeps legacy trust."""
         if consumer is None:
+            # ⤷ 出口 return：返回 False
             return False
         if getattr(consumer, "final_response_sent", False):
             matcher = getattr(consumer, "delivered_final_matches", None)
             if callable(matcher):
                 with suppress(Exception):
                     if matcher(final_text) is False:
+                        # ⤷ 出口 return：返回 False
                         return False
+            # ⤷ 出口 return：返回 True
             return True
         if previewed:
             has_delivered_text = getattr(consumer, "has_delivered_text", None)
             if callable(has_delivered_text):
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
+                    # ⤷ 出口 return：返回 bool(has_delivered_text(final_text))
                     return bool(has_delivered_text(final_text))
                 except Exception:
                     return False
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ┌── 函数 def _run_agent_start_turn_worker()
+    # │  作用：Schedule ``run_sync`` on the executor plus the inactivity watchdog thread.
+    # │  参数：self, turn_ctx: TurnContext, run_sync: Callable[[], Any]
+    # │  返回：'GatewayRunner._RunAgentWorker'
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_start_turn_worker(self, turn_ctx: TurnContext, run_sync: Callable[[], Any]) -> "GatewayRunner._RunAgentWorker":
         """Schedule ``run_sync`` on the executor plus the inactivity watchdog thread.
 
@@ -3213,7 +3953,9 @@ class GatewayTurnMixin:
         )
 
         def _run_sync_with_timeout_lifecycle():
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
+                # ⤷ 出口 return：返回 run_sync()
                 return run_sync()
             finally:
                 worker.worker_done.set()
@@ -3242,31 +3984,55 @@ class GatewayTurnMixin:
         worker.executor_task = asyncio.ensure_future(
             self._run_in_executor_with_context(_run_sync_with_timeout_lifecycle)
         )
+        # ⤷ 出口 return：返回 worker
         return worker
 
+    # ┌── 函数 def _reaper_kwargs()
+    # │  作用：Shared kwargs of the watchdog + timeout-reaper threads.
+    # │  参数：worker: 'GatewayRunner._RunAgentWorker'
+    # │  返回：dict
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _reaper_kwargs(worker: "GatewayRunner._RunAgentWorker") -> dict:
         """Shared kwargs of the watchdog + timeout-reaper threads."""
+        # ⤷ 出口 return：返回 {**{k: getattr(worker, k) for k in ('task_id', 'process_base…
         return {
             **{k: getattr(worker, k) for k in ("task_id", "process_baseline", "worker_done", "timeout_fired", "cleanup_lock")},
             "is_still_current": worker.is_current,
         }
 
+    # ┌── 函数 def _agent_activity_summary()
+    # │  作用：``agent.get_activity_summary()`` or ``{}`` when unavailable / failing.
+    # │  参数：agent: Any
+    # │  返回：dict
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _agent_activity_summary(agent: Any) -> dict:
         """``agent.get_activity_summary()`` or ``{}`` when unavailable / failing."""
         if agent and hasattr(agent, "get_activity_summary"):
             with suppress(Exception):
+                # ⤷ 出口 return：返回 agent.get_activity_summary()
                 return agent.get_activity_summary()
+        # ⤷ 出口 return：返回 {}
         return {}
 
+    # ┌── 异步函数（协程） def _run_agent_inactivity_warning()
+    # │  作用：Staged one-shot warning before the inactivity timeout escalates.
+    # │  参数：self, worker, source, _status_thread_metadata
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_inactivity_warning(self, worker, source, _status_thread_metadata) -> None:
         """Staged one-shot warning before the inactivity timeout escalates."""
         from gateway.run import _interim_metadata
         _warn_adapter = self._adapter_for_source(source)
         if not _warn_adapter:
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await _warn_adapter.send(
                 source.chat_id, f"⚠️ No activity for {int(worker.agent_warning // 60) or 1} min. "
                 "If the agent does not respond soon, it will be timed out in "
@@ -3277,6 +4043,11 @@ class GatewayTurnMixin:
         except Exception as _warn_err:
             logger.debug("Inactivity warning send error: %s", _warn_err)
 
+    # ┌── 函数 def _run_agent_timeout_result()
+    # │  作用：Synthetic failed run dict for an inactivity timeout, with the activity-tracker diagnostic;
+    # │  参数：self, worker, turn_ctx: TurnContext
+    # │  返回：dict
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_timeout_result(self, worker, turn_ctx: TurnContext) -> dict:
         """Synthetic failed run dict for an inactivity timeout, with the activity-tracker diagnostic;
         interrupts the agent if it is still running so the thread pool worker is freed."""
@@ -3318,6 +4089,7 @@ class GatewayTurnMixin:
             "To increase the limit, set agent.gateway_timeout in config.yaml (value in seconds, 0 "
             "= no limit) and restart the gateway.\nTry again, or use /reset to start fresh."
         )
+        # ⤷ 出口 return：返回 {'final_response': '\n'.join(_diag_lines), 'messages': resul…
         return {
             "final_response": "\n".join(_diag_lines),
             "messages": result_holder[0].get("messages", []) if result_holder[0] else [],
@@ -3327,6 +4099,12 @@ class GatewayTurnMixin:
             "failed": True,
         }
 
+    # ┌── 异步函数（协程） def _run_agent_await_turn_worker()
+    # │  作用：Poll the executor future (inactivity timeout + backup interrupt checks); return its result,
+    # │  参数：self, worker: 'GatewayRunner._RunAgentWorker', turn_ctx: TurnContext, _interrupt_detected: 'asyncio.Event', interrupt_monitor: 'asyncio.Task'
+    # │  返回：Any
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_await_turn_worker(
         self, worker: "GatewayRunner._RunAgentWorker", turn_ctx: TurnContext,
         _interrupt_detected: "asyncio.Event", interrupt_monitor: "asyncio.Task",
@@ -3338,10 +4116,12 @@ class GatewayTurnMixin:
         agent_holder = turn_ctx.agent_holder
         _warning_fired = False
         while True:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             done, _ = await asyncio.wait({worker.executor_task}, timeout=5.0)
             if done:
                 # Prefer the real result even if the watchdog fired in the same window (the run already
                 # persisted its reply).
+                # ⤷ 出口 return：返回 worker.executor_task.result()
                 return worker.executor_task.result()
             if worker.agent_timeout is not None:
                 if worker.timeout_fired.is_set():
@@ -3349,6 +4129,7 @@ class GatewayTurnMixin:
                 _idle_secs = self._agent_activity_summary(agent_holder[0]).get("seconds_since_activity", 0.0)
                 if not _warning_fired and worker.agent_warning is not None and _idle_secs >= worker.agent_warning:
                     _warning_fired = True
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await self._run_agent_inactivity_warning(worker, turn_ctx.source, turn_ctx._status_thread_metadata)
                 if _idle_secs >= worker.agent_timeout:
                     threading.Thread(
@@ -3357,9 +4138,16 @@ class GatewayTurnMixin:
                         name=f"gateway-turn-reaper-{worker.task_id[:12]}", daemon=True,
                     ).start()
                     break
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await self._run_agent_backup_interrupt_check(turn_ctx, _interrupt_detected, interrupt_monitor)
+        # ⤷ 出口 return：返回 self._run_agent_timeout_result(worker, turn_ctx)
         return self._run_agent_timeout_result(worker, turn_ctx)
 
+    # ┌── 函数 def _run_agent_evict_on_fallback()
+    # │  作用：Evict the cached agent when a fallback model activated on a SUCCESSFUL run (so /model shows
+    # │  参数：self, turn_ctx: TurnContext
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_evict_on_fallback(self, turn_ctx: TurnContext) -> None:
         """Evict the cached agent when a fallback model activated on a SUCCESSFUL run (so /model shows
         the active model and the next message retries the primary). Skip failed runs: evicting
@@ -3381,6 +4169,12 @@ class GatewayTurnMixin:
         if _agent.model != _cfg_model and not self._is_intentional_model_switch(session_key, _agent, _cfg_model):
             self._evict_cached_agent(session_key)
 
+    # ┌── 异步函数（协程） def _run_agent_finalize_streaming_tts()
+    # │  作用：Finalize the streaming-TTS consumer on the outer event-loop thread (covers early returns
+    # │  参数：self, turn_ctx: TurnContext, adapter: Any
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_finalize_streaming_tts(self, turn_ctx: TurnContext, adapter: Any) -> None:
         """Finalize the streaming-TTS consumer on the outer event-loop thread (covers early returns
         from run_sync). On drain timeout abort to free the task — audible streams keep whole-file
@@ -3389,18 +4183,27 @@ class GatewayTurnMixin:
         if _stts is None:
             return
         _stts.finish()
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await _stts.wait_complete(timeout=10.0)
         except Exception as _stts_done_err:
             logger.debug("streaming TTS wait_complete error: %s", _stts_done_err)
         if not _stts.done:
             _stts.abort("streaming TTS finalisation timeout")
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await _stts.wait_complete(timeout=2.0)
         if _stts.suppress_whole_file and adapter is not None:
             _mark_turn = getattr(adapter, "_mark_streaming_tts_completed_turn", None)
             if callable(_mark_turn):
                 _mark_turn(turn_ctx.session_key, turn_ctx.run_generation)
 
+    # ┌── 异步函数（协程） def _run_agent_drain_pending()
+    # │  作用：Dequeue the adapter's pending / interrupt / leftover-steer follow-up as ``(pending_event, pending)``.
+    # │  参数：self, result: Any, adapter: Any, source: SessionSource, session_key: Optional[str]
+    # │  返回：Tuple[Any, Optional[str]]
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_drain_pending(
         self, result: Any, adapter: Any, source: SessionSource, session_key: Optional[str]
     ) -> Tuple[Any, Optional[str]]:
@@ -3430,6 +4233,7 @@ class GatewayTurnMixin:
                 # Transcribe audio BEFORE it becomes the next user turn (real transcript, not a path).
                 _pending_text = pending_event.text or ""
                 if self._pending_event_audio_paths(pending_event):
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     pending, _ = await self._transcribe_and_echo_pending_voice(
                         pending_event, adapter, source, _pending_text, log_context="Voice-drain",
                         metadata={"thread_id": source.thread_id} if source.thread_id else None,
@@ -3466,8 +4270,15 @@ class GatewayTurnMixin:
             )
             pending_event = None
             pending = None
+        # ⤷ 出口 return：返回 (pending_event, pending)
         return pending_event, pending
 
+    # ┌── 异步函数（协程） def _run_agent_deliver_first_response()
+    # │  作用：Deliver the first response before a queued follow-up runs, unless streaming already did.
+    # │  参数：self, turn_ctx: TurnContext, adapter: Any, response: Any, result: Any, stream_task: Any
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_deliver_first_response(
         self, turn_ctx: TurnContext, adapter: Any, response: Any, result: Any, stream_task: Any,
     ) -> None:
@@ -3475,7 +4286,9 @@ class GatewayTurnMixin:
         session_key = turn_ctx.session_key
         _sc = turn_ctx.stream_consumer_holder[0]
         if _sc and stream_task:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._await_stream_task(stream_task)
             except Exception as e:
                 logger.debug("Stream consumer wait before queued message failed: %s", e)
@@ -3498,7 +4311,9 @@ class GatewayTurnMixin:
                 "Queued follow-up for session %s: final stream delivery not confirmed; sending first response before continuing.",
                 session_key or "?",
             )
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._deliver_queued_first_response(
                     first_response, source=turn_ctx.source, adapter=adapter,
                     metadata=turn_ctx._status_thread_metadata, event_message_id=turn_ctx.event_message_id,
@@ -3516,8 +4331,15 @@ class GatewayTurnMixin:
             with suppress(Exception):
                 _bg_result = _bg_cb()
                 if inspect.isawaitable(_bg_result):
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await _bg_result
 
+    # ┌── 异步函数（协程） def _run_agent_queued_followup()
+    # │  作用：Run the queued / interrupting follow-up as the next turn (recursive ``_run_agent``).
+    # │  参数：self, turn_ctx: TurnContext, adapter: Any, pending: Optional[str], pending_event: Any, response: Any, result: Any, stream_task: Any
+    # │  返回：Any
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_queued_followup(
         self, turn_ctx: TurnContext, adapter: Any, pending: Optional[str], pending_event: Any,
         response: Any, result: Any, stream_task: Any,
@@ -3550,6 +4372,7 @@ class GatewayTurnMixin:
                 merge_pending_message_event(adapter._pending_messages, session_key, pending_event)
             elif adapter and hasattr(adapter, 'queue_message'):
                 adapter.queue_message(session_key, pending)
+            # ⤷ 出口 return：返回 turn_ctx.result_holder[0] or {'final_response': response, 'm…
             return turn_ctx.result_holder[0] or {"final_response": response, "messages": history}
 
         # Interrupted: discard the response ("Operation interrupted." is noise).
@@ -3575,6 +4398,7 @@ class GatewayTurnMixin:
                 return result
             # Resolve the follow-up's session key BEFORE preparing the inbound text: native image
             # paths are buffered under the key given and consumed under next_session_key.
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 next_session_key = self._session_key_for_source(next_source)
             except Exception:
@@ -3624,9 +4448,11 @@ class GatewayTurnMixin:
         # different profile's adapter, and only that instance holds the per-message reaction state.
         from gateway.run_turn_followup_ack import _followup_cancel_outcome, _run_followup_processing_hook
         _hook_adapter = self._adapter_for_source(next_source) if pending_event is not None else None
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await _run_followup_processing_hook(_hook_adapter, pending_event, "on_processing_start")
         # The re-baseline sits inside the try: a /stop landing on its DB await must still close the marker
         # (the helper's own ``except Exception`` does not catch cancellation).
+        # ⤷ 关键分支 try/except：捕获 asyncio.CancelledError、BaseException，出错走兜底而不是崩溃。
         try:
             await self._refresh_agent_cache_message_count(session_key, session_id)
 
@@ -3645,6 +4471,7 @@ class GatewayTurnMixin:
             await _run_followup_processing_hook(
                 _hook_adapter, pending_event, "on_processing_complete", ProcessingOutcome.FAILURE)
             raise
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await _run_followup_processing_hook(
             _hook_adapter, pending_event, "on_processing_complete", ProcessingOutcome.SUCCESS)
         merged = _preserve_queued_followup_history_offset(result, followup_result)
@@ -3656,8 +4483,15 @@ class GatewayTurnMixin:
         # so only fill the key while it is still absent: the innermost turn wins.
         if isinstance(merged, dict) and "queued_terminal_inbound_id" not in merged:
             merged = {**merged, "queued_terminal_inbound_id": next_inbound_id}
+        # ⤷ 出口 return：返回 merged
         return merged
 
+    # ┌── 异步函数（协程） def _run_agent_cleanup_turn_tasks()
+    # │  作用：``finally`` half of a turn: cancel background tasks, flush stream, release the session slot.
+    # │  参数：self, turn_ctx: TurnContext, progress_task: Any, log_task: Any, interrupt_monitor: 'asyncio.Task', _notify_task: 'asyncio.Task', tracking_task: 'asyncio.Task', stream_task: Any
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_cleanup_turn_tasks(
         self, turn_ctx: TurnContext, *, progress_task: Any, log_task: Any, interrupt_monitor: "asyncio.Task",
         _notify_task: "asyncio.Task", tracking_task: "asyncio.Task", stream_task: Any,
@@ -3673,8 +4507,10 @@ class GatewayTurnMixin:
             if not (stream_consumer_holder and stream_consumer_holder[0] is not None):
                 stream_task.cancel()
                 with suppress(asyncio.CancelledError):
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await stream_task
             else:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._await_stream_task(stream_task)
 
         # Abort + bounded wait for streaming TTS: covers paths where normal finalisation was skipped.
@@ -3683,6 +4519,7 @@ class GatewayTurnMixin:
         if _stts_finally is not None and not _stts_finally.done:
             _stts_finally.abort("cleanup")
             with suppress(Exception):
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await _stts_finally.wait_complete(timeout=2.0)
 
         tracking_task.cancel()
@@ -3695,7 +4532,9 @@ class GatewayTurnMixin:
 
         for task in (progress_task, log_task, interrupt_monitor, tracking_task, _notify_task):
             if task:
+                # ⤷ 关键分支 try/except：捕获 asyncio.CancelledError、Exception，出错走兜底而不是崩溃。
                 try:
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await task
                 except asyncio.CancelledError:
                     pass
@@ -3703,13 +4542,21 @@ class GatewayTurnMixin:
                     # A background task that died of a real error must not abort the cleanup path.
                     logger.debug("background turn task failed during cleanup", exc_info=True)
 
+    # ┌── 异步函数（协程） def _run_agent_edit_streamed_message()
+    # │  作用：Edit the stream consumer's message in place with ``content``; on success mark
+    # │  参数：self, _sc, source, response, content, _sk, ok, fail_result  …共 9 个
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_edit_streamed_message(
         self, _sc, source, response, content, *, _sk, ok, fail_result, fail_exc,
     ) -> None:
         """Edit the stream consumer's message in place with ``content``; on success mark
         ``response["already_sent"]`` and log ``ok``. ``fail_result`` (None = trust the call) logs a
         returned failure as ``(session, error)``; ``fail_exc`` logs an exception as ``(session, exc)``."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             _res = await _sc.adapter.edit_message(
                 chat_id=source.chat_id, message_id=_sc.message_id, content=content, finalize=True,
             )
@@ -3722,6 +4569,12 @@ class GatewayTurnMixin:
         response["already_sent"] = True
         logger.info(*ok)
 
+    # ┌── 异步函数（协程） def _run_agent_mark_streamed_delivery()
+    # │  作用：Set ``response["already_sent"]`` when streaming already delivered the final reply.
+    # │  参数：self, response: Any, turn_ctx: TurnContext
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_mark_streamed_delivery(self, response: Any, turn_ctx: TurnContext) -> None:
         """Set ``response["already_sent"]`` when streaming already delivered the final reply.
 
@@ -3777,6 +4630,7 @@ class GatewayTurnMixin:
                     _sk,
                 )
             elif _sc_msg_id and _sc_msg_id != "__no_edit__" and getattr(_sc, "adapter", None) is not None:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._run_agent_edit_streamed_message(
                     _sc, source, response, _final, _sk=_sk,
                     ok=("Reconciled stale streamed finalize for session %s: edited message %s with the complete response (#71643).", _sk, _sc_msg_id),
@@ -3791,6 +4645,7 @@ class GatewayTurnMixin:
         elif _transformed and _sc is not None:
             # Transformed after streaming: edit the streamed message instead of sending a duplicate.
             if _sc.message_id:
+                # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                 await self._run_agent_edit_streamed_message(
                     _sc, source, response, response["final_response"], _sk=_sk,
                     ok=("Edited streamed message %s for session %s to include plugin-transformed content.", _sc.message_id, _sk),
@@ -3806,6 +4661,11 @@ class GatewayTurnMixin:
                 _sk, _streamed, _previewed, _content_delivered, _transformed, len(_final),
             )
 
+    # ┌── 函数 def _run_agent_schedule_bubble_cleanup()
+    # │  作用：Schedule deletion of tracked temporary progress bubbles after the final response lands.
+    # │  参数：self, response: Any, _cleanup_adapter: Any, turn_ctx: TurnContext
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_schedule_bubble_cleanup(self, response: Any, _cleanup_adapter: Any, turn_ctx: TurnContext) -> None:
         """Schedule deletion of tracked temporary progress bubbles after the final response lands.
 
@@ -3830,6 +4690,7 @@ class GatewayTurnMixin:
             async def _delete_all() -> None:
                 for _mid in _ids_snapshot:
                     with suppress(Exception):
+                        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                         await _cleanup_adapter.delete_message(_chat_id_snapshot, _mid)
             with suppress(Exception):
                 safe_schedule_threadsafe(
@@ -3837,6 +4698,7 @@ class GatewayTurnMixin:
                     log_message="Temp bubble cleanup scheduling error",
                 )
 
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _cleanup_adapter.register_post_delivery_callback(
                 session_key, _cleanup_temp_bubbles, generation=turn_ctx.run_generation,
@@ -3844,6 +4706,11 @@ class GatewayTurnMixin:
         except Exception as _rpe:
             logger.debug("Post-delivery cleanup registration failed: %s", _rpe)
 
+    # ┌── 函数 def _run_agent_bind_turn_wiring()
+    # │  作用：Resolve progress threading, then publish progress metadata and the sync→async bridges onto
+    # │  参数：self, turn_ctx: TurnContext, turn_runner: TurnRunner, source: SessionSource, event_message_id: Optional[str], _native_slack_task_cards: bool
+    # │  返回：Optional[Dict[str, Any]]
+    # └──────────────────────────────────────────────────────────────
     def _run_agent_bind_turn_wiring(
         self, turn_ctx: TurnContext, turn_runner: TurnRunner, source: SessionSource,
         event_message_id: Optional[str], _native_slack_task_cards: bool,
@@ -3863,8 +4730,15 @@ class GatewayTurnMixin:
         turn_ctx._status_adapter = self._adapter_for_source(source)
         turn_ctx._status_chat_id = source.chat_id
         turn_ctx._status_thread_metadata = _status_thread_metadata
+        # ⤷ 出口 return：返回 _status_thread_metadata
         return _status_thread_metadata
 
+    # ┌── 异步函数（协程） def _run_agent_notify_long_running()
+    # │  作用：Periodic "still working" heartbeat, edited in place where supported. Stops once this run
+    # │  参数：self, disp: 'GatewayRunner._RunAgentDisplay', turn_ctx: TurnContext, _executor_task_holder: list
+    # │  返回：None
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_notify_long_running(
         self, disp: "GatewayRunner._RunAgentDisplay", turn_ctx: TurnContext, _executor_task_holder: list,
     ) -> None:
@@ -3887,6 +4761,7 @@ class GatewayTurnMixin:
             return
         _heartbeat_msg_id: Optional[str] = None
         while True:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await asyncio.sleep(_NOTIFY_INTERVAL)
             if not self._should_emit_long_running_notification(
                 session_key, agent_holder[0], _executor_task_holder[0]
@@ -3914,10 +4789,13 @@ class GatewayTurnMixin:
                 if _long_running_mode == "generic"
                 else f"⏳ Working — {_elapsed_mins} min{_status_detail}"
             )
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 _notify_res = None
                 if _heartbeat_msg_id:
+                    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                     try:
+                        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                         _notify_res = await _notify_adapter.edit_message(source.chat_id, _heartbeat_msg_id, _heartbeat_text)
                     except Exception as _ee:
                         logger.debug("Heartbeat edit failed: %s", _ee)
@@ -3929,6 +4807,7 @@ class GatewayTurnMixin:
                         session_key, agent_holder[0], _executor_task_holder[0]
                     ):
                         break
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     _notify_res = await _notify_adapter.send(
                         source.chat_id, _heartbeat_text,
                         metadata=_interim_metadata(_non_conversational_metadata(_status_thread_metadata, platform=source.platform)),
@@ -3940,6 +4819,12 @@ class GatewayTurnMixin:
             except Exception as _ne:
                 logger.debug("Long-running notification error: %s", _ne)
 
+    # ┌── 异步函数（协程） def _run_agent_inner()
+    # │  作用：Run the agent; returns the full run_conversation result dict.
+    # │  参数：self, message: str, context_prompt: str, history: List[Dict[str, Any]], source: SessionSource, session_id: str, session_key: str = None, run_generation: Optional[int] = None  …共 18 个
+    # │  返回：Dict[str, Any]
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_agent_inner(
         self, message: str, context_prompt: str, history: List[Dict[str, Any]],
         source: SessionSource, session_id: str, session_key: str = None,
@@ -3954,6 +4839,8 @@ class GatewayTurnMixin:
 
         Keys: "final_response", "messages", "api_calls", "completed"."""
         if self._get_proxy_url():
+            # ⤷ 出口 return：返回 await self._run_agent_via_proxy(message=message, context_pro…
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             return await self._run_agent_via_proxy(
                 message=message, context_prompt=context_prompt, history=history, source=source,
                 session_id=session_id, session_key=session_key, run_generation=run_generation,
@@ -3994,10 +4881,12 @@ class GatewayTurnMixin:
         _executor_task_holder: list = [None]  # bound once the executor future exists (see below)
         _notify_task = spawn(self._run_agent_notify_long_running(disp, turn_ctx, _executor_task_holder))
 
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             # run_sync is TurnRunner.run_sync (bound method; executor call unchanged).
             worker = self._run_agent_start_turn_worker(turn_ctx, turn_runner.run_sync)
             _executor_task_holder[0] = worker.executor_task  # read late by _notify_long_running
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             response = await self._run_agent_await_turn_worker(worker, turn_ctx, _interrupt_detected, interrupt_monitor)
             self._run_agent_evict_on_fallback(turn_ctx)
 
@@ -4016,6 +4905,8 @@ class GatewayTurnMixin:
                 _notify_task=_notify_task, tracking_task=tracking_task, stream_task=stream_task,
             )
 
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await self._run_agent_mark_streamed_delivery(response, turn_ctx)
         self._run_agent_schedule_bubble_cleanup(response, _cleanup_adapter, turn_ctx)
+        # ⤷ 出口 return：返回 response
         return response

@@ -5,6 +5,30 @@ Inactivity-triggered (no cron daemon): when the agent is idle and the last run i
 may pin/archive/consolidate/patch skills via skill_manage, and persists scheduler state in ``.curator_state``.
 Invariants: only curator-managed skills are touched; never delete, only archive (recoverable); pinned skills bypass
 all auto-transitions; the fork uses the auxiliary client and never touches the main session's prompt cache."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/curator.py（约 1084 行）
+# 地位：技能库（skills）的后台自动维护员。
+#
+# 触发方式：不是靠定时任务，而是靠「空闲触发」——Agent 空闲且距上次运行超过 interval_hours 就自动跑一次。
+#
+# 它做什么：根据技能的使用活跃度，自动做生命周期流转（活跃 → 陈旧 → 归档），
+#   必要时 fork 出一个 AIAgent，让它用 skill_manage 工具去 pin（置顶）/ archive（归档）/
+#   consolidate（合并同类技能）/ patch（修补）。
+#
+# 不变式（invariants，源码注释里明确写了）：
+#   - 只碰 curator 自己管理的技能
+#   - 绝不删除，只归档（保证可恢复）
+#   - 被 pin 的技能跳过所有自动流转
+#   - fork 出来的子 Agent 用辅助客户端，绝不碰主会话
+#
+# 流程：maybe_run_curator() → apply_automatic_transitions() → run_curator_review()
+#   跑完还会生成一份 Markdown 报告（_write_run_report / _render_report_markdown）。
+#
+# 给新手的启发：这是一个「用 AI 管理 AI 资产」的真实案例，也是 Agent 自我维护的有趣实践。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -34,153 +58,287 @@ DEFAULT_CONSOLIDATE = False
 
 # --- .curator_state — persistent scheduler + status ---
 
+# ┌── 函数 def _state_file()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _state_file() -> Path:
+    # ⤷ 出口 return：返回 get_hermes_home() / 'skills' / '.curator_state'
     return get_hermes_home() / "skills" / ".curator_state"
 
 
+# ┌── 函数 def load_state()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def load_state() -> Dict[str, Any]:
     base: Dict[str, Any] = {
         "last_run_at": None, "last_run_duration_seconds": None, "last_run_summary": None,
         "last_run_summary_shown_at": None, "last_report_path": None, "paused": False, "run_count": 0,
     }
     path = _state_file()
+    # ⤷ 关键分支 try/except：捕获 (OSError, json.JSONDecodeError)，出错走兜底而不是崩溃。
     try:
         data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except (OSError, json.JSONDecodeError) as e:
         logger.debug("Failed to read curator state: %s", e)
+        # ⤷ 出口 return：返回 base
         return base
     if isinstance(data, dict):
         base.update({k: v for k, v in data.items() if k in base or k.startswith("_")})
+    # ⤷ 出口 return：返回 base
     return base
 
 
+# ┌── 函数 def save_state()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：data: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def save_state(data: Dict[str, Any]) -> None:
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         atomic_json_write(_state_file(), data, indent=2, sort_keys=True)
     except Exception as e:
         logger.debug("Failed to save curator state: %s", e, exc_info=True)
 
 
+# ┌── 函数 def set_paused()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：paused: bool
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def set_paused(paused: bool) -> None:
     save_state({**load_state(), "paused": bool(paused)})
 
 
+# ┌── 函数 def is_paused()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_paused() -> bool:
+    # ⤷ 出口 return：返回 bool(load_state().get('paused'))
     return bool(load_state().get("paused"))
 
 
 # --- Config access ---
 
+# ┌── 函数 def _subdict()
+# │  作用：Walk nested dict keys; {} if any level is missing or not a dict.
+# │  参数：node: Any, *keys
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _subdict(node: Any, *keys: str) -> Dict[str, Any]:
     """Walk nested dict keys; {} if any level is missing or not a dict."""
     for key in keys:
         node = node.get(key) if isinstance(node, dict) else None
+    # ⤷ 出口 return：返回 node if isinstance(node, dict) else {}
     return node if isinstance(node, dict) else {}
 
 
+# ┌── 函数 def _read_config_section()
+# │  作用：Read a nested section of ~/.hermes/config.yaml. Tolerates missing file.
+# │  参数：*path, label: str, log: logging.Logger = ...
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _read_config_section(*path: str, label: str, log: logging.Logger = logger) -> Dict[str, Any]:
     """Read a nested section of ~/.hermes/config.yaml. Tolerates missing file."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config_readonly
         cfg = load_config_readonly()
     except Exception as e:
         log.debug("Failed to load config for %s: %s", label, e)
+        # ⤷ 出口 return：返回 {}
         return {}
+    # ⤷ 出口 return：返回 _subdict(cfg, *path)
     return _subdict(cfg, *path)
 
 
+# ┌── 函数 def _load_config()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _load_config() -> Dict[str, Any]:
+    # ⤷ 出口 return：返回 _read_config_section('curator', label='curator')
     return _read_config_section("curator", label="curator")
 
 
+# ┌── 函数 def _config_number()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：key: str, default, cast
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _config_number(key: str, default, cast):
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 cast(_load_config().get(key, default))
         return cast(_load_config().get(key, default))
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def is_enabled()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def is_enabled() -> bool:  # default ON when no config says otherwise
+    # ⤷ 出口 return：返回 bool(_load_config().get('enabled', True))
     return bool(_load_config().get("enabled", True))
 
 
+# ┌── 函数 def get_interval_hours()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def get_interval_hours() -> int:
+    # ⤷ 出口 return：返回 _config_number('interval_hours', DEFAULT_INTERVAL_HOURS, int…
     return _config_number("interval_hours", DEFAULT_INTERVAL_HOURS, int)
 
 
+# ┌── 函数 def get_min_idle_hours()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def get_min_idle_hours() -> float:
+    # ⤷ 出口 return：返回 _config_number('min_idle_hours', DEFAULT_MIN_IDLE_HOURS, flo…
     return _config_number("min_idle_hours", DEFAULT_MIN_IDLE_HOURS, float)
 
 
+# ┌── 函数 def get_stale_after_days()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def get_stale_after_days() -> int:
+    # ⤷ 出口 return：返回 _config_number('stale_after_days', DEFAULT_STALE_AFTER_DAYS,…
     return _config_number("stale_after_days", DEFAULT_STALE_AFTER_DAYS, int)
 
 
+# ┌── 函数 def get_archive_after_days()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def get_archive_after_days() -> int:
+    # ⤷ 出口 return：返回 _config_number('archive_after_days', DEFAULT_ARCHIVE_AFTER_D…
     return _config_number("archive_after_days", DEFAULT_ARCHIVE_AFTER_DAYS, int)
 
 
+# ┌── 函数 def get_prune_builtins()
+# │  作用：Bundled built-ins are curation candidates (ON by default); a suppression list keeps them archived across `hermes update` re-seeds. Hub skills are never pruned.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def get_prune_builtins() -> bool:
     """Bundled built-ins are curation candidates (ON by default); a suppression list keeps them archived across `hermes update` re-seeds. Hub skills are never pruned."""
+    # ⤷ 出口 return：返回 bool(_load_config().get('prune_builtins', True))
     return bool(_load_config().get("prune_builtins", True))
 
 
+# ┌── 函数 def get_consolidate()
+# │  作用：LLM consolidation pass — OFF by default (prune only, no aux-model fork); ``hermes curator run --consolidate`` overrides per invocation.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def get_consolidate() -> bool:
     """LLM consolidation pass — OFF by default (prune only, no aux-model fork); ``hermes curator run --consolidate`` overrides per invocation."""
+    # ⤷ 出口 return：返回 bool(_load_config().get('consolidate', DEFAULT_CONSOLIDATE))
     return bool(_load_config().get("consolidate", DEFAULT_CONSOLIDATE))
 
 
 # --- Idle / interval check ---
 
+# ┌── 函数 def _parse_iso()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：ts: Optional[str]
+# │  返回：Optional[datetime]
+# └──────────────────────────────────────────────────────────────
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 datetime.fromisoformat(ts) if ts else None
         return datetime.fromisoformat(ts) if ts else None
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def should_run_now()
+# │  作用：Gates: curator.enabled, not paused, ``last_run_at`` present AND older than interval_hours. First observation seeds
+# │  参数：now: Optional[datetime] = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def should_run_now(now: Optional[datetime] = None) -> bool:
     """Gates: curator.enabled, not paused, ``last_run_at`` present AND older than interval_hours. First observation seeds
     ``last_run_at`` to now and defers one interval, so a fresh install/update never mutates the library on its first tick.
     ``hermes curator run`` bypasses this; the idle check is the caller's."""
     if not is_enabled() or is_paused():
+        # ⤷ 出口 return：返回 False
         return False
     state = load_state()
     last = _parse_iso(state.get("last_run_at"))
     now = now or datetime.now(timezone.utc)
     if last is None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             state["last_run_at"] = now.isoformat()
             state["last_run_summary"] = "deferred first run — curator seeded, will run after one interval; use `hermes curator run --dry-run` to preview now"
             save_state(state)
         except Exception as e:  # pragma: no cover — best-effort persistence
             logger.debug("Failed to seed curator last_run_at: %s", e)
+        # ⤷ 出口 return：返回 False
         return False
     if last.tzinfo is None:
         last = last.replace(tzinfo=timezone.utc)
+    # ⤷ 出口 return：返回 now - last >= timedelta(hours=get_interval_hours())
     return (now - last) >= timedelta(hours=get_interval_hours())
 
 
 # --- Automatic state transitions (pure function, no LLM) ---
 
+# ┌── 函数 def _cron_referenced_skills()
+# │  作用：Skill names referenced by any cron job (incl. paused/disabled). Best-effort: a cron import error or corrupt jobs store yields an empty set, never a crash.
+# │  参数：无
+# │  返回：Set[str]
+# └──────────────────────────────────────────────────────────────
 def _cron_referenced_skills() -> Set[str]:
     """Skill names referenced by any cron job (incl. paused/disabled). Best-effort: a cron import error or corrupt jobs store yields an empty set, never a crash."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from cron.jobs import referenced_skill_names as _refs
+        # ⤷ 出口 return：返回 _refs()
         return _refs()
     except Exception as e:
         logger.debug("Curator could not read cron skill references: %s", e, exc_info=True)
+        # ⤷ 出口 return：返回 set()
         return set()
 
 
+# ┌── 函数 def _archive_as_curator()
+# │  作用：Archive via skill_usage with the ledger actor tagged 'curator', so the ledger entry reads as an autonomous transition, not a foreground call.
+# │  参数：_u, name: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _archive_as_curator(_u, name: str) -> bool:
     """Archive via skill_usage with the ledger actor tagged 'curator', so the ledger entry reads as an autonomous transition, not a foreground call."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.skill_ledger import reset_ledger_actor, set_ledger_actor
         tok = set_ledger_actor("curator")
     except Exception:
         tok = reset_ledger_actor = None  # type: ignore[assignment]
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 _u.archive_skill(name)[0]
         return _u.archive_skill(name)[0]
     finally:
         if tok is not None:
@@ -188,6 +346,11 @@ def _archive_as_curator(_u, name: str) -> bool:
                 reset_ledger_actor(tok)
 
 
+# ┌── 函数 def apply_automatic_transitions()
+# │  作用：Move every curator-managed skill between active/stale/archived based on its latest real activity; pinned skills are
+# │  参数：now: Optional[datetime] = None
+# │  返回：Dict[str, int]
+# └──────────────────────────────────────────────────────────────
 def apply_automatic_transitions(now: Optional[datetime] = None) -> Dict[str, int]:
     """Move every curator-managed skill between active/stale/archived based on its latest real activity; pinned skills are
     never touched. Built-ins are seeded with a baseline record on first sight so their inactivity clock starts NOW, not at epoch.
@@ -234,6 +397,7 @@ def apply_automatic_transitions(now: Optional[datetime] = None) -> Dict[str, int
             _set(name, _u.STATE_STALE, "marked_stale")
         elif anchor > stale_cutoff and current == _u.STATE_STALE:
             _set(name, _u.STATE_ACTIVE, "reactivated")  # used again after going stale
+    # ⤷ 出口 return：返回 counts
     return counts
 
 
@@ -452,38 +616,66 @@ CURATOR_PRUNE_BUILTINS_NOTE = (
 
 # --- Per-run reports — {YYYYMMDD-HHMMSS}/run.json + REPORT.md under logs/curator/ ---
 
+# ┌── 函数 def _reports_root()
+# │  作用：``~/.hermes/logs/curator/`` (telemetry next to agent.log, not under skills/). mkdir'd here too so gateway-only / bare-library entry paths work.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _reports_root() -> Path:
     """``~/.hermes/logs/curator/`` (telemetry next to agent.log, not under skills/). mkdir'd here too so gateway-only / bare-library entry paths work."""
     root = get_hermes_home() / "logs" / "curator"
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         root.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         logger.debug("Curator reports dir create failed: %s", e)
+    # ⤷ 出口 return：返回 root
     return root
 
 
+# ┌── 函数 def _needle_in_path_component()
+# │  作用：True if *needle* equals a complete filename stem or directory name in *path* — so "api" does not match
+# │  参数：needle: str, path: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _needle_in_path_component(needle: str, path: str) -> bool:
     """True if *needle* equals a complete filename stem or directory name in *path* — so "api" does not match
     "references/api-design.md". Hyphens and underscores are normalised ("open-webui-setup" matches "open_webui_setup.md")."""
     norm_needle = needle.replace("-", "_")
+    # ⤷ 出口 return：返回 any((part and part.rsplit('.', 1)[0].replace('-', '_') == no…
     return any(part and part.rsplit(".", 1)[0].replace("-", "_") == norm_needle for part in path.replace("\\", "/").split("/"))
 
 
+# ┌── 函数 def _skill_manage_args()
+# │  作用：Parsed arguments of a ``skill_manage`` tool call (JSON string or dict), or None to skip. With *raw_fallback*,
+# │  参数：tc: Any, raw_fallback: bool
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _skill_manage_args(tc: Any, *, raw_fallback: bool) -> Optional[Dict[str, Any]]:
     """Parsed arguments of a ``skill_manage`` tool call (JSON string or dict), or None to skip. With *raw_fallback*,
     a malformed string yields ``{"_raw": raw}`` so substring matching still catches the common case."""
     if not isinstance(tc, dict) or tc.get("name") != "skill_manage":
+        # ⤷ 出口 return：返回 None
         return None
     raw = tc.get("arguments") or ""
     if not isinstance(raw, str):
+        # ⤷ 出口 return：返回 raw if isinstance(raw, dict) else None
         return raw if isinstance(raw, dict) else None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         args = json.loads(raw)
     except Exception:
+        # ⤷ 出口 return：返回 {'_raw': raw} if raw_fallback else None
         return {"_raw": raw} if raw_fallback else None
+    # ⤷ 出口 return：返回 args if isinstance(args, dict) else None
     return args if isinstance(args, dict) else None
 
 
+# ┌── 函数 def _find_reference()
+# │  作用：First argument value (file_path, file_content, content, new_string, _raw — in that order) that references one of
+# │  参数：args: Dict[str, Any], needles: Set[str]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _find_reference(args: Dict[str, Any], needles: Set[str]) -> Optional[str]:
     """First argument value (file_path, file_content, content, new_string, _raw — in that order) that references one of
     *needles*. ``file_path`` must match a whole path component; content fields match on word boundaries so "test" does not match "latest"."""
@@ -492,10 +684,17 @@ def _find_reference(args: Dict[str, Any], needles: Set[str]) -> Optional[str]:
         if isinstance(hay, str) and any(
             (_needle_in_path_component(n, hay) if key == "file_path" else re.search(rf'\b{re.escape(n)}\b', hay)) for n in filter(None, needles)
         ):
+            # ⤷ 出口 return：返回 hay
             return hay
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _classify_removed_skills()
+# │  作用：Split ``removed`` into consolidated vs pruned. Heuristic: a ``skill_manage`` call on a DIFFERENT, surviving-or-new
+# │  参数：removed: List[str], added: List[str], after_names: Set[str], tool_calls: List[Dict[str, Any]]
+# │  返回：Dict[str, List[Dict[str, Any]]]
+# └──────────────────────────────────────────────────────────────
 def _classify_removed_skills(
     removed: List[str], added: List[str], after_names: Set[str], tool_calls: List[Dict[str, Any]],
 ) -> Dict[str, List[Dict[str, Any]]]:
@@ -520,9 +719,15 @@ def _classify_removed_skills(
                 break
         else:
             pruned.append({"name": name})
+    # ⤷ 出口 return：返回 {'consolidated': consolidated, 'pruned': pruned}
     return {"consolidated": consolidated, "pruned": pruned}
 
 
+# ┌── 函数 def _parse_structured_summary()
+# │  作用：Extract the required fenced ```yaml block (``consolidations:`` / ``prunings:`` lists) from the curator's final
+# │  参数：llm_final: str
+# │  返回：Dict[str, List[Dict[str, str]]]
+# └──────────────────────────────────────────────────────────────
 def _parse_structured_summary(llm_final: str) -> Dict[str, List[Dict[str, str]]]:
     """Extract the required fenced ```yaml block (``consolidations:`` / ``prunings:`` lists) from the curator's final
     response. Tolerant: missing block or malformed YAML → empty lists (caller falls back to the tool-call heuristic); a partial
@@ -531,23 +736,32 @@ def _parse_structured_summary(llm_final: str) -> Dict[str, List[Dict[str, str]]]
     match = re.search(r"```ya?ml\s*\n(.*?)\n```", llm_final, re.DOTALL | re.IGNORECASE) if isinstance(llm_final, str) else None
     data = None
     if match:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             import yaml  # type: ignore
             data = yaml.safe_load(match.group(1))
         except Exception:
             pass
     if not isinstance(data, dict):
+        # ⤷ 出口 return：返回 {'consolidations': [], 'prunings': []}
         return {"consolidations": [], "prunings": []}
 
     def _entries(key: str, *fields: str) -> List[Dict[str, str]]:
         raw = data.get(key) or []
         entries = (e for e in raw if isinstance(e, dict)) if isinstance(raw, list) else ()
         cleaned = ({f: (v.strip() if isinstance((v := e.get(f)), str) else "") for f in (*fields, "reason")} for e in entries)
+        # ⤷ 出口 return：返回 [e for e in cleaned if all((e[f] for f in fields))]
         return [e for e in cleaned if all(e[f] for f in fields)]
 
+    # ⤷ 出口 return：返回 {'consolidations': _entries('consolidations', 'from', 'into'…
     return {"consolidations": _entries("consolidations", "from", "into"), "prunings": _entries("prunings", "name")}
 
 
+# ┌── 函数 def _extract_absorbed_into_declarations()
+# │  作用：Model-declared absorption targets from ``skill_manage(action='delete')`` calls — the authoritative classification
+# │  参数：tool_calls: List[Dict[str, Any]]
+# │  返回：Dict[str, Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _extract_absorbed_into_declarations(tool_calls: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Model-declared absorption targets from ``skill_manage(action='delete')`` calls — the authoritative classification
     signal (beats YAML parsing and substring heuristics). Returns ``{name: {"into": umbrella | "", "declared": True}}``;
@@ -558,9 +772,15 @@ def _extract_absorbed_into_declarations(tool_calls: List[Dict[str, Any]]) -> Dic
             name, target = args.get("name"), args.get("absorbed_into")
             if isinstance(name, str) and name.strip() and isinstance(target, str):
                 out[name.strip()] = {"into": target.strip(), "declared": True}
+    # ⤷ 出口 return：返回 out
     return out
 
 
+# ┌── 函数 def _reconcile_classification()
+# │  作用：Merge heuristic (tool-call evidence) with the model's structured block.
+# │  参数：removed: List[str], heuristic: Dict[str, List[Dict[str, Any]]], model_block: Dict[str, List[Dict[str, str]]], destinations: Set[str], absorbed_declarations: Optional[Dict[str, Dict[str, Any]]] = None
+# │  返回：Dict[str, List[Dict[str, Any]]]
+# └──────────────────────────────────────────────────────────────
 def _reconcile_classification(
     removed: List[str], heuristic: Dict[str, List[Dict[str, Any]]], model_block: Dict[str, List[Dict[str, str]]],
     destinations: Set[str], absorbed_declarations: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -604,9 +824,13 @@ def _reconcile_classification(
             _cons(hc["into"], "tool-call audit (model omitted from structured block)", evidence=hc.get("evidence", ""))
         else:
             _prune("model" if mp else "no-evidence fallback", mp.get("reason", "") if mp else "")
+    # ⤷ 出口 return：返回 {'consolidated': consolidated, 'pruned': pruned}
     return {"consolidated": consolidated, "pruned": pruned}
 
 
+# ┌── 类 class _RunDiff（继承自：NamedTuple）
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class _RunDiff(NamedTuple):
     after_names: Set[str]
     removed: List[str]
@@ -615,6 +839,11 @@ class _RunDiff(NamedTuple):
     pruned: List[Dict[str, Any]]
 
 
+# ┌── 函数 def _diff_and_classify()
+# │  作用：Diff the before/after skill sets and classify every removal: the model's YAML block carries intent + rationale,
+# │  参数：before_names: Set[str], after_names: Set[str], tool_calls: List[Dict[str, Any]], model_final: str
+# │  返回：_RunDiff
+# └──────────────────────────────────────────────────────────────
 def _diff_and_classify(before_names: Set[str], after_names: Set[str], tool_calls: List[Dict[str, Any]], model_final: str) -> _RunDiff:
     """Diff the before/after skill sets and classify every removal: the model's YAML block carries intent + rationale,
     the tool-call heuristic audits for hallucinated umbrellas/omissions, per-delete ``absorbed_into`` beats both."""
@@ -625,19 +854,32 @@ def _diff_and_classify(before_names: Set[str], after_names: Set[str], tool_calls
         model_block=_parse_structured_summary(model_final), destinations=set(after_names) | set(added),
         absorbed_declarations=_extract_absorbed_into_declarations(tool_calls),
     )
+    # ⤷ 出口 return：返回 _RunDiff(after_names, removed, added, classification['consol…
     return _RunDiff(after_names, removed, added, classification["consolidated"], classification["pruned"])
 
 
+# ┌── 函数 def _by_name()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：report: List[Dict[str, Any]]
+# │  返回：Dict[Any, Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _by_name(report: List[Dict[str, Any]]) -> Dict[Any, Dict[str, Any]]:
+    # ⤷ 出口 return：返回 {r.get('name'): r for r in report if isinstance(r, dict)}
     return {r.get("name"): r for r in report if isinstance(r, dict)}
 
 
+# ┌── 函数 def _build_rename_summary()
+# │  作用：The "where did my skills go?" lines appended to the user-visible ``final_summary``; "" when nothing was archived.
+# │  参数：before_names: Set[str], after_report: List[Dict[str, Any]], tool_calls: List[Dict[str, Any]], model_final: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _build_rename_summary(*, before_names: Set[str], after_report: List[Dict[str, Any]], tool_calls: List[Dict[str, Any]], model_final: str) -> str:
     """The "where did my skills go?" lines appended to the user-visible ``final_summary``; "" when nothing was archived.
     Capped at 10 entries so a big consolidation doesn't flood agent.log (full list is in REPORT.md); the pin hint
     appears only when a consolidation produced an umbrella."""
     after_names = set(_by_name(after_report))
     if not before_names - after_names:
+        # ⤷ 出口 return：返回 ''
         return ""
     diff = _diff_and_classify(before_names, after_names, tool_calls, model_final)
     SHOW = 10
@@ -651,33 +893,54 @@ def _build_rename_summary(*, before_names: Set[str], after_report: List[Dict[str
     umbrellas = sorted({e.get("into") for e in diff.consolidated if e.get("into")})
     if umbrellas:
         lines.append(f"keep an umbrella stable: hermes curator pin {umbrellas[0]}")
+    # ⤷ 出口 return：返回 '\n'.join(lines)
     return "\n".join(lines)
 
 
+# ┌── 函数 def _rewrite_cron_refs()
+# │  作用：Point cron jobs at the umbrella when the curator consolidated a skill they list — otherwise the scheduler fails to
+# │  参数：consolidated: List[Dict[str, Any]], pruned: List[Dict[str, Any]]
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _rewrite_cron_refs(consolidated: List[Dict[str, Any]], pruned: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Point cron jobs at the umbrella when the curator consolidated a skill they list — otherwise the scheduler fails to
     load it and the job runs without its instructions. Best-effort: a cron-module issue never breaks the curator."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         consolidated_map = {e["name"]: e["into"] for e in consolidated if isinstance(e, dict) and e.get("name") and e.get("into")}
         pruned_names = [e["name"] for e in pruned if isinstance(e, dict) and e.get("name")]
         if consolidated_map or pruned_names:
             from cron.jobs import rewrite_skill_refs
+            # ⤷ 出口 return：返回 rewrite_skill_refs(consolidated=consolidated_map, pruned=pru…
             return rewrite_skill_refs(consolidated=consolidated_map, pruned=pruned_names)
+        # ⤷ 出口 return：返回 {'rewrites': [], 'jobs_updated': 0, 'jobs_scanned': 0}
         return {"rewrites": [], "jobs_updated": 0, "jobs_scanned": 0}
     except Exception as e:
         logger.debug("Curator cron skill rewrite failed: %s", e, exc_info=True)
+        # ⤷ 出口 return：返回 {'rewrites': [], 'jobs_updated': 0, 'jobs_scanned': 0, 'erro…
         return {"rewrites": [], "jobs_updated": 0, "jobs_scanned": 0, "error": str(e)}
 
 
+# ┌── 函数 def _write_file()
+# │  作用：Best-effort write of *render()* (or the JSON dump of a non-callable payload);
+# │  参数：path: Path, label: str, render: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _write_file(path: Path, label: str, render: Any) -> None:
     """Best-effort write of *render()* (or the JSON dump of a non-callable payload);
     rendering runs inside the guard so a serialisation error is logged, not raised."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         path.write_text(render() if callable(render) else json.dumps(render, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     except Exception as e:
         logger.debug("Curator %s write failed: %s", label, e)
 
 
+# ┌── 函数 def _write_run_report()
+# │  作用：Write run.json + REPORT.md under logs/curator/{YYYYMMDD-HHMMSS}[-N]/ (N disambiguates a crash-rerun in the same
+# │  参数：started_at: datetime, elapsed_seconds: float, auto_counts: Dict[str, int], auto_summary: str, before_report: List[Dict[str, Any]], before_names: Set[str], after_report: List[Dict[str, Any]], llm_meta: Dict[str, Any]
+# │  返回：Optional[Path]
+# └──────────────────────────────────────────────────────────────
 def _write_run_report(
     *, started_at: datetime, elapsed_seconds: float, auto_counts: Dict[str, int], auto_summary: str,
     before_report: List[Dict[str, Any]], before_names: Set[str], after_report: List[Dict[str, Any]], llm_meta: Dict[str, Any],
@@ -689,10 +952,12 @@ def _write_run_report(
     while run_dir.exists():
         suffix += 1
         run_dir = root / f"{stamp}-{suffix}"
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         run_dir.mkdir(parents=True, exist_ok=False)
     except Exception as e:
         logger.debug("Curator run dir create failed: %s", e)
+        # ⤷ 出口 return：返回 None
         return None
     tool_calls = llm_meta.get("tool_calls", []) or []
     after_by_name, before_by_name = _by_name(after_report), _by_name(before_report)
@@ -720,31 +985,56 @@ def _write_run_report(
     _write_file(run_dir / "REPORT.md", "REPORT.md", lambda: _render_report_markdown(payload))
     if jobs_updated > 0:  # only when a job was touched, to keep no-op run dirs uncluttered
         _write_file(run_dir / "cron_rewrites.json", "cron_rewrites.json", cron_rewrites)
+    # ⤷ 出口 return：返回 run_dir
     return run_dir
 
 
+# ┌── 函数 def _reason_suffix()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：entry: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _reason_suffix(entry: Dict[str, Any]) -> str:
+    # ⤷ 出口 return：返回 f' — {reason}' if (reason := (entry.get('reason') or '').str…
     return f" — {reason}" if (reason := (entry.get("reason") or "").strip()) else ""
 
 
+# ┌── 函数 def _consolidated_lines()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：entry: Dict[str, Any]
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def _consolidated_lines(entry: Dict[str, Any]) -> List[str]:
     line = f"- `{entry.get('name', '?')}` → merged into `{entry.get('into', '?')}`" + _reason_suffix(entry)
     source = entry.get("source", "")
     if source and source.startswith("tool-call audit"):
         line += f"  _(detected via {source})_"  # model didn't enumerate this one — explains the missing rationale
+    # ⤷ 出口 return：返回 [line] + ([f"  ⚠ The curator's summary named `{entry['model_…
     return [line] + ([f"  ⚠ The curator's summary named `{entry['model_claimed_into']}` "
                       "as the umbrella but that skill doesn't exist post-run; showing the tool-call audit's finding instead."]
                      if entry.get("model_claimed_into") else [])
 
 
+# ┌── 函数 def _pruned_lines()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：entry: Any
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def _pruned_lines(entry: Any) -> List[str]:
     # Reconciler entries are dicts {name, source, reason}; tolerate bare strings (older format).
+    # ⤷ 出口 return：返回 [f"- `{entry.get('name', '?')}`" + _reason_suffix(entry) if …
     return [f"- `{entry.get('name', '?')}`" + _reason_suffix(entry) if isinstance(entry, dict) else f"- `{entry}`"]
 
 
+# ┌── 函数 def _cron_rewrite_lines()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：entry: Dict[str, Any]
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def _cron_rewrite_lines(entry: Dict[str, Any]) -> List[str]:
     job_name = entry.get("job_name") or entry.get("job_id") or "?"
     head = f"- `{job_name}`: `{', '.join(entry.get('before') or [])}` → `{', '.join(entry.get('after') or []) or '(none)'}`"
+    # ⤷ 出口 return：返回 [head] + [f'    - `{old}` → `{new}` (consolidated)' for old,…
     return ([head] + [f"    - `{old}` → `{new}` (consolidated)" for old, new in (entry.get("mapped") or {}).items()]
             + [f"    - `{name}` dropped (pruned)" for name in (entry.get("dropped") or [])])
 
@@ -769,6 +1059,11 @@ _REPORT_SECTIONS = (
 )
 
 
+# ┌── 函数 def _render_report_markdown()
+# │  作用：Render the human-readable REPORT.md.
+# │  参数：p: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _render_report_markdown(p: Dict[str, Any]) -> str:
     """Render the human-readable REPORT.md."""
     mins, secs = divmod(int(p.get("duration_seconds", 0) or 0), 60)
@@ -806,17 +1101,25 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
     lines += ["## Recovery\n", "- Restore an archived skill: `hermes curator restore <name>`",
               "- All archives live under `~/.hermes/skills/.archive/` and are recoverable by `mv`",
               "- See `run.json` in this directory for the full machine-readable record.", ""]
+    # ⤷ 出口 return：返回 '\n'.join(lines)
     return "\n".join(lines)
 
 
 # --- Orchestrator — spawn a forked AIAgent for the LLM review pass ---
 
+# ┌── 函数 def _render_candidate_list()
+# │  作用：Human/agent-readable list of curator-managed skills with usage stats.
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _render_candidate_list() -> str:
     """Human/agent-readable list of curator-managed skills with usage stats."""
     rows = skill_usage.curated_report()
     if not rows:
+        # ⤷ 出口 return：返回 'No curator-managed skills to review.'
         return "No curator-managed skills to review."
     cron_referenced = _cron_referenced_skills()
+    # ⤷ 出口 return：返回 '\n'.join([f'Curator-managed skills ({len(rows)}):\n'] + [f"…
     return "\n".join([f"Curator-managed skills ({len(rows)}):\n"] + [
         f"- {r['name']}  provenance={r.get('provenance', 'agent')}  state={r['state']}  "
         f"pinned={'yes' if r.get('pinned') else 'no'}  cron={'yes' if r['name'] in cron_referenced else 'no'}  "
@@ -826,26 +1129,50 @@ def _render_candidate_list() -> str:
     ])
 
 
+# ┌── 函数 def _llm_meta()
+# │  作用：Structured result of an LLM pass that did not run (skipped or failed).
+# │  参数：summary: str, error: Optional[str] = None
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _llm_meta(summary: str, error: Optional[str] = None) -> Dict[str, Any]:
     """Structured result of an LLM pass that did not run (skipped or failed)."""
+    # ⤷ 出口 return：返回 {'final': '', 'summary': summary, 'model': '', 'provider': '…
     return {"final": "", "summary": summary, "model": "", "provider": "", "tool_calls": [], "error": error}
 
 
+# ┌── 函数 def _notify()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：on_summary: Optional[Callable[[str], None]], message: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _notify(on_summary: Optional[Callable[[str], None]], message: str) -> None:
     if on_summary:
         with contextlib.suppress(Exception):
             on_summary(message)
 
 
+# ┌── 函数 def _safe_curated_report()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _safe_curated_report() -> List[Dict[str, Any]]:
     with contextlib.suppress(Exception):
+        # ⤷ 出口 return：返回 skill_usage.curated_report()
         return skill_usage.curated_report()
+    # ⤷ 出口 return：返回 []
     return []
 
 
+# ┌── 函数 def _consolidation_pass()
+# │  作用：The LLM half of a run: fork (unless no candidates), then append the rename map (`old-name → umbrella`) so users
+# │  参数：prefix: str, auto_summary: str, dry_run: bool, before_names: Set[str]
+# │  返回：tuple
+# └──────────────────────────────────────────────────────────────
 def _consolidation_pass(prefix: str, auto_summary: str, dry_run: bool, before_names: Set[str]) -> tuple:
     """The LLM half of a run: fork (unless no candidates), then append the rename map (`old-name → umbrella`) so users
     needn't dig into REPORT.md. Returns ``(final_summary, llm_meta)``; never raises."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         candidate_list = _render_candidate_list()
         if "No agent-created skills" in candidate_list:
@@ -862,6 +1189,7 @@ def _consolidation_pass(prefix: str, auto_summary: str, dry_run: bool, before_na
         logger.debug("Curator LLM pass failed: %s", e, exc_info=True)
         final_summary = f"{prefix}{auto_summary}; llm: error ({e})"
         llm_meta = _llm_meta(f"error ({e})", str(e))
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:  # best-effort: never block the run on formatting
         rename_lines = _build_rename_summary(
             before_names=before_names, after_report=skill_usage.curated_report(),
@@ -871,9 +1199,15 @@ def _consolidation_pass(prefix: str, auto_summary: str, dry_run: bool, before_na
             final_summary = f"{final_summary}\n{rename_lines}"
     except Exception as e:
         logger.debug("Curator rename summary build failed: %s", e, exc_info=True)
+    # ⤷ 出口 return：返回 (final_summary, llm_meta)
     return final_summary, llm_meta
 
 
+# ┌── 函数 def run_curator_review()
+# │  作用：Execute a single curator review pass: (1) automatic state transitions (no LLM); (2) if *consolidate* and there are
+# │  参数：on_summary: Optional[Callable[[str], None]] = None, synchronous: bool = False, dry_run: bool = False, consolidate: Optional[bool] = None
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def run_curator_review(
     on_summary: Optional[Callable[[str], None]] = None, synchronous: bool = False,
     dry_run: bool = False, consolidate: Optional[bool] = None,
@@ -891,6 +1225,7 @@ def run_curator_review(
     else:
         # Pre-mutation snapshot — best-effort, never blocks the run: a transient
         # disk issue must not silently disable the curator forever.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent import curator_backup
             snap = curator_backup.snapshot_skills(reason="pre-curator-run")
@@ -925,6 +1260,7 @@ def run_curator_review(
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
         state2 = {**load_state(), "last_run_duration_seconds": elapsed, "last_run_summary": final_summary}
         # Per-run report, best-effort; path recorded for `hermes curator status`.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             report_path = _write_run_report(
                 started_at=start, elapsed_seconds=elapsed, auto_counts=counts, auto_summary=auto_summary,
@@ -941,11 +1277,16 @@ def run_curator_review(
         _llm_pass()
     else:
         threading.Thread(target=_llm_pass, daemon=True, name="curator-review").start()
+    # ⤷ 出口 return：返回 {'started_at': start.isoformat(), 'auto_transitions': counts…
     return {"started_at": start.isoformat(), "auto_transitions": counts, "summary_so_far": auto_summary}
 
 
 # --- Provider/model resolution for the review fork ---
 
+# ┌── 类 class _ReviewRuntimeBinding（继承自：NamedTuple）
+# │  说明：Provider/model for the curator review fork plus per-slot overrides.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class _ReviewRuntimeBinding(NamedTuple):
     """Provider/model for the curator review fork plus per-slot overrides."""
     provider: str
@@ -955,14 +1296,25 @@ class _ReviewRuntimeBinding(NamedTuple):
     request_overrides: Dict[str, Any]
 
 
+# ┌── 函数 def _merge_request_overrides()
+# │  作用：Merge resolver metadata with task-local request body fields.
+# │  参数：runtime_overrides: Any, slot_extra_body: Any
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _merge_request_overrides(runtime_overrides: Any, slot_extra_body: Any) -> Dict[str, Any]:
     """Merge resolver metadata with task-local request body fields."""
     merged = dict(runtime_overrides or {})
     if isinstance(slot_extra_body, dict) and slot_extra_body:
         merged["extra_body"] = {**(merged.get("extra_body") or {}), **slot_extra_body}
+    # ⤷ 出口 return：返回 merged
     return merged
 
 
+# ┌── 函数 def _resolve_review_runtime()
+# │  作用：Curator is a regular auxiliary task slot (``auxiliary.curator.*``), so it rides the canonical aux-model plumbing. Precedence:
+# │  参数：cfg: Dict[str, Any]
+# │  返回：_ReviewRuntimeBinding
+# └──────────────────────────────────────────────────────────────
 def _resolve_review_runtime(cfg: Dict[str, Any]) -> _ReviewRuntimeBinding:
     """Curator is a regular auxiliary task slot (``auxiliary.curator.*``), so it rides the canonical aux-model plumbing. Precedence:
       1. ``auxiliary.curator.{provider,model}`` when both are set non-auto
@@ -971,27 +1323,37 @@ def _resolve_review_runtime(cfg: Dict[str, Any]) -> _ReviewRuntimeBinding:
     Non-empty slot ``api_key``/``base_url`` are returned as explicit overrides so ``resolve_runtime_provider`` doesn't reuse the main chat credential chain."""
     def _slot(provider: str, model: str, slot: Dict[str, Any]) -> _ReviewRuntimeBinding:
         api_key, base_url = ((str(v).strip() or None) if v is not None else None for v in (slot.get("api_key"), slot.get("base_url")))
+        # ⤷ 出口 return：返回 _ReviewRuntimeBinding(provider, model, api_key, base_url, _m…
         return _ReviewRuntimeBinding(provider, model, api_key, base_url, _merge_request_overrides({}, slot.get("extra_body")))
 
     task = _subdict(cfg, "auxiliary", "curator")
     task_provider = (task.get("provider") or "").strip() or None
     task_model = (task.get("model") or "").strip() or None
     if task_provider and task_provider != "auto" and task_model:
+        # ⤷ 出口 return：返回 _slot(task_provider, task_model, task)
         return _slot(task_provider, task_model, task)
     legacy = _subdict(cfg, "curator", "auxiliary")
     if legacy.get("provider") and legacy.get("model"):
         logger.info("curator: using deprecated curator.auxiliary.{provider,model} config — please migrate to auxiliary.curator.{provider,model}")
+        # ⤷ 出口 return：返回 _slot(str(legacy['provider']), str(legacy['model']), legacy)
         return _slot(str(legacy["provider"]), str(legacy["model"]), legacy)
     main = _subdict(cfg, "model")
+    # ⤷ 出口 return：返回 _ReviewRuntimeBinding(main.get('provider') or 'auto', main.g…
     return _ReviewRuntimeBinding(main.get("provider") or "auto", main.get("default") or main.get("model") or "", None, None, {})
 
 
+# ┌── 函数 def _resolve_review_provider()
+# │  作用：``(runtime_provider, model_name, provider_name, request_overrides)`` resolved the way the CLI does: AIAgent() without
+# │  参数：无
+# │  返回：tuple
+# └──────────────────────────────────────────────────────────────
 def _resolve_review_provider() -> tuple:
     """``(runtime_provider, model_name, provider_name, request_overrides)`` resolved the way the CLI does: AIAgent() without
     explicit provider/model hits an auto-resolution path that fails for OAuth-only providers and pooled credentials
     (HTTP 400 "No models provided"). Never raises."""
     rp: Dict[str, Any] = {}
     overrides, provider, model_name = {}, None, ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config_readonly
         from hermes_cli.runtime_provider import resolve_runtime_provider
@@ -1007,21 +1369,30 @@ def _resolve_review_provider() -> tuple:
             model_name = rp["model"].strip()
     except Exception as e:
         logger.debug("Curator provider resolution failed: %s", e, exc_info=True)
+    # ⤷ 出口 return：返回 (rp, model_name, provider, overrides)
     return rp, model_name, provider, overrides
 
 
+# ┌── 函数 def _run_llm_review()
+# │  作用：Spawn an AIAgent fork on the review prompt. Returns ``final`` (untruncated response), ``summary`` (240-char cap),
+# │  参数：prompt: str
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _run_llm_review(prompt: str) -> Dict[str, Any]:
     """Spawn an AIAgent fork on the review prompt. Returns ``final`` (untruncated response), ``summary`` (240-char cap),
     ``model``/``provider`` (what ran), ``tool_calls`` ([{name, arguments}], truncated) and ``error``. Never raises."""
     result_meta: Dict[str, Any] = _llm_meta("")
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from run_agent import AIAgent
     except Exception as e:
         result_meta["error"] = result_meta["summary"] = f"AIAgent import failed: {e}"
+        # ⤷ 出口 return：返回 result_meta
         return result_meta
     rp, model_name, provider, request_overrides = _resolve_review_provider()
     result_meta["model"], result_meta["provider"] = model_name, provider or ""
     review_agent = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         agent_kwargs: Dict[str, Any] = {}
         acp_command = rp.get("command")
@@ -1067,18 +1438,28 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
         if review_agent is not None:
             with contextlib.suppress(Exception):
                 review_agent.close()
+    # ⤷ 出口 return：返回 result_meta
     return result_meta
 
 
 # --- Public entrypoint for the session-start hook ---
 
+# ┌── 函数 def maybe_run_curator()
+# │  作用：Best-effort: run a curator pass if all gates pass. Returns the result dict if a pass was started, else None. Never raises.
+# │  参数：idle_for_seconds: Optional[float] = ..., on_summary: Optional[Callable[[str], None]] = ...
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def maybe_run_curator(*, idle_for_seconds: Optional[float] = None, on_summary: Optional[Callable[[str], None]] = None) -> Optional[Dict[str, Any]]:
     """Best-effort: run a curator pass if all gates pass. Returns the result dict if a pass was started, else None. Never raises."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Idle gating: only enforce when the caller provided a measurement.
         if not should_run_now() or (idle_for_seconds is not None and idle_for_seconds < get_min_idle_hours() * 3600.0):
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 run_curator_review(on_summary=on_summary)
         return run_curator_review(on_summary=on_summary)
     except Exception as e:
         logger.debug("maybe_run_curator failed: %s", e, exc_info=True)
+        # ⤷ 出口 return：返回 None
         return None

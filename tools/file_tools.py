@@ -5,6 +5,31 @@ Companions: ``file_tools_paths`` (task-aware resolution), ``file_tools_write_gua
 (write-side guards), ``file_tools_read_tracking`` (per-task dedup / loop-detection /
 staleness state).
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：tools/file_tools.py（约 1303 行）
+# 地位：文件操作类的工具：read_file / write_file / patch / search_files。
+#
+# 四个主工具函数：
+#   read_file_tool(path, offset, limit, task_id)   读文件（带字符预算，太大会截断）
+#   write_file_tool(path, content, ...)            写文件
+#   patch_tool(mode, path, old_string, new_string, replace_all, patch, ...)
+#                                                  打补丁（字符串替换，或 V4A patch 格式）
+#   search_tool(pattern, target, path, file_glob, limit, output_mode, ...)
+#                                                  搜索（支持正则、glob、上下文）
+#
+# 重要的工程考虑：
+#   - 字符预算：_get_max_read_chars / _truncate_to_char_budget —— 防止一个巨文件撑爆上下文
+#   - 循环检测：file_tools_read_tracking 模块记录每个任务的读取历史，
+#     防止 Agent 反复读同一个文件（_dedup_stub_or_block）
+#   - 路径解析：file_tools_paths 模块按任务解析路径（因为可能跑在 docker/ssh 里）
+#   - 写保护：file_tools_write_guards 模块做写操作前的检查
+#   - 设备文件拦截：_is_blocked_device_path（防止读写 /dev/ 下的危险设备）
+#
+# 新手练习建议：照着这四个函数，自己写一个简化版的 read_file / write_file 工具。
+# ==========================================================================
+#
 
 import base64
 import errno
@@ -45,19 +70,31 @@ _EXPECTED_WRITE_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS}
 # Read-size guard. Model-agnostic, so characters proxy tokens: 100K chars is
 # ~25-35K tokens across typical tokenisers. Configurable: file_read_max_chars.
 _DEFAULT_MAX_READ_CHARS = 100_000
+# ┌── 函数 def _get_max_read_chars()
+# │  作用：Return ``file_read_max_chars`` from config.yaml (default on missing/invalid). No module
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _get_max_read_chars() -> int:
     """Return ``file_read_max_chars`` from config.yaml (default on missing/invalid). No module
     cache: ``load_config_readonly`` is already mtime+path cached, and a process-lifetime slot
     would pin the launch profile's value under the multiplexed gateway."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config_readonly
         val = load_config_readonly().get("file_read_max_chars")
     except Exception:
         val = None
     valid = isinstance(val, (int, float)) and val > 0
+    # ⤷ 出口 return：返回 int(val) if valid else _DEFAULT_MAX_READ_CHARS
     return int(val) if valid else _DEFAULT_MAX_READ_CHARS
 
 
+# ┌── 函数 def _truncate_to_char_budget()
+# │  作用：Trim line-numbered ``read_file`` content to the last COMPLETE line within *max_chars*.
+# │  参数：content: str, max_chars: int
+# │  返回：tuple[str, int, bool]
+# └──────────────────────────────────────────────────────────────
 def _truncate_to_char_budget(content: str, max_chars: int) -> tuple[str, int, bool]:
     """Trim line-numbered ``read_file`` content to the last COMPLETE line within *max_chars*.
 
@@ -72,6 +109,7 @@ def _truncate_to_char_budget(content: str, max_chars: int) -> tuple[str, int, bo
     continuation.
     """
     if len(content) <= max_chars:
+        # ⤷ 出口 return：返回 (content, content.count('\n') + 1 if content else 0, False)
         return content, (content.count("\n") + 1 if content else 0), False
 
     lines = content.split("\n")
@@ -85,9 +123,15 @@ def _truncate_to_char_budget(content: str, max_chars: int) -> tuple[str, int, bo
         running += addition
     if not kept:
         kept.append(lines[0][:max_chars])
+    # ⤷ 出口 return：返回 ('\n'.join(kept), len(kept), True)
     return "\n".join(kept), len(kept), True
 
 
+# ┌── 函数 def _apply_char_budget()
+# │  作用：Trim *content* to the char budget, annotate *result_dict* with the
+# │  参数：result_dict: dict, content: str, offset: int, total_lines, max_chars: int
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _apply_char_budget(result_dict: dict, content: str, offset: int, total_lines, max_chars: int) -> str:
     """Trim *content* to the char budget, annotate *result_dict* with the
     continuation hint, and return the trimmed text."""
@@ -105,6 +149,7 @@ def _apply_char_budget(result_dict: dict, content: str, offset: int, total_lines
         result_dict["hint"] += (
             " Note: the first line alone exceeded the budget and was "
             "clamped mid-line; its remainder is not retrievable via offset.")
+    # ⤷ 出口 return：返回 trimmed
     return trimmed
 
 
@@ -126,16 +171,25 @@ _BLOCKED_PROC_SUFFIXES = (
     "/mem", "/auxv", "/pagemap")
 
 
+# ┌── 函数 def _file_ops_uses_host_paths()
+# │  作用：True when *file_ops* targets the host filesystem (only then may we stat paths
+# │  参数：file_ops
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _file_ops_uses_host_paths(file_ops) -> bool:
     """True when *file_ops* targets the host filesystem (only then may we stat paths
     or rewrite V4A headers to host-absolute paths; sandboxes have their own namespace)."""
     env = getattr(file_ops, "env", None)
     if env is None:
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         from tools.environments.local import LocalEnvironment
     except ImportError:
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 isinstance(env, LocalEnvironment)
     return isinstance(env, LocalEnvironment)
 
 
@@ -146,6 +200,11 @@ _V4A_SINGLE_HEADER_RE = re.compile(r'^(\*\*\*\s*(Update|Add|Delete)\s+File:\s*)(
 _V4A_MOVE_HEADER_RE = re.compile(r'^(\*\*\*\s*Move\s+File:\s*)(.+?)\s*->\s*(.+)$', re.MULTILINE)
 
 
+# ┌── 函数 def _rewrite_v4a_patch_paths_for_host()
+# │  作用：Rewrite V4A file headers to the resolved host paths (host backends only).
+# │  参数：patch: str, path_to_resolved: dict, file_ops
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _rewrite_v4a_patch_paths_for_host(patch: str, path_to_resolved: dict, file_ops) -> str:
     """Rewrite V4A file headers to the resolved host paths (host backends only).
 
@@ -154,24 +213,39 @@ def _rewrite_v4a_patch_paths_for_host(patch: str, path_to_resolved: dict, file_o
     (which can differ — the git-worktree cwd bug).
     """
     if not _file_ops_uses_host_paths(file_ops):
+        # ⤷ 出口 return：返回 patch
         return patch
 
     def _res(raw: str) -> str:
         raw = raw.strip()
+        # ⤷ 出口 return：返回 path_to_resolved.get(raw) or raw
         return path_to_resolved.get(raw) or raw
 
     patch = _V4A_SINGLE_HEADER_RE.sub(lambda m: f"{m.group(1)}{_res(m.group(3))}", patch)
+    # ⤷ 出口 return：返回 _V4A_MOVE_HEADER_RE.sub(lambda m: f'{m.group(1)}{_res(m.grou…
     return _V4A_MOVE_HEADER_RE.sub(lambda m: f"{m.group(1)}{_res(m.group(2))} -> {_res(m.group(3))}", patch)
 
 
+# ┌── 函数 def _is_blocked_device_path()
+# │  作用：Return True for concrete device/fd/proc paths that can hang reads or leak process state.
+# │  参数：path: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_blocked_device_path(path: str) -> bool:
     """Return True for concrete device/fd/proc paths that can hang reads or leak process state."""
     normalized = os.path.normpath(_expand_tilde(path))
     if normalized in _BLOCKED_DEVICE_PATHS:
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 normalized.startswith('/proc/') and normalized.endswith(_BLO…
     return normalized.startswith("/proc/") and normalized.endswith(_BLOCKED_PROC_SUFFIXES)
 
 
+# ┌── 函数 def _is_blocked_device()
+# │  作用：True if the path (literal, any symlink hop, or final realpath) is a blocked device.
+# │  参数：filepath: str, base_dir: str | Path | None = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_blocked_device(filepath: str, base_dir: str | Path | None = None) -> bool:
     """True if the path (literal, any symlink hop, or final realpath) is a blocked device.
 
@@ -183,11 +257,13 @@ def _is_blocked_device(filepath: str, base_dir: str | Path | None = None) -> boo
         expanded = os.path.join(os.fspath(base_dir), expanded)
     normalized = os.path.normpath(expanded)
     if _is_blocked_device_path(normalized):
+        # ⤷ 出口 return：返回 True
         return True
 
     seen: set[str] = set()
     current = normalized
     for _ in range(20):
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             target = os.readlink(current)
         except OSError:
@@ -196,19 +272,28 @@ def _is_blocked_device(filepath: str, base_dir: str | Path | None = None) -> boo
             target = os.path.join(os.path.dirname(current), target)
         target = os.path.normpath(target)
         if _is_blocked_device_path(target):
+            # ⤷ 出口 return：返回 True
             return True
         if target in seen:
             break
         seen.add(target)
         current = target
 
+    # ⤷ 关键分支 try/except：捕获 (OSError, ValueError)，出错走兜底而不是崩溃。
     try:
         resolved = os.path.normpath(os.path.realpath(normalized))
     except (OSError, ValueError):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 _is_blocked_device_path(resolved)
     return _is_blocked_device_path(resolved)
 
 
+# ┌── 函数 def _filter_read_blocked_search_results()
+# │  作用：Remove credential/cache/env paths from a SearchResult in-place; return the omitted count.
+# │  参数：result, task_id: str = 'default'
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _filter_read_blocked_search_results(result, task_id: str = "default") -> int:
     """Remove credential/cache/env paths from a SearchResult in-place; return the omitted count.
 
@@ -218,14 +303,18 @@ def _filter_read_blocked_search_results(result, task_id: str = "default") -> int
     omitted = 0
 
     def _allowed(path: str) -> bool:
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal omitted
+        # ⤷ 关键分支 try/except：捕获 (OSError, ValueError, RuntimeError)，出错走兜底而不是崩溃。
         try:
             target = str(_resolve_path_for_task(path, task_id))
         except (OSError, ValueError, RuntimeError):
             target = path
         if get_read_block_error(target):
             omitted += 1
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 出口 return：返回 True
         return True
 
     if getattr(result, "matches", None):
@@ -234,11 +323,18 @@ def _filter_read_blocked_search_results(result, task_id: str = "default") -> int
         result.files = [f for f in result.files if _allowed(f)]
     if getattr(result, "counts", None):
         result.counts = {f: c for f, c in result.counts.items() if _allowed(f)}
+    # ⤷ 出口 return：返回 omitted
     return omitted
 
 
+# ┌── 函数 def _is_expected_write_exception()
+# │  作用：Return True for expected write denials that should not hit error logs.
+# │  参数：exc: Exception
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_expected_write_exception(exc: Exception) -> bool:
     """Return True for expected write denials that should not hit error logs."""
+    # ⤷ 出口 return：返回 isinstance(exc, PermissionError) or (isinstance(exc, OSError…
     return isinstance(exc, PermissionError) or (
         isinstance(exc, OSError) and exc.errno in _EXPECTED_WRITE_ERRNOS)
 
@@ -248,6 +344,11 @@ _file_ops_lock = threading.Lock()
 _file_ops_cache: dict = {}
 
 
+# ┌── 函数 def _create_terminal_env_for_file_ops()
+# │  作用：Build the terminal environment for *task_id* via the shared ``_create_configured_env``,
+# │  参数：raw_task_id: str, task_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _create_terminal_env_for_file_ops(raw_task_id: str, task_id: str):
     """Build the terminal environment for *task_id* via the shared ``_create_configured_env``,
     so a file tool that runs before any terminal command still gets the configured backend."""
@@ -259,6 +360,7 @@ def _create_terminal_env_for_file_ops(raw_task_id: str, task_id: str):
     config = _get_env_config()
     env_type = config["env_type"]
     overrides = resolve_task_overrides(raw_task_id)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         recorded_cwd = get_session_cwd(raw_task_id)
     except Exception:
@@ -287,9 +389,15 @@ def _create_terminal_env_for_file_ops(raw_task_id: str, task_id: str):
         host_cwd=_resolve_task_host_cwd(config, raw_task_id),
         local_config={"persistent": config.get("local_persistent", False)} if env_type == "local" else None,
     )
+    # ⤷ 出口 return：返回 (env_type, terminal_env)
     return env_type, terminal_env
 
 
+# ┌── 函数 def _get_file_ops()
+# │  作用：Get or create ShellFileOperations for the task's terminal environment.
+# │  参数：task_id: str = 'default'
+# │  返回：ShellFileOperations
+# └──────────────────────────────────────────────────────────────
 def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
     """Get or create ShellFileOperations for the task's terminal environment.
 
@@ -313,6 +421,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
         with _env_lock:
             if task_id in _active_environments:
                 _last_activity[task_id] = time.time()
+                # ⤷ 出口 return：返回 cached
                 return cached
             # Env was cleaned up: rescue its cwd into the session record FILL-ONLY
             # (``cached.cwd`` is the SHARED env's cwd, not this session's own).
@@ -324,6 +433,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
             # session that has no record, but never overwrite a record the session wrote for itself.
             old_cwd = getattr(cached, "cwd", None)
             if old_cwd:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     if get_session_cwd(raw_task_id) is None:
                         record_session_cwd(raw_task_id, old_cwd)
@@ -352,9 +462,15 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
     file_ops = ShellFileOperations(terminal_env)
     with _file_ops_lock:
         _file_ops_cache[task_id] = file_ops
+    # ⤷ 出口 return：返回 file_ops
     return file_ops
 
 
+# ┌── 函数 def clear_file_ops_cache()
+# │  作用：Clear file-operation state for a finished task, or all tasks.
+# │  参数：task_id: str = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def clear_file_ops_cache(task_id: str = None):
     """Clear file-operation state for a finished task, or all tasks."""
     with _file_ops_lock:
@@ -388,6 +504,11 @@ _SPECIAL_FILE_KINDS = (
     (stat.S_ISBLK, "a block device"))
 
 
+# ┌── 函数 def _special_file_kind()
+# │  作用：Human name for a non-regular file type that would hang a read, else None.
+# │  参数：path
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _special_file_kind(path) -> str | None:
     """Human name for a non-regular file type that would hang a read, else None.
 
@@ -395,16 +516,25 @@ def _special_file_kind(path) -> str | None:
     hangs like ``/dev/zero`` but has no recognizable name. Host filesystems
     only; unstattable paths return None and flow to the normal read path.
     """
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
         mode = os.stat(os.fspath(path)).st_mode  # follows symlinks, matching a real read
     except OSError:
+        # ⤷ 出口 return：返回 None
         return None
     if stat.S_ISREG(mode) or stat.S_ISDIR(mode):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 next((label for predicate, label in _SPECIAL_FILE_KINDS if p…
     return next((label for predicate, label in _SPECIAL_FILE_KINDS if predicate(mode)),
                 "a special (non-regular) file")
 
 
+# ┌── 函数 def _read_extracted_document()
+# │  作用：Render an extractable document (.docx/.xlsx/.pdf/...) as paginated text.
+# │  参数：path: str, _resolved, offset: int, limit: int, task_id: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _read_extracted_document(path: str, _resolved, offset: int, limit: int, task_id: str) -> str | None:
     """Render an extractable document (.docx/.xlsx/.pdf/...) as paginated text.
 
@@ -417,11 +547,14 @@ def _read_extracted_document(path: str, _resolved, offset: int, limit: int, task
         extract_document_bytes, is_extractable_document)
 
     if not is_extractable_document(str(_resolved)):
+        # ⤷ 出口 return：返回 None
         return None
     file_ops = _get_file_ops(task_id)
+    # ⤷ 关键分支 try/except：捕获 (ExtractionError, ValueError, base64.binascii.Error)，出错走兜底而不是崩溃。
     try:
         binary = file_ops.read_file_bytes(str(_resolved), max_bytes=MAX_DOCUMENT_BYTES)
         if binary.error or binary.base64_content is None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ExtractionError(binary.error or "Document bytes unavailable")
         document_bytes = base64.b64decode(binary.base64_content, validate=True)
         extracted_text = extract_document_bytes(document_bytes, str(_resolved))
@@ -434,10 +567,12 @@ def _read_extracted_document(path: str, _resolved, offset: int, limit: int, task
             _doc_ext in EXTRACTABLE_EXTENSIONS and _doc_ext != ".ipynb")
         if (_binary_doc and isinstance(exc, ExtractionError)
                 and not str(exc).startswith("Unsupported document type")):
+            # ⤷ 出口 return：返回 tool_error(f"Cannot read '{path}' ({_doc_ext}): document ext…
             return tool_error(
                 f"Cannot read '{path}' ({_doc_ext}): document "
                 f"extraction failed — {exc}. Use terminal utilities "
                 "to inspect or convert the file.")
+        # ⤷ 出口 return：返回 None
         return None
 
     lines = extracted_text.splitlines()
@@ -459,9 +594,15 @@ def _read_extracted_document(path: str, _resolved, offset: int, limit: int, task
         _apply_char_budget(result_dict, result_dict["content"], offset, total_lines, max_chars)
     if result_dict["content"]:
         result_dict["content"] = redact_sensitive_text(result_dict["content"], file_read=True)
+    # ⤷ 出口 return：返回 json.dumps(result_dict, ensure_ascii=False)
     return json.dumps(result_dict, ensure_ascii=False)
 
 
+# ┌── 函数 def _dedup_stub_or_block()
+# │  作用：Return the "unchanged" stub for a repeated identical read, escalating to a
+# │  参数：task_data: dict, dedup_key: tuple, path: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _dedup_stub_or_block(task_data: dict, dedup_key: tuple, path: str) -> str:
     """Return the "unchanged" stub for a repeated identical read, escalating to a
     hard BLOCK after 2 stubs so weak tool-followers don't loop forever."""
@@ -471,6 +612,7 @@ def _dedup_stub_or_block(task_data: dict, dedup_key: tuple, path: str) -> str:
         _cap_read_tracker_data(task_data)
 
     if hits >= 2:
+        # ⤷ 出口 return：返回 tool_error(f'BLOCKED: You have called read_file on this exac…
         return tool_error(
             f"BLOCKED: You have called read_file on this "
             f"exact region {hits + 1} times and the file "
@@ -482,6 +624,7 @@ def _dedup_stub_or_block(task_data: dict, dedup_key: tuple, path: str) -> str:
             path=path,
             already_read=hits + 1)
 
+    # ⤷ 出口 return：返回 json.dumps({'status': 'unchanged', 'message': _READ_DEDUP_ST…
     return json.dumps({
         "status": "unchanged",
         "message": _READ_DEDUP_STATUS_MESSAGE,
@@ -491,6 +634,11 @@ def _dedup_stub_or_block(task_data: dict, dedup_key: tuple, path: str) -> str:
     }, ensure_ascii=False)
 
 
+# ┌── 函数 def _record_successful_read()
+# │  作用：Bookkeeping after a real (non-stub) read; returns the consecutive-read count.
+# │  参数：task_data: dict, task_id: str, path: str, resolved_str: str, offset: int, limit: int, dedup_key: tuple, partial: bool
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_str: str,
                             offset: int, limit: int, dedup_key: tuple, *, partial: bool) -> int:
     """Bookkeeping after a real (non-stub) read; returns the consecutive-read count.
@@ -505,6 +653,7 @@ def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_s
         task_data["dedup_generation_reads"].add(dedup_key)
         task_data["read_history"].add((path, offset, limit))
         count = _bump_consecutive(task_data, ("read", path, offset, limit))
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             _mtime_now = os.path.getmtime(resolved_str)
             task_data["dedup"][dedup_key] = _mtime_now
@@ -513,12 +662,14 @@ def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_s
             pass
         _cap_read_tracker_data(task_data)
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         file_state.record_read(task_id, resolved_str, partial=partial)
     except Exception:
         logger.debug("file_state.record_read failed", exc_info=True)
 
     if not partial:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Background-review read-before-write guard integration (#61521): when the self-improvement
             # review fork reads a skill file with read_file (now whitelisted dispatch-side), register the
@@ -530,9 +681,15 @@ def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_s
             mark_background_review_skill_read(Path(resolved_str))
         except Exception:
             logger.debug("background-review read-mark failed", exc_info=True)
+    # ⤷ 出口 return：返回 count
     return count
 
 
+# ┌── 函数 def read_file_tool()
+# │  作用：Read a file with pagination and line numbers.
+# │  参数：path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, task_id: str = 'default'
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, task_id: str = "default") -> str:
     """Read a file with pagination and line numbers.
 
@@ -540,11 +697,13 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
     guard (host only) → document extraction → binary-extension guard → Hermes
     internal denylist → negative-result cache → dedup stub → real read.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         offset, limit = normalize_read_pagination(offset, limit)
 
         device_base = None if Path(path).expanduser().is_absolute() else _resolve_base_dir(task_id)
         if _is_blocked_device(path, base_dir=device_base):
+            # ⤷ 出口 return：返回 tool_error(f"Cannot read '{path}': this is a device file tha…
             return tool_error(
                 f"Cannot read '{path}': this is a device file that would "
                 "block or produce infinite output.")
@@ -565,11 +724,13 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
 
         extracted = _read_extracted_document(path, _resolved, offset, limit, task_id)
         if extracted is not None:
+            # ⤷ 出口 return：返回 extracted
             return extracted
 
         # The extension is a claim, so this message names only the extension;
         # the content-sniffing path names the actual magic-byte type.
         if has_binary_extension(str(_resolved)):
+            # ⤷ 出口 return：返回 tool_error(f"Cannot read binary file '{path}' ({_resolved.su…
             return tool_error(
                 f"Cannot read binary file '{path}' ({_resolved.suffix.lower()}). "
                 "Use vision_analyze for images, or terminal to inspect binary files.")
@@ -579,6 +740,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
         # resolve() uses the process cwd and would miss a relative "auth.json".
         block_error = get_read_block_error(str(_resolved))
         if block_error:
+            # ⤷ 出口 return：返回 tool_error(block_error)
             return tool_error(block_error)
 
         resolved_str = str(_resolved)
@@ -645,6 +807,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
                 f"You have read this exact file region {count} times consecutively. "
                 "The content has not changed since your last read. Use the information you already have. "
                 "If you are stuck in a loop, stop reading and proceed with writing or responding.")
+        # ⤷ 出口 return：返回 json.dumps(result_dict, ensure_ascii=False)
         return json.dumps(result_dict, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e))
@@ -652,14 +815,27 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
 
 # ── Shared write/patch plumbing ──────────────────────────────────────────
 
+# ┌── 函数 def _resolve_or_none()
+# │  作用：Task-resolved path string, or None when resolution fails for any reason.
+# │  参数：filepath: str, task_id: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _resolve_or_none(filepath: str, task_id: str) -> str | None:
     """Task-resolved path string, or None when resolution fails for any reason."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 str(_resolve_path_for_task(filepath, task_id))
         return str(_resolve_path_for_task(filepath, task_id))
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _write_precheck_error()
+# │  作用：Run the shared write/patch guards in order; return the first error string.
+# │  参数：paths: list[str], content_paths: list[str], task_id: str, cross_profile: bool
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _write_precheck_error(paths: list[str], content_paths: list[str], task_id: str,
                           cross_profile: bool) -> str | None:
     """Run the shared write/patch guards in order; return the first error string.
@@ -672,15 +848,23 @@ def _write_precheck_error(paths: list[str], content_paths: list[str], task_id: s
         err = _check_sensitive_path(p, task_id) or (
             None if cross_profile else _check_cross_profile_path(p, task_id))
         if err:
+            # ⤷ 出口 return：返回 err
             return err
     for p in content_paths:
         err = _check_binary_document_write(p, task_id)
         if err:
+            # ⤷ 出口 return：返回 err
             return err
+    # ⤷ 出口 return：返回 _check_protected_instruction_write(paths, task_id) or _check…
     return (_check_protected_instruction_write(paths, task_id)
             or _check_approval_required_write(paths, task_id))
 
 
+# ┌── 函数 def _edit_warnings()
+# │  作用：One pre-edit warning per path, in priority order: cross-agent registry
+# │  参数：paths: list[str], path_to_resolved: dict, task_id: str
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _edit_warnings(paths: list[str], path_to_resolved: dict, task_id: str) -> list[str]:
     """One pre-edit warning per path, in priority order: cross-agent registry
     (names the sibling subagent) > per-task staleness > workspace divergence
@@ -693,9 +877,15 @@ def _edit_warnings(paths: list[str], path_to_resolved: dict, task_id: str) -> li
             w = _path_resolution_warning(p, Path(r), task_id)
         if w:
             warnings.append(w)
+    # ⤷ 出口 return：返回 warnings
     return warnings
 
 
+# ┌── 函数 def _note_edited()
+# │  作用：Post-success bookkeeping: verification-stale marker, then per path refresh
+# │  参数：task_id: str, paths: list[str], path_to_resolved: dict, session_id: str | None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _note_edited(task_id: str, paths: list[str], path_to_resolved: dict, session_id: str | None) -> None:
     """Post-success bookkeeping: verification-stale marker, then per path refresh
     the read stamp (no false staleness on the next edit) and record the write."""
@@ -718,6 +908,11 @@ _REWRITE_HINT_MIN_UNCHANGED = 0.80
 _REWRITE_HINT_MAX_CHARS = 400_000
 
 
+# ┌── 函数 def _whole_file_rewrite_hint()
+# │  作用：Return a hint when ``new_content`` mostly re-sends what is already at ``resolved``.
+# │  参数：task_id: str, resolved: str | None, new_content: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _whole_file_rewrite_hint(task_id: str, resolved: str | None, new_content: str) -> str | None:
     """Return a hint when ``new_content`` mostly re-sends what is already at ``resolved``.
 
@@ -726,7 +921,9 @@ def _whole_file_rewrite_hint(task_id: str, resolved: str | None, new_content: st
     different file, and a host FIFO at that path would block the write lock forever. Bounded size
     and a line multiset comparison (linear) instead of a sequence diff (quadratic on repeated lines)."""
     if not resolved or not (_REWRITE_HINT_MIN_CHARS <= len(new_content) <= _REWRITE_HINT_MAX_CHARS):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         result = _get_file_ops(task_id).read_file_raw(resolved)
         old = getattr(result, "content", None)
@@ -735,16 +932,20 @@ def _whole_file_rewrite_hint(task_id: str, resolved: str | None, new_content: st
     except Exception:
         return None
     if not (_REWRITE_HINT_MIN_CHARS <= len(old) <= _REWRITE_HINT_MAX_CHARS):
+        # ⤷ 出口 return：返回 None
         return None
     old_lines, new_lines = old.splitlines(), new_content.splitlines()
     if not old_lines:
+        # ⤷ 出口 return：返回 None
         return None
     from collections import Counter
     unchanged = sum((Counter(old_lines) & Counter(new_lines)).values())
     ratio = unchanged / max(len(old_lines), len(new_lines))
     if ratio < _REWRITE_HINT_MIN_UNCHANGED:
+        # ⤷ 出口 return：返回 None
         return None
     changed = max(len(old_lines), len(new_lines)) - unchanged
+    # ⤷ 出口 return：返回 f'{unchanged:,} of {len(new_lines):,} lines were already on …
     return (
         f"{unchanged:,} of {len(new_lines):,} lines were already on disk ({ratio:.0%} unchanged); ~{changed:,} "
         f"line(s) actually changed. Re-sending a {len(new_content):,}-char file costs output tokens for every "
@@ -752,6 +953,11 @@ def _whole_file_rewrite_hint(task_id: str, resolved: str | None, new_content: st
     )
 
 
+# ┌── 函数 def write_file_tool()
+# │  作用：Write content to a file.
+# │  参数：path: str, content: str, task_id: str = 'default', cross_profile: bool = False, session_id: str | None = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def write_file_tool(path: str, content: str, task_id: str = "default",
                     cross_profile: bool = False,
                     session_id: str | None = None) -> str:
@@ -772,7 +978,9 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
                "Strip read_file line-number prefixes or reconstruct the intended "
                "file contents before writing.")
     if err:
+        # ⤷ 出口 return：返回 tool_error(err)
         return tool_error(err)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Resolution failure falls back to the legacy unlocked path (the write
         # still proceeds; the per-task staleness check still runs).
@@ -800,15 +1008,22 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
                 if _resolved:
                     result_dict["files_modified"] = [_resolved]
                 _note_edited(task_id, [path], path_to_resolved, session_id)
+        # ⤷ 出口 return：返回 json.dumps(result_dict, ensure_ascii=False)
         return json.dumps(result_dict, ensure_ascii=False)
     except Exception as e:
         if _is_expected_write_exception(e):
             logger.debug("write_file expected denial: %s: %s", type(e).__name__, e)
         else:
             logger.error("write_file error: %s: %s", type(e).__name__, e, exc_info=True)
+        # ⤷ 出口 return：返回 tool_error(str(e))
         return tool_error(str(e))
 
 
+# ┌── 函数 def _collect_v4a_header_paths()
+# │  作用：Extract every path named in V4A headers, rejecting ``..`` traversal.
+# │  参数：patch: str
+# │  返回：tuple[list[str], list[str]] | str
+# └──────────────────────────────────────────────────────────────
 def _collect_v4a_header_paths(patch: str) -> tuple[list[str], list[str]] | str:
     """Extract every path named in V4A headers, rejecting ``..`` traversal.
 
@@ -826,6 +1041,7 @@ def _collect_v4a_header_paths(patch: str) -> tuple[list[str], list[str]] | str:
     for raw, writes_text in headers:
         v4a_path = raw.strip()
         if has_traversal_component(v4a_path):
+            # ⤷ 出口 return：返回 tool_error(f"V4A patch header contains '..' traversal: {v4a_…
             return tool_error(
                 f"V4A patch header contains '..' traversal: {v4a_path!r}. "
                 "Use the agent's cwd-relative path (no '..') or an absolute "
@@ -834,9 +1050,15 @@ def _collect_v4a_header_paths(patch: str) -> tuple[list[str], list[str]] | str:
         paths.append(v4a_path)
         if writes_text:
             content_paths.append(v4a_path)
+    # ⤷ 出口 return：返回 (paths, content_paths)
     return paths, content_paths
 
 
+# ┌── 函数 def patch_tool()
+# │  作用：Patch a file using replace mode or V4A patch format.
+# │  参数：mode: str = 'replace', path: str = None, old_string: str = None, new_string: str = None, replace_all: bool = False, patch: str = None, task_id: str = 'default', cross_profile: bool = False  …共 9 个
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
                new_string: str = None, replace_all: bool = False, patch: str = None,
                task_id: str = "default", cross_profile: bool = False,
@@ -851,12 +1073,15 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
     if mode == "patch" and patch:
         collected = _collect_v4a_header_paths(patch)
         if isinstance(collected, str):
+            # ⤷ 出口 return：返回 collected
             return collected
         _paths_to_check += collected[0]
         _content_write_paths += collected[1]
     precheck_err = _write_precheck_error(_paths_to_check, _content_write_paths, task_id, cross_profile)
     if precheck_err:
+        # ⤷ 出口 return：返回 tool_error(precheck_err)
         return tool_error(precheck_err)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Lock paths in sorted, deduplicated order so concurrent callers with
         # overlapping multi-file patches can't deadlock (every caller locks in
@@ -872,6 +1097,7 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
             # which file is edited even when the shell's cwd differs.
             if mode == "replace":
                 if not path:
+                    # ⤷ 出口 return：返回 tool_error('path required')
                     return tool_error("path required")
                 if old_string is None or new_string is None:
                     return tool_error("old_string and new_string required")
@@ -917,17 +1143,25 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
                 result_dict["_hint"] = (
                     "old_string not found. Use read_file to verify the current "
                     "content, or search_files to locate the text.")
+        # ⤷ 出口 return：返回 json.dumps(result_dict, ensure_ascii=False)
         return json.dumps(result_dict, ensure_ascii=False)
     except Exception as e:
+        # ⤷ 出口 return：返回 tool_error(str(e))
         return tool_error(str(e))
 
 
+# ┌── 函数 def search_tool()
+# │  作用：Search for content or files.
+# │  参数：pattern: str, target: str = 'content', path: str = '.', file_glob: str = None, limit: int = 50, offset: int = 0, output_mode: str = 'content', context: int = 0  …共 10 个
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def search_tool(pattern: str, target: str = "content", path: str = ".",
                 file_glob: str = None, limit: int = 50, offset: int = 0,
                 output_mode: str = "content", context: int = 0,
                 order: str = "discovery",
                 task_id: str = "default") -> str:
     """Search for content or files."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         offset, limit = normalize_search_pagination(offset, limit)
 
@@ -940,6 +1174,7 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             count = _bump_consecutive(task_data, search_key)
 
         if count >= 4:
+            # ⤷ 出口 return：返回 tool_error(f'BLOCKED: You have run this exact search {count}…
             return tool_error(
                 f"BLOCKED: You have run this exact search {count} times in a row. "
                 "The results have NOT changed. You already have this information. "
@@ -947,6 +1182,7 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
                 pattern=pattern,
                 already_searched=count)
 
+        # ⤷ 关键分支 try/except：捕获 (OSError, ValueError, RuntimeError)，出错走兜底而不是崩溃。
         try:
             resolved_search_path = str(_resolve_path_for_task(path, task_id))
         except (OSError, ValueError, RuntimeError) as exc:
@@ -957,12 +1193,14 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
                 raise
         block_error = get_read_block_error(resolved_search_path)
         if block_error:
+            # ⤷ 出口 return：返回 tool_error(block_error)
             return tool_error(block_error)
 
         # A missing search root costs two shells (search + parent listing for
         # "Similar paths"); cache the miss so a retry skips both.
         cached_search_nf = _check_not_found_cache("search", resolved_search_path, task_id)
         if cached_search_nf is not None:
+            # ⤷ 出口 return：返回 cached_search_nf
             return cached_search_nf
 
         result = _get_file_ops(task_id).search(
@@ -997,6 +1235,7 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
                 f"Results truncated. Use offset={offset + limit} to see more, "
                 "or narrow with a more specific pattern or file_glob."
             )
+        # ⤷ 出口 return：返回 json.dumps(result_dict, ensure_ascii=False)
         return json.dumps(result_dict, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e))
@@ -1008,9 +1247,15 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
 from tools.registry import registry, tool_error
 
 
+# ┌── 函数 def _check_file_reqs()
+# │  作用：Lazy wrapper to avoid circular import with tools/__init__.py.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _check_file_reqs():
     """Lazy wrapper to avoid circular import with tools/__init__.py."""
     from tools import check_file_requirements
+    # ⤷ 出口 return：返回 check_file_requirements()
     return check_file_requirements()
 
 READ_FILE_SCHEMA = {
@@ -1125,6 +1370,11 @@ _PATCH_V4A_PARAMS = {
 }
 
 
+# ┌── 函数 def _is_openai_family_main()
+# │  作用：Whether the active main provider/model is the OpenAI/codex family —
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_openai_family_main() -> bool:
     """Whether the active main provider/model is the OpenAI/codex family —
     the population trained on the V4A apply_patch dialect.
@@ -1134,19 +1384,24 @@ def _is_openai_family_main() -> bool:
     (openrouter/nous/azure...) the MODEL slug decides (gpt-*/o-series/
     codex). Fail-closed to the universal replace-only schema.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.auxiliary_client import _read_main_model, _read_main_provider
 
         provider = (_read_main_provider() or "").strip().lower()
         model = (_read_main_model() or "").strip().lower()
     except Exception:  # noqa: BLE001
+        # ⤷ 出口 return：返回 False
         return False
     if provider in {"openai", "openai-chat", "openai-codex", "azure-openai", "codex"}:
+        # ⤷ 出口 return：返回 True
         return True
     # Aggregators: the model slug carries the family.
     slug = model.split("/", 1)[-1]
     if slug.startswith(("gpt-", "gpt.", "chatgpt", "codex", "o1", "o3", "o4", "o5")):
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 'openai/' in model
     return "openai/" in model
 
 
@@ -1171,19 +1426,32 @@ SEARCH_FILES_SCHEMA = {
 }
 
 
+# ┌── 函数 def _handle_read_file()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args, **kw
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _handle_read_file(args, **kw):
     tid = kw.get("task_id") or "default"
+    # ⤷ 出口 return：返回 read_file_tool(path=args.get('path', ''), offset=args.get('o…
     return read_file_tool(path=args.get("path", ""), offset=args.get("offset", 1), limit=args.get("limit", DEFAULT_READ_LIMIT), task_id=tid)
 
 
+# ┌── 函数 def _handle_write_file()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args, **kw
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _handle_write_file(args, **kw):
     tid = kw.get("task_id") or "default"
     if not args.get("path") or not isinstance(args.get("path"), str):
+        # ⤷ 出口 return：返回 tool_error("write_file: missing required field 'path'. Re-em…
         return tool_error(
             "write_file: missing required field 'path'. Re-emit the tool call with "
             "both 'path' and 'content' set."
         )
     if "content" not in args:
+        # ⤷ 出口 return：返回 tool_error("write_file: missing required field 'content'. Th…
         return tool_error(
             "write_file: missing required field 'content'. The tool call included a "
             "path but no content argument — this is almost always a dropped-arg bug "
@@ -1192,10 +1460,12 @@ def _handle_write_file(args, **kw):
             "large files."
         )
     if not isinstance(args["content"], str):
+        # ⤷ 出口 return：返回 tool_error(f"write_file: 'content' must be a string, got {ty…
         return tool_error(
             f"write_file: 'content' must be a string, got "
             f"{type(args['content']).__name__}."
         )
+    # ⤷ 出口 return：返回 write_file_tool(path=args['path'], content=args['content'], …
     return write_file_tool(
         path=args["path"], content=args["content"], task_id=tid,
         cross_profile=bool(args.get("cross_profile", False)),
@@ -1203,8 +1473,14 @@ def _handle_write_file(args, **kw):
     )
 
 
+# ┌── 函数 def _handle_patch()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args, **kw
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _handle_patch(args, **kw):
     tid = kw.get("task_id") or "default"
+    # ⤷ 出口 return：返回 patch_tool(mode=args.get('mode', 'replace'), path=args.get('…
     return patch_tool(
         mode=args.get("mode", "replace"), path=args.get("path"),
         old_string=args.get("old_string"), new_string=args.get("new_string"),
@@ -1214,11 +1490,17 @@ def _handle_patch(args, **kw):
     )
 
 
+# ┌── 函数 def _handle_search_files()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args, **kw
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _handle_search_files(args, **kw):
     tid = kw.get("task_id") or "default"
     target_map = {"grep": "content", "find": "files"}
     raw_target = args.get("target", "content")
     target = target_map.get(raw_target, raw_target)
+    # ⤷ 出口 return：返回 search_tool(pattern=args.get('pattern', ''), target=target, …
     return search_tool(
         pattern=args.get("pattern", ""), target=target, path=args.get("path", "."),
         file_glob=args.get("file_glob"), limit=args.get("limit", 50), offset=args.get("offset", 0),
@@ -1226,6 +1508,11 @@ def _handle_search_files(args, **kw):
         order=args.get("order", "discovery"), task_id=tid)
 
 
+# ┌── 函数 def _read_file_schema_overrides()
+# │  作用：One-word capability upgrade: "PDF (text layer)" → "PDF (scanned or
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _read_file_schema_overrides():
     """One-word capability upgrade: "PDF (text layer)" → "PDF (scanned or
     text)" when hosted OCR has a trusted route (see
@@ -1233,10 +1520,12 @@ def _read_file_schema_overrides():
     network at schema-build time. Compaction's tool refresh (#97073)
     picks up a key added mid-session.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.read_extract import hosted_ocr_available
 
         if hosted_ocr_available():
+            # ⤷ 出口 return：返回 {'description': READ_FILE_SCHEMA['description'].replace('PDF…
             return {
                 "description": READ_FILE_SCHEMA["description"].replace(
                     "PDF (text layer)", "PDF (scanned or text)"
@@ -1244,18 +1533,26 @@ def _read_file_schema_overrides():
             }
     except Exception:  # noqa: BLE001
         pass
+    # ⤷ 出口 return：返回 {}
     return {}
 
 
 registry.register(name="read_file", toolset="file", schema=READ_FILE_SCHEMA, handler=_handle_read_file, check_fn=_check_file_reqs, emoji="📖", max_result_size_chars=100_000, dynamic_schema_overrides=_read_file_schema_overrides)
 registry.register(name="write_file", toolset="file", schema=WRITE_FILE_SCHEMA, handler=_handle_write_file, check_fn=_check_file_reqs, emoji="✍️", max_result_size_chars=100_000)
+# ┌── 函数 def _patch_schema_overrides()
+# │  作用：Layer the V4A patch mode onto the base replace-only schema for
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _patch_schema_overrides():
     """Layer the V4A patch mode onto the base replace-only schema for
     OpenAI-family mains (see PATCH_SCHEMA comment). Config/context probe
     only — no I/O at schema-build time; compaction's tool refresh
     (#97073) re-evaluates on model switches."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if not _is_openai_family_main():
+            # ⤷ 出口 return：返回 {}
             return {}
         params = {
             "type": "object",
@@ -1266,8 +1563,10 @@ def _patch_schema_overrides():
             },
             "required": ["mode"],
         }
+        # ⤷ 出口 return：返回 {'description': _PATCH_V4A_DESCRIPTION, 'parameters': params…
         return {"description": _PATCH_V4A_DESCRIPTION, "parameters": params}
     except Exception:  # noqa: BLE001
+        # ⤷ 出口 return：返回 {}
         return {}
 
 
@@ -1292,12 +1591,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

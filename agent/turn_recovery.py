@@ -6,6 +6,33 @@ path. Handlers return ``True`` (request repaired in place; loop ``continue``s wi
 mutate ``agent`` / ``messages`` / ``api_messages`` in place. Logger name stays
 ``agent.conversation_loop`` (caplog pins); that module is only imported lazily (cycle + patch sites).
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/turn_recovery.py（约 1485 行）
+# 地位：对话循环里「出错之后怎么救」的一批处理器。
+#
+# 工作方式：模型调用抛异常时，先跑这里的一次性恢复链，恢复不了再走通用的重试/退避逻辑。
+#   每个处理器返回 True（已就地修好，循环用同一个 retry_count 继续）或 False（往下走）。
+#
+# 典型恢复场景：
+#   _recover_unicode_encode_error()   编码错误（Windows 常见）→ 转码后重试
+#   _refresh_credentials_after_401()  401 没权限 → 刷新凭证后重试
+#   _recover_format_errors()          请求格式错误 → 改格式后重试
+#   _try_refresh_nous_paid_entitlement_credentials()  订阅额度问题
+#
+# 其他重要函数：
+#   route_classified_error()      根据 error_classifier 的分类结果决定走哪条路
+#   compute_error_backoff()       算退避等待时间（失败越多等越久）
+#   nonretryable_client_error_result() / max_retries_exhausted_result()
+#                                 生成「没救了」时返回给用户的结果对象
+#   abort_turn_on_interrupt()     用户按 Ctrl+C 时优雅收尾
+#   validate_response_shape()     校验模型返回的响应结构是否合法
+#
+# 提示：源码注释特别说明——日志名保持 agent.conversation_loop（测试里有断言），
+#   所以它只被懒加载导入。这类「为测试保留兼容」的细节在老项目里很常见。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -33,29 +60,50 @@ from utils import base_url_host_matches
 logger = logging.getLogger("agent.conversation_loop")
 
 
+# ┌── 函数 def _vlines()
+# │  作用：Force-``_vprint`` each line prefixed with ``agent.log_prefix``.
+# │  参数：agent: Any, *lines
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _vlines(agent: Any, *lines: str) -> None:
     """Force-``_vprint`` each line prefixed with ``agent.log_prefix``."""
     for line in lines:
         agent._vprint(f"{agent.log_prefix}{line}", force=True)
 
 
+# ┌── 函数 def _plines()
+# │  作用：``print`` each line prefixed with ``agent.log_prefix``.
+# │  参数：agent: Any, *lines
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _plines(agent: Any, *lines: str) -> None:
     """``print`` each line prefixed with ``agent.log_prefix``."""
     for line in lines:
         print(f"{agent.log_prefix}{line}")
 
 
+# ┌── 函数 def _blines()
+# │  作用：``_buffer_vprint`` each line (surfaces only if every retry+fallback exhausts).
+# │  参数：agent: Any, *lines
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _blines(agent: Any, *lines: str) -> None:
     """``_buffer_vprint`` each line (surfaces only if every retry+fallback exhausts)."""
     for line in lines:
         agent._buffer_vprint(line)
 
 
+# ┌── 函数 def _image_error_max_dimension()
+# │  作用：Extract a provider-reported image dimension ceiling, if present.
+# │  参数：error: Exception
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _image_error_max_dimension(error: Exception) -> Optional[int]:
     """Extract a provider-reported image dimension ceiling, if present."""
     parts = []
     for value in (error, getattr(error, "message", None), getattr(error, "body", None)):
         if value:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 parts.append(str(value))
             except Exception:
@@ -71,31 +119,50 @@ def _image_error_max_dimension(error: Exception) -> Optional[int]:
         if not match:
             return None
         max_dimension = math.isqrt(int(match.group(1))) * 32
+        # ⤷ 出口 return：返回 max_dimension if 512 <= max_dimension <= 8000 else None
         return max_dimension if 512 <= max_dimension <= 8000 else None
     if "image" not in text or "dimension" not in text or "max allowed size" not in text:
+        # ⤷ 出口 return：返回 None
         return None
     match = re.search(r"max allowed size(?:\s+for [^:]+)?:\s*(\d{3,5})\s*pixels?", text)
     if not match:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:
         max_dimension = int(match.group(1))
     except ValueError:
         return None
+    # ⤷ 出口 return：返回 max_dimension if 512 <= max_dimension <= 8000 else None
     return max_dimension if 512 <= max_dimension <= 8000 else None
 
 
+# ┌── 函数 def _try_refresh_nous_paid_entitlement_credentials()
+# │  作用：Refresh Nous runtime credentials after a fresh paid-entitlement check.
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _try_refresh_nous_paid_entitlement_credentials(agent) -> bool:
     """Refresh Nous runtime credentials after a fresh paid-entitlement check."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.nous_account import get_nous_portal_account_info
 
         if get_nous_portal_account_info(force_fresh=True).paid_service_access is not True:
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 出口 return：返回 agent._try_refresh_nous_client_credentials(force=True)
         return agent._try_refresh_nous_client_credentials(force=True)
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _recover_unicode_encode_error()
+# │  作用：UnicodeEncodeError recovery: lone surrogates (clipboard paste) first, then an ASCII
+# │  参数：agent: Any, api_error: Exception, messages: List[Dict[str, Any]], api_messages: Any, api_kwargs: Any, active_system_prompt: Any
+# │  返回：Tuple[bool, Any]
+# └──────────────────────────────────────────────────────────────
 def _recover_unicode_encode_error(
     agent: Any, api_error: Exception, messages: List[Dict[str, Any]], api_messages: Any,
     api_kwargs: Any, active_system_prompt: Any,
@@ -123,8 +190,10 @@ def _recover_unicode_encode_error(
             if _surrogates_found else
             "⚠️  Surrogate encoding error — retrying after full-payload sanitization..."
         )
+        # ⤷ 出口 return：返回 (True, active_system_prompt)
         return True, active_system_prompt
     if not _is_ascii_codec:
+        # ⤷ 出口 return：返回 (False, active_system_prompt)
         return False, active_system_prompt
 
     agent._force_ascii_payload = True
@@ -188,9 +257,15 @@ def _recover_unicode_encode_error(
             or _headers_sanitized or _credential_sanitized) else
         "⚠️  System encoding is ASCII — enabling full-payload sanitization for retry...",
     )
+    # ⤷ 出口 return：返回 (True, active_system_prompt)
     return True, active_system_prompt
 
 
+# ┌── 函数 def recover_before_classification()
+# │  作用：Recovery branches that run BEFORE ``classify_api_error``: UnicodeEncodeError
+# │  参数：agent: Any, api_error: Exception, messages: List[Dict[str, Any]], api_messages: Any, api_kwargs: Any, active_system_prompt: Any
+# │  返回：Tuple[bool, Any]
+# └──────────────────────────────────────────────────────────────
 def recover_before_classification(
     agent: Any, api_error: Exception, *, messages: List[Dict[str, Any]], api_messages: Any,
     api_kwargs: Any, active_system_prompt: Any,
@@ -204,11 +279,13 @@ def recover_before_classification(
             agent, api_error, messages, api_messages, api_kwargs, active_system_prompt
         )
         if _recovered:
+            # ⤷ 出口 return：返回 (True, active_system_prompt)
             return True, active_system_prompt
 
     # Some providers 4xx on image_url content: strip images, mark session
     # vision-unsupported, retry text-only. English phrase match; extend it.
     _err_body = ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _err_body = str(getattr(api_error, "body", None) or getattr(api_error, "message", None) or str(api_error))
     except Exception:
@@ -226,6 +303,7 @@ def recover_before_classification(
             "⚠️  Server rejected image content — switching to text-only mode for this session"
             + (". Stripped images from history and retrying." if _imgs_removed else "."),
         )
+        # ⤷ 出口 return：返回 (True, active_system_prompt)
         return True, active_system_prompt
 
     # AnthropicBedrock SDK raises "Unexpected event order" when Bedrock errors before
@@ -243,16 +321,24 @@ def recover_before_classification(
         agent.client = None  # Drop the AnthropicBedrock client
         agent._client_kwargs = {}
         _vlines(agent, "⚠️  AnthropicBedrock SDK streaming failed — falling back to native Converse API for this session.")
+        # ⤷ 出口 return：返回 (True, active_system_prompt)
         return True, active_system_prompt
+    # ⤷ 出口 return：返回 (False, active_system_prompt)
     return False, active_system_prompt
 
 
+# ┌── 函数 def _print_nous_401_diagnostics()
+# │  作用：Nous 401 that survived a credential refresh: likely Portal OAuth expired/revoked,
+# │  参数：agent: Any, api_error: Exception
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_nous_401_diagnostics(agent: Any, api_error: Exception) -> None:
     """Nous 401 that survived a credential refresh: likely Portal OAuth expired/revoked,
     no credits, or agent key blocked."""
     from agent.conversation_loop import _print_nous_entitlement_guidance
     from hermes_constants import display_hermes_home
     _body_text = ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _body = getattr(api_error, "body", None) or getattr(api_error, "response", None)
         if _body is not None:
@@ -274,6 +360,11 @@ def _print_nous_401_diagnostics(agent: Any, api_error: Exception) -> None:
     )
 
 
+# ┌── 函数 def _print_anthropic_401_diagnostics()
+# │  作用：Anthropic 401 that survived a credential refresh: show auth method + fixes.
+# │  参数：agent: Any, key: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_anthropic_401_diagnostics(agent: Any, key: Any) -> None:
     """Anthropic 401 that survived a credential refresh: show auth method + fixes."""
     from agent.anthropic_credentials import _is_oauth_token
@@ -309,6 +400,11 @@ def _print_anthropic_401_diagnostics(agent: Any, key: Any) -> None:
     )
 
 
+# ┌── 函数 def _refresh_credentials_after_401()
+# │  作用：Per-provider one-shot credential refresh on 401 (codex/xai, vertex, nous, copilot,
+# │  参数：agent: Any, api_error: Exception, _retry: TurnRetryState, status_code: Optional[int]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _refresh_credentials_after_401(
     agent: Any, api_error: Exception, _retry: TurnRetryState, status_code: Optional[int]
 ) -> bool:
@@ -318,6 +414,7 @@ def _refresh_credentials_after_401(
     from agent.conversation_loop import _is_copilot_provider
 
     if status_code != 401:
+        # ⤷ 出口 return：返回 False
         return False
     if (
         agent.api_mode == "codex_responses"
@@ -328,11 +425,13 @@ def _refresh_credentials_after_401(
         if agent._try_refresh_codex_client_credentials(force=True):
             _label = "xAI OAuth" if agent.provider == "xai-oauth" else "Codex"
             agent._buffer_vprint(f"🔐 {_label} auth refreshed after 401. Retrying request...")
+            # ⤷ 出口 return：返回 True
             return True
     if agent.api_mode == "chat_completions" and agent.provider == "vertex" and not _retry.vertex_auth_retry_attempted:
         _retry.vertex_auth_retry_attempted = True
         if agent._try_refresh_vertex_client_credentials():
             agent._buffer_vprint("🔐 Vertex AI token refreshed after 401. Retrying request...")
+            # ⤷ 出口 return：返回 True
             return True
     if (
         agent.api_mode in ("chat_completions", "anthropic_messages")
@@ -342,12 +441,14 @@ def _refresh_credentials_after_401(
         _retry.nous_auth_retry_attempted = True
         if agent._try_refresh_nous_client_credentials(force=True):
             agent._buffer_vprint("🔐 Nous agent key refreshed after 401. Retrying request...")
+            # ⤷ 出口 return：返回 True
             return True
         _print_nous_401_diagnostics(agent, api_error)
     if _is_copilot_provider(agent) and not _retry.copilot_auth_retry_attempted:
         _retry.copilot_auth_retry_attempted = True
         if agent._try_refresh_copilot_client_credentials():
             agent._buffer_vprint("🔐 Copilot credentials refreshed after 401. Retrying request...")
+            # ⤷ 出口 return：返回 True
             return True
     if (
         agent.api_mode == "anthropic_messages"
@@ -359,8 +460,14 @@ def _refresh_credentials_after_401(
             _plines(agent, "🔐 Anthropic credentials refreshed after 401. Retrying request...")
             return True
         _print_anthropic_401_diagnostics(agent, agent._anthropic_api_key)
+    # ⤷ 出口 return：返回 False
     return False
 
+# ┌── 函数 def _recover_format_errors()
+# │  作用：One-shot format-recovery strips: thinking-signature → invalid-encrypted-content
+# │  参数：agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState, messages: List[Dict[str, Any]], api_messages: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _recover_format_errors(
     agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState,
     messages: List[Dict[str, Any]], api_messages: Any,
@@ -384,6 +491,7 @@ def _recover_format_errors(
             "(canonical messages unchanged)",
             agent.log_prefix, _api_stripped,
         )
+        # ⤷ 出口 return：返回 True
         return True
 
     # 400 ``invalid_encrypted_content`` on a stale ``codex_reasoning_items`` blob:
@@ -413,6 +521,7 @@ def _recover_format_errors(
             "%sInvalid encrypted reasoning recovery: disabled replay and stripped %d items from %d messages",
             agent.log_prefix, replay_stats["items"], replay_stats["messages"],
         )
+        # ⤷ 出口 return：返回 True
         return True
 
     # Structured 400 naming ``context_management``: disable native compaction for the
@@ -436,12 +545,14 @@ def _recover_format_errors(
                 "codex_responses_native for this session and retrying",
                 agent.log_prefix,
             )
+            # ⤷ 出口 return：返回 True
             return True
 
     # llama.cpp ``json-schema-to-grammar`` rejects regex escapes and most ``format``
     # values: strip ``pattern``/``format`` from ``agent.tools``, retry once.
     if classified.reason == FailoverReason.llama_cpp_grammar_pattern and not _retry.llama_cpp_grammar_retry_attempted:
         _retry.llama_cpp_grammar_retry_attempted = True
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.schema_sanitizer import strip_pattern_and_format
             _, _stripped = strip_pattern_and_format(agent.tools)
@@ -455,6 +566,7 @@ def _recover_format_errors(
                 "pattern/format keyword(s) from tool schemas",
                 agent.log_prefix, _stripped,
             )
+            # ⤷ 出口 return：返回 True
             return True
         # Nothing to strip — fall through to normal retry rather than loop on the same error.
         logger.warning(
@@ -462,9 +574,15 @@ def _recover_format_errors(
             "keywords to strip — falling through to normal retry",
             agent.log_prefix,
         )
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def recover_after_classification()
+# │  作用：One-shot recovery chain that runs AFTER ``classify_api_error`` and before the
+# │  参数：agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState, status_code: Optional[int], error_context: Any, messages: List[Dict[str, Any]], api_messages: Any
+# │  返回：Tuple[bool, bool]
+# └──────────────────────────────────────────────────────────────
 def recover_after_classification(
     agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState, *,
     status_code: Optional[int], error_context: Any, messages: List[Dict[str, Any]],
@@ -496,6 +614,7 @@ def recover_after_classification(
         billing_unverified=classified.billing_unverified,
     )
     if recovered_with_pool:
+        # ⤷ 出口 return：返回 (True, recovered_with_pool)
         return True, recovered_with_pool
 
     # Shrink oversized native image parts in-place and retry once.
@@ -537,6 +656,7 @@ def recover_after_classification(
     ):
         _retry.reasoning_mandatory_retry_attempted = True
         agent._reasoning_disable_rejected = True
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.models_reasoning_caps import refresh_reasoning_caps_async
             refresh_reasoning_caps_async(agent.provider)
@@ -544,6 +664,7 @@ def recover_after_classification(
             pass
         _vlines(agent, f"⚠️  {agent.model} requires reasoning — thinking stays on for this session, retrying...")
         logger.warning("%sReasoning-mandatory recovery: dropping reasoning disable for %s", agent.log_prefix, agent.model)
+        # ⤷ 出口 return：返回 (True, recovered_with_pool)
         return True, recovered_with_pool
 
     # Provider rejected the image bytes; shrinking can't help, so strip image parts.
@@ -577,21 +698,35 @@ def recover_after_classification(
             return True, recovered_with_pool
 
     if _refresh_credentials_after_401(agent, api_error, _retry, status_code):
+        # ⤷ 出口 return：返回 (True, recovered_with_pool)
         return True, recovered_with_pool
 
     if _recover_format_errors(agent, api_error, classified, _retry, messages, api_messages):
+        # ⤷ 出口 return：返回 (True, recovered_with_pool)
         return True, recovered_with_pool
+    # ⤷ 出口 return：返回 (False, recovered_with_pool)
     return False, recovered_with_pool
 
 
+# ┌── 函数 def _failed_turn_result()
+# │  作用：Base failed-turn result dict shared by the two terminal paths.
+# │  参数：final_response: str, messages: Any, api_call_count: int, error: str
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _failed_turn_result(final_response: str, messages: Any, api_call_count: int, error: str) -> Dict[str, Any]:
     """Base failed-turn result dict shared by the two terminal paths."""
+    # ⤷ 出口 return：返回 {'final_response': final_response, 'messages': messages, 'ap…
     return {
         "final_response": final_response, "messages": messages, "api_calls": api_call_count,
         "completed": False, "failed": True, "error": error,
     }
 
 
+# ┌── 函数 def _print_nonretryable_auth_guidance()
+# │  作用：Actionable guidance for a terminal auth / billing error.
+# │  参数：agent: Any, classified: Any, status_code: Optional[int], provider: Any, base_url: Any, model: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_nonretryable_auth_guidance(
     agent: Any, classified: Any, *, status_code: Optional[int], provider: Any, base_url: Any, model: Any,
 ) -> None:
@@ -648,16 +783,24 @@ def _print_nonretryable_auth_guidance(
         _vlines(agent, "      • Check credits: https://openrouter.ai/settings/credits")
 
 
+# ┌── 函数 def _welcome_tier_guidance()
+# │  作用：Copy for a Nous free-tier refusal the classifier parsed (``welcome_refusal`` /
+# │  参数：classified: Any, model: Any, in_chat: bool
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _welcome_tier_guidance(classified: Any, *, model: Any, in_chat: bool) -> str:
     """Copy for a Nous free-tier refusal the classifier parsed (``welcome_refusal`` /
     ``welcome_route`` in ``error_context``); empty for every other error."""
     ctx = getattr(classified, "error_context", None) or {}
     refusal, route = ctx.get("welcome_refusal"), ctx.get("welcome_route")
     if not refusal and not route:
+        # ⤷ 出口 return：返回 ''
         return ""
     from hermes_cli.anon_auth import welcome_refusal_copy, welcome_route_refusal_copy
     if refusal:
+        # ⤷ 出口 return：返回 welcome_refusal_copy(refusal, model=str(model or ''), in_cha…
         return welcome_refusal_copy(refusal, model=str(model or ""), in_chat=in_chat)
+    # ⤷ 出口 return：返回 welcome_route_refusal_copy(str(route), in_chat=in_chat)
     return welcome_route_refusal_copy(str(route), in_chat=in_chat)
 
 
@@ -668,6 +811,11 @@ _NONRETRYABLE_LABELS = {
 }
 
 
+# ┌── 函数 def nonretryable_client_error_result()
+# │  作用：Terminal path for a non-retryable 4xx once fallback is exhausted: debug dump, flush
+# │  参数：agent: Any, api_error: Exception, classified: Any, status_code: Optional[int], api_kwargs: Any, api_messages: Any, messages: List[Dict[str, Any]], conversation_history: Any  …共 13 个
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def nonretryable_client_error_result(
     agent: Any, api_error: Exception, classified: Any, *, status_code: Optional[int],
     api_kwargs: Any, api_messages: Any, messages: List[Dict[str, Any]], conversation_history: Any,
@@ -746,12 +894,14 @@ def nonretryable_client_error_result(
             f"Provider message: {_nonretryable_summary}\n\n"
             f"{_CONTENT_POLICY_RECOVERY_HINT}"
         )
+        # ⤷ 出口 return：返回 _content_policy_blocked_result(messages, api_call_count, fin…
         return _content_policy_blocked_result(
             messages, api_call_count, final_response=_policy_response, error_detail=_nonretryable_summary,
         )
     # Billing walls get the same structured recovery descriptor as the max-retries path
     # so every surface renders one consistent signal.
     if classified.reason == FailoverReason.billing:
+        # ⤷ 出口 return：返回 _billing_failure_result(classified=classified, summary=_nonr…
         return _billing_failure_result(
             classified=classified, summary=_nonretryable_summary, messages=messages,
             api_call_count=api_call_count, provider=provider, base_url=base_url, model=model,
@@ -767,6 +917,7 @@ def nonretryable_client_error_result(
         "failure_reason": classified.reason.value,
         "failure_retryable": bool(classified.retryable),
     })
+    # ⤷ 出口 return：返回 result
     return result
 
 
@@ -776,6 +927,11 @@ _STREAM_DROP_MARKERS = (
 )
 
 
+# ┌── 函数 def max_retries_exhausted_result()
+# │  作用：Terminal path once retries, transport recovery and fallback all failed: flush the
+# │  参数：agent: Any, api_error: Exception, classified: Any, max_retries: int, is_rate_limited: bool, error_msg: str, api_kwargs: Any, api_messages: Any  …共 15 个
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def max_retries_exhausted_result(
     agent: Any, api_error: Exception, classified: Any, *, max_retries: int, is_rate_limited: bool,
     error_msg: str, api_kwargs: Any, api_messages: Any, messages: List[Dict[str, Any]],
@@ -900,9 +1056,15 @@ def max_retries_exhausted_result(
         # Present only for billing walls: (provider, billing_url, is_nous, message).
         "billing_block": _billing_block,
     })
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def log_api_error_attempt()
+# │  作用：Log one failed API attempt (warning + buffered retry trace, OpenRouter "no tool
+# │  参数：agent: Any, api_error: Exception, retry_count: int, max_retries: int, status_code: Optional[int], elapsed_time: float, api_messages: Any, approx_tokens: int
+# │  返回：Tuple[str, str, Any, Any, Any]
+# └──────────────────────────────────────────────────────────────
 def log_api_error_attempt(
     agent: Any, api_error: Exception, *, retry_count: int, max_retries: int,
     status_code: Optional[int], elapsed_time: float, api_messages: Any, approx_tokens: int,
@@ -950,6 +1112,7 @@ def log_api_error_attempt(
     # Bare 404 on a ``vendor/model`` catalogue usually means the id lost its prefix; the
     # provider never names the model, so we do.
     if getattr(api_error, "status_code", None) == 404:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.model_normalize import suggest_prefixed_model_id
 
@@ -962,9 +1125,15 @@ def log_api_error_attempt(
                 f"   💡 Model '{_model}' is not a valid id for provider {_provider} — it is missing its vendor prefix.",
                 f"      Did you mean '{_suggestion}'?  Re-pick it with `hermes model`.",
             )
+    # ⤷ 出口 return：返回 (error_type, error_msg, _provider, _base, _model)
     return error_type, error_msg, _provider, _base, _model
 
 
+# ┌── 函数 def abort_turn_on_interrupt()
+# │  作用：Announce ``abort_message``, close any open tool sequence with ``interrupt_text``,
+# │  参数：agent: Any, messages: List[Dict[str, Any]], conversation_history: Any, api_call_count: int, abort_message: str, interrupt_text: str
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def abort_turn_on_interrupt(
     agent: Any, messages: List[Dict[str, Any]], conversation_history: Any, api_call_count: int, *,
     abort_message: str, interrupt_text: str,
@@ -975,12 +1144,18 @@ def abort_turn_on_interrupt(
     close_interrupted_tool_sequence(messages, interrupt_text)
     agent._persist_session(messages, conversation_history)
     agent.clear_interrupt()
+    # ⤷ 出口 return：返回 {'final_response': interrupt_text, 'messages': messages, 'ap…
     return {
         "final_response": interrupt_text, "messages": messages, "api_calls": api_call_count,
         "completed": False, "interrupted": True,
     }
 
 
+# ┌── 函数 def interruptible_backoff_sleep()
+# │  作用：Sleep ``wait_time`` in 200 ms slices so interrupts are honoured promptly, touching
+# │  参数：agent: Any, wait_time: float, _retry: Optional[TurnRetryState], messages: List[Dict[str, Any]], conversation_history: Any, api_call_count: int, abort_message: str, interrupt_text: str  …共 9 个
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def interruptible_backoff_sleep(
     agent: Any, wait_time: float, _retry: Optional[TurnRetryState], *,
     messages: List[Dict[str, Any]], conversation_history: Any, api_call_count: int,
@@ -998,7 +1173,9 @@ def interruptible_backoff_sleep(
         if agent._interrupt_requested:
             if _retry is not None and agent.clear_interrupt(preserve_redirect=True):
                 _retry.restart_with_redirected_messages = True
+                # ⤷ 出口 return：返回 None
                 return None
+            # ⤷ 出口 return：返回 abort_turn_on_interrupt(agent, messages, conversation_histor…
             return abort_turn_on_interrupt(
                 agent, messages, conversation_history, api_call_count,
                 abort_message=abort_message, interrupt_text=interrupt_text,
@@ -1007,6 +1184,7 @@ def interruptible_backoff_sleep(
         _touch_counter += 1
         if _touch_counter % 150 == 0:  # 150 × 0.2s = 30s
             agent._touch_activity(f"{activity_label}, {int(sleep_end - time.time())}s remaining")
+    # ⤷ 出口 return：返回 None
     return None
 
 
@@ -1016,6 +1194,11 @@ _ZAI_POLICY_NOTES = {
 }
 
 
+# ┌── 函数 def compute_error_backoff()
+# │  作用：Pick the wait before the next API retry and announce it. Retry-After wins for
+# │  参数：agent: Any, api_error: Exception, retry_count: int, max_retries: int, is_rate_limited: bool, is_zai_coding_overload: bool, base_url: Any, model: Any
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def compute_error_backoff(
     agent: Any, api_error: Exception, *, retry_count: int, max_retries: int, is_rate_limited: bool,
     is_zai_coding_overload: bool, base_url: Any, model: Any,
@@ -1093,17 +1276,25 @@ def compute_error_backoff(
         wait_time, retry_count, max_retries, agent._client_log_context(),
         _backoff_policy or "default", api_error,
     )
+    # ⤷ 出口 return：返回 wait_time
     return wait_time
 
 
+# ┌── 函数 def validate_response_shape()
+# │  作用：Validate the raw provider response via the transport; ``(response_invalid,
+# │  参数：agent: Any, response: Any
+# │  返回：Tuple[bool, List[str]]
+# └──────────────────────────────────────────────────────────────
 def validate_response_shape(agent: Any, response: Any) -> Tuple[bool, List[str]]:
     """Validate the raw provider response via the transport; ``(response_invalid,
     error_details)``. A Codex ``failed``/``cancelled`` status (e.g. quota exhaustion) is
     invalid so the fallback chain triggers; an empty Codex ``output`` with non-empty
     ``output_text`` is deferred to normalization."""
     if agent._get_transport().validate_response(response):
+        # ⤷ 出口 return：返回 (False, [])
         return False, []
     if response is None:
+        # ⤷ 出口 return：返回 (True, ['response is None'])
         return True, ["response is None"]
     if agent.api_mode == "codex_responses":
         _codex_resp_status = str(getattr(response, "status", "") or "").strip().lower()
@@ -1118,6 +1309,7 @@ def validate_response_shape(agent: Any, response: Any) -> Tuple[bool, List[str]]
                 "Codex response status='%s' (error=%s). Routing to fallback. %s",
                 _codex_resp_status, _codex_error_msg, agent._client_log_context(),
             )
+            # ⤷ 出口 return：返回 (True, [f'response.status={_codex_resp_status}: {_codex_erro…
             return True, [f"response.status={_codex_resp_status}: {_codex_error_msg}"]
         # Stream backfill may have failed but normalize can still recover from output_text.
         _out_text = getattr(response, "output_text", None)
@@ -1128,6 +1320,7 @@ def validate_response_shape(agent: Any, response: Any) -> Tuple[bool, List[str]]
                 "(%d chars); deferring to normalization.",
                 len(_out_text_stripped),
             )
+            # ⤷ 出口 return：返回 (False, [])
             return False, []
         logger.warning(
             "Codex response.output is empty after stream backfill "
@@ -1136,6 +1329,7 @@ def validate_response_shape(agent: Any, response: Any) -> Tuple[bool, List[str]]
             getattr(response, "model", None),
             f"api_mode={agent.api_mode} provider={agent.provider}",
         )
+        # ⤷ 出口 return：返回 (True, ['response.output is empty'])
         return True, ["response.output is empty"]
     if agent.api_mode == "anthropic_messages":
         detail = "response.content invalid (not a non-empty list)"
@@ -1147,9 +1341,15 @@ def validate_response_shape(agent: Any, response: Any) -> Tuple[bool, List[str]]
         detail = "response.choices is None"
     else:
         detail = "response.choices is empty"
+    # ⤷ 出口 return：返回 (True, [detail])
     return True, [detail]
 
 
+# ┌── 函数 def describe_invalid_response()
+# │  作用：Diagnostics for an empty/malformed response: ``(error_msg, provider_name,
+# │  参数：agent: Any, response: Any, api_duration: float
+# │  返回：Tuple[str, str, str]
+# └──────────────────────────────────────────────────────────────
 def describe_invalid_response(agent: Any, response: Any, api_duration: float) -> Tuple[str, str, str]:
     """Diagnostics for an empty/malformed response: ``(error_msg, provider_name,
     failure_hint)``. The hint is derived from the provider error code (524/504/429/
@@ -1179,25 +1379,37 @@ def describe_invalid_response(agent: Any, response: Any, api_duration: float) ->
         if _code_raw is None and isinstance(response.error, dict):
             _code_raw = response.error.get('code')
         if _code_raw is not None:
+            # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
             try:
                 _resp_error_code = int(_code_raw)
             except (TypeError, ValueError):
                 pass
 
+    # ⤷ 出口 return：返回 (error_msg, provider_name, _failure_hint_for(_resp_error_cod…
     return error_msg, provider_name, _failure_hint_for(_resp_error_code, api_duration)
 
 
+# ┌── 函数 def _failure_hint_for()
+# │  作用：Human-readable hint from the provider error code and response time.
+# │  参数：code: Optional[int], api_duration: float
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _failure_hint_for(code: Optional[int], api_duration: float) -> str:
     """Human-readable hint from the provider error code and response time."""
     if code == 524:
+        # ⤷ 出口 return：返回 f'upstream provider timed out (Cloudflare 524, {api_duration…
         return f"upstream provider timed out (Cloudflare 524, {api_duration:.0f}s)"
     if code == 504:
+        # ⤷ 出口 return：返回 f'upstream gateway timeout (504, {api_duration:.0f}s)'
         return f"upstream gateway timeout (504, {api_duration:.0f}s)"
     if code == 429:
+        # ⤷ 出口 return：返回 'rate limited by upstream provider (429)'
         return "rate limited by upstream provider (429)"
     if code in {500, 502}:
+        # ⤷ 出口 return：返回 f'upstream server error ({code}, {api_duration:.0f}s)'
         return f"upstream server error ({code}, {api_duration:.0f}s)"
     if code in {503, 529}:
+        # ⤷ 出口 return：返回 f'upstream provider overloaded ({code})'
         return f"upstream provider overloaded ({code})"
     if code is not None:
         return f"upstream error (code {code}, {api_duration:.0f}s)"
@@ -1205,9 +1417,14 @@ def _failure_hint_for(code: Optional[int], api_duration: float) -> str:
         return f"fast response ({api_duration:.1f}s) — likely rate limited"
     if api_duration > 60:
         return f"slow response ({api_duration:.0f}s) — likely upstream timeout"
+    # ⤷ 出口 return：返回 f'response time {api_duration:.1f}s'
     return f"response time {api_duration:.1f}s"
 
 
+# ┌── 类 class ClassifiedErrorVerdict
+# │  说明：Outcome of ``route_classified_error``. ``action``: ``"return"`` (terminal result),
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class ClassifiedErrorVerdict:
     """Outcome of ``route_classified_error``. ``action``: ``"return"`` (terminal result),
@@ -1242,6 +1459,11 @@ _TRANSPORT_FAILURE_REASONS = frozenset({FailoverReason.timeout, FailoverReason.o
 _LONG_CONTEXT_TIER_CAP = 200000
 
 
+# ┌── 函数 def _cap_long_context_tier()
+# │  作用：Cap the compressor's context window at the long-context tier limit; returns the
+# │  参数：agent: Any
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _cap_long_context_tier(agent: Any) -> int:
     """Cap the compressor's context window at the long-context tier limit; returns the
     previous ``context_length``."""
@@ -1263,32 +1485,49 @@ def _cap_long_context_tier(agent: Any) -> int:
             f"requires extra usage — reducing context: "
             f"{old_ctx:,} → {_LONG_CONTEXT_TIER_CAP:,} tokens"
         )
+    # ⤷ 出口 return：返回 old_ctx
     return old_ctx
 
 
+# ┌── 函数 def _eager_fallback_status()
+# │  作用：Status line announcing an eager fallback switch.
+# │  参数：classified: Any, is_upstream: bool, is_transport_failure: bool
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _eager_fallback_status(classified: Any, is_upstream: bool, is_transport_failure: bool) -> str:
     """Status line announcing an eager fallback switch."""
     if is_upstream:
         _upstream_name = (classified.error_context or {}).get("upstream_provider", "aggregator")
+        # ⤷ 出口 return：返回 f'⚠️ Upstream {_upstream_name} rate-limited — switching to f…
         return f"⚠️ Upstream {_upstream_name} rate-limited — switching to fallback model..."
     if classified.reason == FailoverReason.billing:
         if classified.billing_unverified:
             # Ambiguous body — don't assert billing.
+            # ⤷ 出口 return：返回 '⚠️ Provider reported usage/credit exhaustion (unverified — …
             return (
                 "⚠️ Provider reported usage/credit exhaustion "
                 "(unverified — may be a content-filter rejection) "
                 "— switching to fallback provider..."
             )
+        # ⤷ 出口 return：返回 '⚠️ Billing or credits exhausted — switching to fallback pro…
         return "⚠️ Billing or credits exhausted — switching to fallback provider..."
     if is_transport_failure:
+        # ⤷ 出口 return：返回 '⚠️ Provider unreachable — switching to fallback provider...…
         return "⚠️ Provider unreachable — switching to fallback provider..."
+    # ⤷ 出口 return：返回 '⚠️ Rate limited — switching to fallback provider...'
     return "⚠️ Rate limited — switching to fallback provider..."
 
 
+# ┌── 函数 def _is_genuine_nous_rate_limit()
+# │  作用：Record a genuine account-level Nous 429 to the cross-session breaker; upstream
+# │  参数：agent: Any, api_error: Exception, error_context: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_genuine_nous_rate_limit(agent: Any, api_error: Exception, error_context: Any) -> bool:
     """Record a genuine account-level Nous 429 to the cross-session breaker; upstream
     capacity 429s (no exhausted bucket in headers or last-known state) are left alone."""
     _genuine = False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.nous_rate_guard import is_genuine_nous_rate_limit, record_nous_rate_limit
         _err_resp = getattr(api_error, "response", None)
@@ -1305,9 +1544,15 @@ def _is_genuine_nous_rate_limit(agent: Any, api_error: Exception, error_context:
             )
     except Exception:
         pass
+    # ⤷ 出口 return：返回 _genuine
     return _genuine
 
 
+# ┌── 函数 def route_classified_error()
+# │  作用：Ordered (load-bearing) recovery steps between classification and overflow handling:
+# │  参数：agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState, error_msg: str, error_context: Any, recovered_with_pool: bool, base_url: Any  …共 20 个
+# │  返回：ClassifiedErrorVerdict
+# └──────────────────────────────────────────────────────────────
 def route_classified_error(
     agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState, *, error_msg: str,
     error_context: Any, recovered_with_pool: bool, base_url: Any, model: Any,
@@ -1333,6 +1578,7 @@ def route_classified_error(
     status_code = getattr(api_error, "status_code", None)
 
     def _verdict(action: str, result: Optional[Dict[str, Any]] = None) -> ClassifiedErrorVerdict:
+        # ⤷ 出口 return：返回 ClassifiedErrorVerdict(action=action, result=result, status_…
         return ClassifiedErrorVerdict(
             action=action, result=result, status_code=status_code, messages=messages,
             active_system_prompt=active_system_prompt, conversation_history=conversation_history,
@@ -1344,10 +1590,12 @@ def route_classified_error(
         )
 
     def _fallback_break() -> ClassifiedErrorVerdict:
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal active_system_prompt, retry_count, compression_attempts
         active_system_prompt = _arm_fallback_restart(agent, api_messages, active_system_prompt, _retry)
         retry_count = 0
         compression_attempts = 0
+        # ⤷ 出口 return：返回 _verdict('break')
         return _verdict("break")
 
     # ``compression.enabled: false`` forbids every automatic trigger, incl. these
@@ -1377,6 +1625,7 @@ def route_classified_error(
             "(compression.enabled: false). Run /compress to compact manually, "
             "/new to start fresh, or switch to a larger-context model."
         )
+        # ⤷ 出口 return：返回 _verdict('return', {'final_response': _final_response, 'mess…
         return _verdict("return", {
             "final_response": _final_response, "messages": messages, "completed": False,
             "api_calls": api_call_count, "error": _final_response, "partial": True, "failed": True,
@@ -1480,6 +1729,8 @@ def route_classified_error(
         # Re-enter the loop exactly once so the top-of-loop Nous guard runs
         # (retry_count = max_retries would skip it entirely).
         retry_count = max(0, max_retries - 1)
+        # ⤷ 出口 return：返回 _verdict('continue')
         return _verdict("continue")
     # Upstream capacity 429: normal retry logic will typically succeed.
+    # ⤷ 出口 return：返回 _verdict('fallthrough')
     return _verdict("fallthrough")

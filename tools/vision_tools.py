@@ -5,6 +5,28 @@ Images resolve through :mod:`tools.image_source`, are normalized to a provider-s
 (:mod:`tools.vision_tools_image_prep`), then either attach natively to a vision-capable main
 model (multimodal tool-result envelope) or are described by the auxiliary vision LLM router.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：tools/vision_tools.py（约 1068 行）
+# 地位：视觉能力——看图（vision_analyze）和看视频（video_analyze）。
+#
+# 两种处理路径：
+#   1. 原生路径：如果主模型本身支持视觉，就把图片直接作为多模态内容附在工具结果里
+#      （_build_native_vision_tool_result / _should_use_native_vision_fast_path）
+#   2. 辅助路径：主模型不支持，就先让一个便宜的视觉模型把图「描述」成文字，再给主模型
+#      （_call_vision_llm / _run_analysis）
+#
+# 图片预处理（很实用的一块）：
+#   _download_image / _download_media        下载（带重试和 SSRF 重定向守卫）
+#   _resize_image_for_vision                 压缩尺寸（大图费 token 还可能被拒）
+#   _image_to_base64_data_url                转成 base64 data URL
+#   _is_image_size_error / _too_large_message 处理「图片太大」的错误并给用户提示
+#
+# 注意：大量函数是 async def（异步），因为下载和编码是 IO 密集操作。
+#   _run_encode_on_cpu_executor 会把 CPU 密集的编码丢到线程池，避免阻塞事件循环。
+# ==========================================================================
+#
 
 import base64
 import asyncio
@@ -25,7 +47,13 @@ async_call_llm: Any = None
 extract_content_or_reasoning: Any = None
 
 
+# ┌── 函数 def _load_auxiliary_client()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _load_auxiliary_client() -> None:
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global async_call_llm, extract_content_or_reasoning
     if async_call_llm is None or extract_content_or_reasoning is None:
         from agent import auxiliary_client as _aux
@@ -50,25 +78,42 @@ logger = logging.getLogger(__name__)
 _debug = DebugSession("vision_tools", env_var="VISION_TOOLS_DEBUG")
 
 
+# ┌── 函数 def _cfg_auxiliary()
+# │  作用：``auxiliary.<keys...>`` from config.yaml; ``default`` when config is unavailable.
+# │  参数：*keys, default = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _cfg_auxiliary(*keys: str, default=None):
     """``auxiliary.<keys...>`` from config.yaml; ``default`` when config is unavailable."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import cfg_get, load_config
+        # ⤷ 出口 return：返回 cfg_get(load_config(), 'auxiliary', *keys, default=default)
         return cfg_get(load_config(), "auxiliary", *keys, default=default)
     except Exception:
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def _read_vision_setting()
+# │  作用：Env var → ``auxiliary.vision.<key>`` → None. Values that fail ``cast`` or fall below
+# │  参数：env_var: str, key: str, cast, minimum = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _read_vision_setting(env_var: str, key: str, cast, minimum=None):
     """Env var → ``auxiliary.vision.<key>`` → None. Values that fail ``cast`` or fall below
     ``minimum`` are skipped in favor of the next source (a cap can never be disabled by a bad value)."""
     def _accept(raw):
+        # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
         try:
             val = cast(raw)
         except (TypeError, ValueError):
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 val if minimum is None or val >= minimum else None
         return val if minimum is None or val >= minimum else None
     val = _accept(os.getenv(env_var, "").strip() or None)
+    # ⤷ 出口 return：返回 val if val is not None else _accept(_cfg_auxiliary('vision',…
     return val if val is not None else _accept(_cfg_auxiliary("vision", key))
 
 
@@ -87,17 +132,31 @@ _VISION_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 # Must be a threading primitive — each call runs via model_tools._run_async on a PER-THREAD
 # loop, so an asyncio semaphore cannot coordinate; the default executor is shared with the
 # gateway/web server and is deliberately NOT used.
+# ┌── 函数 def _detect_host_cpus()
+# │  作用：Usable CPU count (``sched_getaffinity`` honors cpuset pinning), at least 1.
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _detect_host_cpus() -> int:
     """Usable CPU count (``sched_getaffinity`` honors cpuset pinning), at least 1."""
+    # ⤷ 关键分支 try/except：捕获 (AttributeError, OSError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 max(1, len(os.sched_getaffinity(0)))
         return max(1, len(os.sched_getaffinity(0)))  # type: ignore[attr-defined]
     except (AttributeError, OSError):
+        # ⤷ 出口 return：返回 max(1, os.cpu_count() or 1)
         return max(1, os.cpu_count() or 1)
 
 
+# ┌── 函数 def _resolve_vision_cpu_workers()
+# │  作用：HERMES_VISION_MAX_CONCURRENCY → ``auxiliary.vision.max_concurrency`` → host cores (< 1 ignored).
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _resolve_vision_cpu_workers() -> int:
     """HERMES_VISION_MAX_CONCURRENCY → ``auxiliary.vision.max_concurrency`` → host cores (< 1 ignored)."""
     val = _read_vision_setting("HERMES_VISION_MAX_CONCURRENCY", "max_concurrency", int, minimum=1)
+    # ⤷ 出口 return：返回 val or _detect_host_cpus()
     return val or _detect_host_cpus()
 
 
@@ -108,30 +167,55 @@ _vision_cpu_executor = ThreadPoolExecutor(
 )
 
 
+# ┌── 异步函数（协程） def _run_encode_on_cpu_executor()
+# │  作用：Run a sync encode/resize callable on the bounded vision CPU executor (never the LLM call).
+# │  参数：fn, *args, **kwargs
+# │  返回：（未标注类型）
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _run_encode_on_cpu_executor(fn, *args, **kwargs):
     """Run a sync encode/resize callable on the bounded vision CPU executor (never the LLM call)."""
     import functools
     loop = asyncio.get_running_loop()
+    # ⤷ 出口 return：返回 await loop.run_in_executor(_vision_cpu_executor, functools.p…
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await loop.run_in_executor(_vision_cpu_executor, functools.partial(fn, *args, **kwargs))
 
 
+# ┌── 异步函数（协程） def _validate_image_url_async()
+# │  作用：HTTP(S) shape check (scheme, netloc; extension-less CDN URLs pass) + SSRF guard with DNS
+# │  参数：url: str
+# │  返回：bool
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _validate_image_url_async(url: str) -> bool:
     """HTTP(S) shape check (scheme, netloc; extension-less CDN URLs pass) + SSRF guard with DNS
     off the event loop."""
     if not (isinstance(url, str) and url.startswith(("http://", "https://")) and urlparse(url).netloc):
+        # ⤷ 出口 return：返回 False
         return False
     from tools.url_safety import async_is_safe_url
+    # ⤷ 出口 return：返回 await async_is_safe_url(url)
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await async_is_safe_url(url)
 
 
+# ┌── 函数 def _is_retryable_download_error()
+# │  作用：Transient failures only: 429, 5xx, transport errors and anything unclassified. Fail-fast on
+# │  参数：error: Exception
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_retryable_download_error(error: Exception) -> bool:
     """Transient failures only: 429, 5xx, transport errors and anything unclassified. Fail-fast on
     other 4xx, PermissionError (policy/SSRF block) and ValueError (too large / blocked redirect)."""
     if isinstance(error, (PermissionError, ValueError)):
+        # ⤷ 出口 return：返回 False
         return False
     if isinstance(error, httpx.HTTPStatusError):
         status = error.response.status_code
+        # ⤷ 出口 return：返回 status == 429 or not 400 <= status < 500
         return status == 429 or not 400 <= status < 500
+    # ⤷ 出口 return：返回 True
     return True
 
 
@@ -141,15 +225,29 @@ _DOWNLOAD_USER_AGENT = (
 )
 
 
+# ┌── 异步函数（协程） def _ssrf_redirect_guard()
+# │  作用：Re-validate each redirect target (a public URL 302ing to 169.254.169.254 would otherwise
+# │  参数：response
+# │  返回：（未标注类型）
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _ssrf_redirect_guard(response):
     """Re-validate each redirect target (a public URL 302ing to 169.254.169.254 would otherwise
     bypass the pre-flight check). Async because httpx.AsyncClient awaits hooks."""
     from tools.url_safety import async_is_safe_url, redirect_target_from_response
     redirect_url = redirect_target_from_response(response)
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     if redirect_url and not await async_is_safe_url(redirect_url):
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise ValueError(f"Blocked redirect to private/internal address: {redirect_url}")
 
 
+# ┌── 异步函数（协程） def _download_media()
+# │  作用：SSRF-safe streaming download with exponential backoff (2s/4s/8s). ``retry_all=False`` (images)
+# │  参数：url: str, destination: Path, max_retries: int, media_label: str, accept: str, max_bytes: int, timeout: float, retry_all: bool
+# │  返回：Path
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _download_media(
     url: str, destination: Path, max_retries: int, *,
     media_label: str, accept: str, max_bytes: int, timeout: float, retry_all: bool) -> Path:
@@ -160,9 +258,11 @@ async def _download_media(
     destination.parent.mkdir(parents=True, exist_ok=True)
     last_error = None
     for attempt in range(max_retries):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             blocked = check_website_access(url)
             if blocked:
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise PermissionError(blocked["message"])
 
             # follow_redirects for CDNs; the client validates DNS at connect
@@ -177,6 +277,7 @@ async def _download_media(
                 # Content-Length gives an early reject but servers can omit or lie,
                 # so the streaming cap below is authoritative.
                 cl = response.headers.get("content-length")
+                # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
                 try:
                     declared_size = int(cl) if cl else None
                 except ValueError:
@@ -208,6 +309,7 @@ async def _download_media(
                     except OSError:
                         logger.debug("Could not delete partial download: %s", tmp_destination, exc_info=True)
                     raise
+            # ⤷ 出口 return：返回 destination
             return destination
         except Exception as e:
             last_error = e
@@ -225,22 +327,38 @@ async def _download_media(
             await asyncio.sleep(wait_time)
     # Reaching here means max_retries was non-positive (or video exhausted retries).
     if last_error is not None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise last_error
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise RuntimeError(
         f"_download_{media_label.lower()} exited retry loop without attempting (max_retries={max_retries})")
 
 
+# ┌── 异步函数（协程） def _download_image()
+# │  作用：Download an image with SSRF protection and error-class-aware retry.
+# │  参数：image_url: str, destination: Path, max_retries: int = 3
+# │  返回：Path
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _download_image(image_url: str, destination: Path, max_retries: int = 3) -> Path:
     """Download an image with SSRF protection and error-class-aware retry."""
+    # ⤷ 出口 return：返回 await _download_media(image_url, destination, max_retries, m…
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await _download_media(
         image_url, destination, max_retries,
         media_label="Image", accept="image/*,*/*;q=0.8",
         max_bytes=_VISION_MAX_DOWNLOAD_BYTES, timeout=_VISION_DOWNLOAD_TIMEOUT, retry_all=False)
 
 
+# ┌── 函数 def _image_to_base64_data_url()
+# │  作用：``data:<mime>;base64,...`` for a file (MIME from extension when not given).
+# │  参数：image_path: Path, mime_type: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _image_to_base64_data_url(image_path: Path, mime_type: Optional[str] = None) -> str:
     """``data:<mime>;base64,...`` for a file (MIME from extension when not given)."""
     mime = mime_type or _determine_mime_type(image_path)
+    # ⤷ 出口 return：返回 f"data:{mime};base64,{base64.b64encode(image_path.read_bytes…
     return f"data:{mime};base64,{base64.b64encode(image_path.read_bytes()).decode('ascii')}"
 
 
@@ -267,12 +385,23 @@ _SIZE_ERROR_HINTS = (
 )
 
 
+# ┌── 函数 def _is_image_size_error()
+# │  作用：Detect if an API error is related to image or payload size.
+# │  参数：error: Exception
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_image_size_error(error: Exception) -> bool:
     """Detect if an API error is related to image or payload size."""
     err_str = str(error).lower()
+    # ⤷ 出口 return：返回 any((hint in err_str for hint in _SIZE_ERROR_HINTS + ('image…
     return any(hint in err_str for hint in _SIZE_ERROR_HINTS + ("image_url", "invalid_request"))
 
 
+# ┌── 函数 def _build_scale_note()
+# │  作用：Coordinate-mapping disclosure for downscale and/or region crop; ``None`` when neither applied.
+# │  参数：scale_info: Optional[dict], crop_offset: Optional[dict]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _build_scale_note(scale_info: Optional[dict], crop_offset: Optional[dict]) -> Optional[str]:
     """Coordinate-mapping disclosure for downscale and/or region crop; ``None`` when neither applied."""
     parts = []
@@ -290,16 +419,24 @@ def _build_scale_note(scale_info: Optional[dict], crop_offset: Optional[dict]) -
             f"image starting at offset ({crop_offset['x']}, "
             f"{crop_offset['y']}); coordinates are relative to that crop "
             f"origin — add the offset to map back to the full image.")
+    # ⤷ 出口 return：返回 ' '.join(parts) if parts else None
     return " ".join(parts) if parts else None
 
 
+# ┌── 函数 def _import_pillow_for_resize()
+# │  作用：Return ``PIL.Image`` or None (Pillow is a lazy-installable soft dependency). ``prompt=False``:
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _import_pillow_for_resize():
     """Return ``PIL.Image`` or None (Pillow is a lazy-installable soft dependency). ``prompt=False``:
     a blocking input() deadlocks the CLI where prompt_toolkit owns stdin; the install is already
     gated by security.allow_lazy_installs."""
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         from PIL import Image
     except ImportError:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.lazy_deps import ensure as _ensure_dep
             # prompt=False: never raise a blocking input() prompt mid-session. Under the interactive CLI
@@ -308,10 +445,17 @@ def _import_pillow_for_resize():
             _ensure_dep("tool.vision", prompt=False)
             from PIL import Image
         except Exception:
+            # ⤷ 出口 return：返回 None
             return None
+    # ⤷ 出口 return：返回 Image
     return Image
 
 
+# ┌── 函数 def _resize_image_for_vision()
+# │  作用：Base64 data URL, progressively downscaled with Pillow while over budget.
+# │  参数：image_path: Path, mime_type: Optional[str] = None, max_base64_bytes: int = _RESIZE_TARGET_BYTES, max_dimension: Optional[int] = None, scale_out: Optional[dict] = None, force_jpeg: bool = False
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
                               max_base64_bytes: int = _RESIZE_TARGET_BYTES,
                               max_dimension: Optional[int] = None,
@@ -340,13 +484,16 @@ def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
     ):
         data_url = _image_to_base64_data_url(image_path, mime_type=mime_type)
         if len(data_url) <= max_base64_bytes:
+            # ⤷ 出口 return：返回 data_url
             return data_url
 
     def _raw() -> str:
+        # ⤷ 出口 return：返回 data_url or _image_to_base64_data_url(image_path, mime_type=…
         return data_url or _image_to_base64_data_url(image_path, mime_type=mime_type)
     Image = _import_pillow_for_resize()
     if Image is None:
         logger.info("Pillow not installed — cannot auto-resize oversized image")
+        # ⤷ 出口 return：返回 _raw()
         return _raw()  # caller will raise the size error
     logger.info("Image file is %.1f MB (estimated base64 %.1f MB, limit %.1f MB, max_dimension=%s), auto-resizing...",
                 file_size / (1024 * 1024), estimated_b64 / (1024 * 1024),
@@ -354,6 +501,7 @@ def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
     # JPEG for photos (smaller), PNG for transparency — unless force_jpeg.
     is_png = (mime_type or _determine_mime_type(image_path)) == "image/png" and not force_jpeg
     pil_format, out_mime = ("PNG", "image/png") if is_png else ("JPEG", "image/jpeg")
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         img = Image.open(image_path)
     except Exception as exc:
@@ -394,10 +542,12 @@ def _resize_image_for_vision(image_path: Path, mime_type: Optional[str] = None,
                 _record_scale(img.width, img.height)
                 return candidate
     if candidate is None:
+        # ⤷ 出口 return：返回 _raw()
         return _raw()
     logger.warning("Auto-resize could not fit image under %.1f MB (best: %.1f MB)",
                    max_base64_bytes / (1024 * 1024), len(candidate) / (1024 * 1024))
     _record_scale(img.width, img.height)
+    # ⤷ 出口 return：返回 candidate
     return candidate
 
 
@@ -414,6 +564,11 @@ _TOOL_RESULT_MEDIA_PROVIDERS = frozenset({
 _GEMINI_PROVIDERS = frozenset({"google", "gemini", "google-gemini", "google-vertex-gemini"})
 
 
+# ┌── 函数 def _profile_rejects_tool_media()
+# │  作用：Hard veto: the provider's ``ProviderProfile`` declares
+# │  参数：provider: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _profile_rejects_tool_media(provider: str) -> bool:
     """Hard veto: the provider's ``ProviderProfile`` declares
     ``supports_vision_tool_messages=False`` — images are accepted in user
@@ -422,38 +577,58 @@ def _profile_rejects_tool_media(provider: str) -> bool:
     override this, or the multimodal tool-result envelope 400s every turn
     and the image never enters context (#89981).
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from providers import get_provider_profile
         profile = get_provider_profile(str(provider or "").strip().lower())
+        # ⤷ 出口 return：返回 profile is not None and profile.supports_vision_tool_message…
         return profile is not None and profile.supports_vision_tool_messages is False
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _supports_media_in_tool_results()
+# │  作用：Whether provider+model accepts image content inside a tool-result message. Unknown
+# │  参数：provider: str, model: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _supports_media_in_tool_results(provider: str, model: str) -> bool:
     """Whether provider+model accepts image content inside a tool-result message. Unknown
     providers are False (caller falls back to aux-LLM text) unless their ``ProviderProfile``
     declares ``supports_vision``; ``supports_vision_tool_messages=False`` is a hard veto."""
     p = provider.strip().lower() if isinstance(provider, str) else ""
     if not p or _profile_rejects_tool_media(p):
+        # ⤷ 出口 return：返回 False
         return False
     if p in _TOOL_RESULT_MEDIA_PROVIDERS:
+        # ⤷ 出口 return：返回 True
         return True
     if p in _GEMINI_PROVIDERS:
         m = model.strip().lower() if isinstance(model, str) else ""
+        # ⤷ 出口 return：返回 any((tag in m for tag in ('gemini-3', 'gemini-pro-3', 'gemin…
         return any(tag in m for tag in ("gemini-3", "gemini-pro-3", "gemini-flash-3"))
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from providers import get_provider_profile
         profile = get_provider_profile(p)
+        # ⤷ 出口 return：返回 profile is not None and bool(profile.supports_vision)
         return profile is not None and bool(profile.supports_vision)
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _should_use_native_vision_fast_path()
+# │  作用：True when image routing resolves to ``native`` AND the provider accepts images in tool
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_use_native_vision_fast_path() -> bool:
     """True when image routing resolves to ``native`` AND the provider accepts images in tool
     results, or the user set the ``model.supports_vision`` override (escape hatch for
     custom/local providers). Any failure → False."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.auxiliary_client import _read_main_provider, _read_main_model
         from agent.image_routing import decide_image_input_mode, _lookup_supports_vision
@@ -462,20 +637,29 @@ def _should_use_native_vision_fast_path() -> bool:
         model = _read_main_model()
         cfg = load_config()
         if decide_image_input_mode(provider, model, cfg) != "native":
+            # ⤷ 出口 return：返回 False
             return False
         # The profile veto applies ahead of the capability lookup too: a
         # model marked vision-capable by models.dev / custom_providers must
         # not re-open the multimodal-envelope route the profile rejects.
         if _profile_rejects_tool_media(provider):
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 出口 return：返回 _supports_media_in_tool_results(provider, model) or _lookup_…
         return (
             _supports_media_in_tool_results(provider, model)
             or _lookup_supports_vision(provider, model, cfg) is True)
     except Exception as exc:
         logger.debug("Native vision fast-path check failed: %s", exc)
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _build_native_vision_tool_result()
+# │  作用：Multimodal tool-result envelope. The text part is intentionally minimal (the model already
+# │  参数：image_url: str, question: str, image_data_url: str, image_size_bytes: int, scale_note: Optional[str] = None
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _build_native_vision_tool_result(
     image_url: str, question: str, image_data_url: str, image_size_bytes: int,
     scale_note: Optional[str] = None,
@@ -489,6 +673,7 @@ def _build_native_vision_tool_result(
         text_part += f"\n\nQuestion: {question.strip()}"
     if scale_note:
         text_part += f"\n\nNote: {scale_note}"
+    # ⤷ 出口 return：返回 {'_multimodal': True, 'content': [{'type': 'text', 'text': t…
     return {
         "_multimodal": True,
         "content": [
@@ -500,18 +685,32 @@ def _build_native_vision_tool_result(
         "meta": {"image_url": image_url[:200], "size_bytes": image_size_bytes, "native_vision": True}}
 
 
+# ┌── 函数 def _unlink_quietly()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：path: Optional[Path]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _unlink_quietly(path: Optional[Path]) -> None:
     if path is not None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             path.unlink(missing_ok=True)
         except Exception:
             pass
 
 
+# ┌── 类 class _ImagePrepError（继承自：ValueError）
+# │  说明：Raised by :func:`_prepare_image`; the message is user-facing.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class _ImagePrepError(ValueError):
     """Raised by :func:`_prepare_image`; the message is user-facing."""
 
 
+# ┌── 类 class _PreparedImage（继承自：NamedTuple）
+# │  说明：Temp image ready to encode; ``path`` is owned by the caller (delete it).
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class _PreparedImage(NamedTuple):
     """Temp image ready to encode; ``path`` is owned by the caller (delete it)."""
     path: Path
@@ -520,6 +719,12 @@ class _PreparedImage(NamedTuple):
     crop_offset: dict
 
 
+# ┌── 异步函数（协程） def _prepare_image()
+# │  作用：Resolve → materialize → normalize → (validate) → (crop). Raises ``_ImagePrepError``.
+# │  参数：image_url: str, task_id: Optional[str], region: Optional[list], validate_decode: bool
+# │  返回：_PreparedImage
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _prepare_image(
     image_url: str, task_id: Optional[str], region: Optional[list], *, validate_decode: bool,
 ) -> _PreparedImage:
@@ -528,15 +733,20 @@ async def _prepare_image(
     into immutable history would 400 on every resume. The crop runs BEFORE any downscale so the
     region keeps the full resolution budget. On error no temp file is left."""
     from tools.image_source import ImageResolutionError, ResolveContext, resolve_image_source
+    # ⤷ 关键分支 try/except：捕获 ImageResolutionError，出错走兜底而不是崩溃。
     try:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         resolved = await resolve_image_source(image_url, ResolveContext(task_id=task_id))
     except ImageResolutionError as exc:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _ImagePrepError(str(exc)) from exc
     temp_dir = get_hermes_dir("cache/vision", "temp_vision_images")
     temp_dir.mkdir(parents=True, exist_ok=True)
     path = temp_dir / f"temp_image_{uuid.uuid4()}.img"
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     await asyncio.to_thread(path.write_bytes, resolved.data)
     mime, size_bytes, crop_offset = resolved.mime, len(resolved.data), {}
+    # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
     try:
         normalized_path, mime, norm_err = await asyncio.to_thread(_normalize_to_supported_image, path, mime)
         if norm_err or normalized_path is None:
@@ -561,39 +771,65 @@ async def _prepare_image(
     except BaseException:
         _unlink_quietly(path)
         raise
+    # ⤷ 出口 return：返回 _PreparedImage(path, mime, size_bytes, crop_offset)
     return _PreparedImage(path, mime, size_bytes, crop_offset)
 
 
+# ┌── 函数 def _too_large_message()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：image_data_url: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _too_large_message(image_data_url: str) -> str:
+    # ⤷ 出口 return：返回 f'Image too large for vision API: base64 payload is {len(ima…
     return (
         f"Image too large for vision API: base64 payload is {len(image_data_url) / (1024 * 1024):.1f} MB "
         f"(limit {_MAX_BASE64_BYTES / (1024 * 1024):.0f} MB) even after resizing. Install Pillow "
         f"(`pip install Pillow`) for better auto-resize, or compress the image manually.")
 
 
+# ┌── 异步函数（协程） def _resize_prepared()
+# │  作用：Run :func:`_resize_image_for_vision` on the CPU executor for a prepared image.
+# │  参数：prepared: _PreparedImage, scale_info: dict, **kwargs
+# │  返回：str
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _resize_prepared(prepared: _PreparedImage, scale_info: dict, **kwargs) -> str:
     """Run :func:`_resize_image_for_vision` on the CPU executor for a prepared image."""
+    # ⤷ 出口 return：返回 await _run_encode_on_cpu_executor(_resize_image_for_vision, …
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await _run_encode_on_cpu_executor(
         _resize_image_for_vision, prepared.path, mime_type=prepared.mime, scale_out=scale_info, **kwargs,
     )
 
 
+# ┌── 异步函数（协程） def _vision_analyze_native()
+# │  作用：Fast path for vision-capable main models: a ``_multimodal`` envelope dict on success,
+# │  参数：image_url: str, question: str, task_id: Optional[str] = None, region: Optional[list] = None
+# │  返回：Any
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _vision_analyze_native(
     image_url: str, question: str, task_id: Optional[str] = None, region: Optional[list] = None,
 ) -> Any:
     """Fast path for vision-capable main models: a ``_multimodal`` envelope dict on success,
     or a JSON error string (the normal tool-result contract) on failure."""
     if not isinstance(image_url, str) or not image_url.strip():
+        # ⤷ 出口 return：返回 tool_error('image_url is required', success=False)
         return tool_error("image_url is required", success=False)
     prepared: Optional[_PreparedImage] = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.interrupt import is_interrupted
         if is_interrupted():
+            # ⤷ 出口 return：返回 tool_error('Interrupted', success=False)
             return tool_error("Interrupted", success=False)
+        # ⤷ 关键分支 try/except：捕获 _ImagePrepError，出错走兜底而不是崩溃。
         try:
             prepared = await _prepare_image(image_url, task_id, region, validate_decode=True)
         except _ImagePrepError as exc:
             return tool_error(str(exc), success=False)
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         image_data_url = await _run_encode_on_cpu_executor(
             _image_to_base64_data_url, prepared.path, mime_type=prepared.mime)
         # Proactive embed cap: this image is re-sent on every later turn, so resize DOWN to the
@@ -611,6 +847,7 @@ async def _vision_analyze_native(
             # Reject rather than embed a session-wedging payload.
             if len(image_data_url) > _MAX_BASE64_BYTES:
                 return tool_error(_too_large_message(image_data_url), success=False)
+        # ⤷ 出口 return：返回 _build_native_vision_tool_result(image_url=image_url, questi…
         return _build_native_vision_tool_result(
             image_url=image_url, question=question, image_data_url=image_data_url,
             image_size_bytes=prepared.size_bytes,
@@ -624,12 +861,18 @@ async def _vision_analyze_native(
             _unlink_quietly(prepared.path)
 
 
+# ┌── 函数 def _aux_call_kwargs()
+# │  作用：``async_call_llm`` kwargs with ``auxiliary.vision.timeout`` / ``.temperature`` from config.
+# │  参数：messages: list, model: Optional[str], default_timeout: float, min_timeout: Optional[float] = ...
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _aux_call_kwargs(messages: list, model: Optional[str], default_timeout: float, *,
                      min_timeout: Optional[float] = None) -> dict:
     """``async_call_llm`` kwargs with ``auxiliary.vision.timeout`` / ``.temperature`` from config.
     Local vision models (llama.cpp, ollama) can take well over 30s, hence generous defaults
     (temperature 0.1); ``min_timeout`` lets video enforce a floor."""
     timeout, temperature = default_timeout, 0.1
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _vision_cfg = _cfg_auxiliary("vision", default={}) or {}
         if _vision_cfg.get("timeout") is not None:
@@ -638,12 +881,19 @@ def _aux_call_kwargs(messages: list, model: Optional[str], default_timeout: floa
             temperature = float(_vision_cfg["temperature"])
     except Exception:
         pass
+    # ⤷ 出口 return：返回 {'task': 'vision', 'messages': messages, 'temperature': temp…
     return {"task": "vision", "messages": messages, "temperature": temperature, "timeout": timeout,
             **({"model": model} if model else {})}
 
 
+# ┌── 函数 def _media_messages()
+# │  作用：Single user message: text + one ``image_url``/``video_url`` data-URL part.
+# │  参数：user_prompt: str, part_type: str, data_url: str
+# │  返回：list
+# └──────────────────────────────────────────────────────────────
 def _media_messages(user_prompt: str, part_type: str, data_url: str) -> list:
     """Single user message: text + one ``image_url``/``video_url`` data-URL part."""
+    # ⤷ 出口 return：返回 [{'role': 'user', 'content': [{'type': 'text', 'text': user_…
     return [{"role": "user", "content": [
         {"type": "text", "text": user_prompt}, {"type": part_type, part_type: {"url": data_url}}]}]
 
@@ -681,26 +931,47 @@ _ANALYSIS_KINDS = {
     "video": ("video_analyze_tool", _VIDEO_ERROR_RULES)}
 
 
+# ┌── 函数 def _debug_call_data()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：kind: str, source: str, user_prompt: str, model
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _debug_call_data(kind: str, source: str, user_prompt: str, model) -> dict:
     prompt = user_prompt[:200] + "..." if len(user_prompt) > 200 else user_prompt
+    # ⤷ 出口 return：返回 {'parameters': {f'{kind}_url': source, 'user_prompt': prompt…
     return {
         "parameters": {f"{kind}_url": source, "user_prompt": prompt, "model": model},
         "error": None, "success": False, "analysis_length": 0, "model_used": model, f"{kind}_size_bytes": 0}
 
 
+# ┌── 异步函数（协程） def _call_vision_llm()
+# │  作用：Aux vision LLM analysis text, retrying once on empty content (reasoning-only response).
+# │  参数：call_kwargs: dict, empty_log: str, response = None
+# │  返回：（未标注类型）
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _call_vision_llm(call_kwargs: dict, empty_log: str, response=None):
     """Aux vision LLM analysis text, retrying once on empty content (reasoning-only response).
     ``response``: an already-made first call (the image path handles size-error retries itself)."""
     _load_auxiliary_client()
     if response is None:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         response = await async_call_llm(**call_kwargs)
     analysis = extract_content_or_reasoning(response)
     if not analysis:
         logger.warning(empty_log)
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         analysis = extract_content_or_reasoning(await async_call_llm(**call_kwargs))
+    # ⤷ 出口 return：返回 analysis
     return analysis
 
 
+# ┌── 异步函数（协程） def _run_analysis()
+# │  作用：Aux-LLM analysis skeleton for image/video: interrupt check → ``stage`` → JSON result.
+# │  参数：kind: str, source: str, user_prompt: str, model: Optional[str], stage: Callable[[str, dict, list], Awaitable[tuple]]
+# │  返回：str
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _run_analysis(
     kind: str, source: str, user_prompt: str, model: Optional[str],
     stage: Callable[[str, dict, list], Awaitable[tuple]]) -> str:
@@ -719,14 +990,18 @@ async def _run_analysis(
     def finish(result: dict) -> str:
         _debug.log_call(tool_name, debug_call_data)
         _debug.save()
+        # ⤷ 出口 return：返回 json.dumps(result, indent=2, ensure_ascii=False)
         return json.dumps(result, indent=2, ensure_ascii=False)
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.interrupt import is_interrupted
         if is_interrupted():
+            # ⤷ 出口 return：返回 tool_error('Interrupted', success=False)
             return tool_error("Interrupted", success=False)
         logger.info("Analyzing %s: %s", kind, source[:60])
         logger.info("User prompt: %s", user_prompt[:100])
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         analysis, scale_note = await stage(user_prompt, debug_call_data, temp_paths)
         analysis_length = len(analysis) if analysis else 0
         logger.info("%s analysis completed (%s characters)", kind.capitalize(), analysis_length)
@@ -735,6 +1010,7 @@ async def _run_analysis(
         if scale_note:
             result["scale_note"] = scale_note
         debug_call_data.update(success=True, analysis_length=analysis_length)
+        # ⤷ 出口 return：返回 finish(result)
         return finish(result)
     except Exception as e:
         error_msg = f"Error analyzing {kind}: {str(e)}"
@@ -745,6 +1021,7 @@ async def _run_analysis(
             f"There was a problem with the request and the {kind} could not be analyzed. Error: {{e}}")
         analysis = template.format(e=e, model=model)
         debug_call_data["error"] = error_msg
+        # ⤷ 出口 return：返回 finish({'success': False, 'error': error_msg, 'analysis': an…
         return finish({"success": False, "error": error_msg, "analysis": analysis})
     finally:
         for path in temp_paths:
@@ -756,17 +1033,25 @@ async def _run_analysis(
                     logger.warning("Could not delete temporary file: %s", cleanup_error, exc_info=True)
 
 
+# ┌── 异步函数（协程） def vision_analyze_tool()
+# │  作用：Describe an image (URL, local path, data: URL) with the auxiliary vision LLM. ``user_prompt``
+# │  参数：image_url: str, user_prompt: str, model: str = None, task_id: Optional[str] = None, region: Optional[list] = None
+# │  返回：str
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def vision_analyze_tool(
     image_url: str, user_prompt: str, model: str = None,
     task_id: Optional[str] = None, region: Optional[list] = None) -> str:
     """Describe an image (URL, local path, data: URL) with the auxiliary vision LLM. ``user_prompt``
     is pre-formatted by the caller. Temp images live under $HERMES_HOME/cache/vision/."""
     async def stage(prompt: str, debug_call_data: dict, temp_paths: list) -> tuple:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         prepared = await _prepare_image(image_url, task_id, region, validate_decode=False)
         temp_paths.append(prepared.path)
         logger.info("Image ready (%.1f KB)", prepared.size_bytes / 1024)
         # Send at full resolution first; on a size rejection, downscale and retry.
         logger.info("Converting image to base64...")
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         image_data_url = await _run_encode_on_cpu_executor(
             _image_to_base64_data_url, prepared.path, mime_type=prepared.mime)
         logger.info("Image converted to base64 (%.1f KB)", len(image_data_url) / 1024)
@@ -780,6 +1065,7 @@ async def vision_analyze_tool(
         logger.info("Processing image with vision model...")
         call_kwargs = _aux_call_kwargs(messages, model, 120.0)
         _load_auxiliary_client()
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             response = await async_call_llm(**call_kwargs)
         except Exception as _api_err:
@@ -793,10 +1079,18 @@ async def vision_analyze_tool(
             response = await async_call_llm(**call_kwargs)
         analysis = await _call_vision_llm(
             call_kwargs, "Vision LLM returned empty content, retrying once", response)
+        # ⤷ 出口 return：返回 (analysis, _build_scale_note(_scale_info or None, prepared.c…
         return analysis, _build_scale_note(_scale_info or None, prepared.crop_offset or None)
+    # ⤷ 出口 return：返回 await _run_analysis('image', image_url, user_prompt, model, …
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await _run_analysis("image", image_url, user_prompt, model, stage)
 
 
+# ┌── 函数 def check_video_requirements()
+# │  作用：True when ``call_llm(task="vision")`` could resolve a client.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def check_video_requirements() -> bool:
     """True when ``call_llm(task="vision")`` could resolve a client.
 
@@ -810,17 +1104,24 @@ def check_video_requirements() -> bool:
     # No blanket except: a resolver crash must reach the registry, which logs it with a
     # traceback; a swallowed exception reads as "no vision backend configured" (#87950).
     with aux_probe_mode():
+        # ⤷ 出口 return：返回 any((resolve_vision_provider_client(**kw)[1] is not None for…
         return any(
             resolve_vision_provider_client(**kw)[1] is not None for kw in ({}, {"provider": "auto"})
         )
 
 
+# ┌── 函数 def check_vision_requirements()
+# │  作用：Image gate (``vision_analyze``, ``browser_vision``): an aux vision client OR the native fast
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def check_vision_requirements() -> bool:
     """Image gate (``vision_analyze``, ``browser_vision``): an aux vision client OR the native fast
     path. Both handlers attach pixels straight to a vision-capable main model, so a main model on a
     provider the aux resolver does not know (OAuth, local vLLM) must not hide a working tool (#47149).
     ``video_analyze`` keeps the aux-only gate — its handler has no native path.
     """
+    # ⤷ 出口 return：返回 _should_use_native_vision_fast_path() or check_video_require…
     return _should_use_native_vision_fast_path() or check_video_requirements()
 
 
@@ -869,6 +1170,11 @@ VISION_ANALYZE_SCHEMA = {
 }
 
 
+# ┌── 函数 def _configured_aux_model()
+# │  作用：First non-empty ``auxiliary.<section>.model`` from config.yaml, else the first non-empty
+# │  参数：sections: tuple, env_vars: tuple
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _configured_aux_model(sections: tuple, env_vars: tuple) -> Optional[str]:
     """First non-empty ``auxiliary.<section>.model`` from config.yaml, else the first non-empty
     env var (legacy override), else None."""
@@ -876,11 +1182,19 @@ def _configured_aux_model(sections: tuple, env_vars: tuple) -> Optional[str]:
         _vmodel = _cfg_auxiliary(section, "model")
         if _vmodel:
             if str(_vmodel).strip():
+                # ⤷ 出口 return：返回 str(_vmodel).strip()
                 return str(_vmodel).strip()
             break
+    # ⤷ 出口 return：返回 next((v for v in (os.getenv(e, '').strip() for e in env_vars…
     return next((v for v in (os.getenv(e, "").strip() for e in env_vars) if v), None)
 
 
+# ┌── 异步函数（协程） def _handle_vision_analyze()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args: Dict[str, Any], **kw
+# │  返回：str
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _handle_vision_analyze(args: Dict[str, Any], **kw: Any) -> str:
     image_url, question, region = args.get("image_url", ""), args.get("question", ""), args.get("region")
     task_id = kw.get("task_id")
@@ -888,6 +1202,8 @@ async def _handle_vision_analyze(args: Dict[str, Any], **kw: Any) -> str:
     # encode/resize step, so multi-image fan-out keeps full request concurrency.
     if _should_use_native_vision_fast_path():
         logger.info("vision_analyze: native fast path")
+        # ⤷ 出口 return：返回 await _vision_analyze_native(image_url, question, task_id=ta…
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         return await _vision_analyze_native(image_url, question, task_id=task_id, region=region)
 
     # Legacy path: aux LLM describes the image and we return its text.
@@ -895,6 +1211,8 @@ async def _handle_vision_analyze(args: Dict[str, Any], **kw: Any) -> str:
         "Fully describe and explain everything about this image, then answer the "
         f"following question:\n\n{question}")
     model = _configured_aux_model(("vision",), ("AUXILIARY_VISION_MODEL",))
+    # ⤷ 出口 return：返回 await vision_analyze_tool(image_url, full_prompt, model, tas…
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await vision_analyze_tool(image_url, full_prompt, model, task_id=task_id, region=region)
 
 
@@ -924,20 +1242,44 @@ _MAX_VIDEO_BASE64_BYTES = 50 * 1024 * 1024  # 50 MB hard cap
 _VIDEO_SIZE_WARN_BYTES = 20 * 1024 * 1024
 
 
+# ┌── 函数 def _detect_video_mime_type()
+# │  作用：Video MIME type from extension, or None if unsupported.
+# │  参数：video_path: Path
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _detect_video_mime_type(video_path: Path) -> Optional[str]:
     """Video MIME type from extension, or None if unsupported."""
+    # ⤷ 出口 return：返回 _VIDEO_MIME_TYPES.get(video_path.suffix.lower())
     return _VIDEO_MIME_TYPES.get(video_path.suffix.lower())
 
 
+# ┌── 函数 def _unsupported_video_format()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：suffix: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _unsupported_video_format(suffix: str) -> str:
+    # ⤷ 出口 return：返回 f"Unsupported video format: '{suffix}'. Supported: {', '.joi…
     return f"Unsupported video format: '{suffix}'. Supported: {', '.join(sorted(_VIDEO_MIME_TYPES.keys()))}"
 
 
+# ┌── 函数 def _video_to_base64_data_url()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：video_path: Path, mime_type: Optional[str] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _video_to_base64_data_url(video_path: Path, mime_type: Optional[str] = None) -> str:
     mime = mime_type or _detect_video_mime_type(video_path) or "video/mp4"
+    # ⤷ 出口 return：返回 f"data:{mime};base64,{base64.b64encode(video_path.read_bytes…
     return f"data:{mime};base64,{base64.b64encode(video_path.read_bytes()).decode('ascii')}"
 
 
+# ┌── 异步函数（协程） def _materialize_video()
+# │  作用：Local video path for a terminal-backend path, local file, or HTTP(S) URL. Only files created
+# │  参数：video_url: str, task_id: Optional[str], temp_paths: list
+# │  返回：Path
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _materialize_video(video_url: str, task_id: Optional[str], temp_paths: list) -> Path:
     """Local video path for a terminal-backend path, local file, or HTTP(S) URL. Only files created
     here are appended to ``temp_paths`` — never user-provided paths. Terminal-backend reads use the
@@ -955,6 +1297,7 @@ async def _materialize_video(video_url: str, task_id: Optional[str], temp_paths:
         suffix = Path(source).suffix.lower()
         if suffix not in _VIDEO_MIME_TYPES:
             raise ValueError(_unsupported_video_format(suffix))
+        # ⤷ 关键分支 try/except：捕获 ImageResolutionError，出错走兜底而不是崩溃。
         try:
             resolved = await resolve_image_source(
                 video_url, ResolveContext(task_id=task_id), permitted=("video",))
@@ -965,12 +1308,15 @@ async def _materialize_video(video_url: str, task_id: Optional[str], temp_paths:
         path = temp_dir / f"terminal_video_{uuid.uuid4()}{suffix}"
         path.write_bytes(resolved.data)
         temp_paths.append(path)
+        # ⤷ 出口 return：返回 path
         return path
     if local_path.is_file():
         from agent.file_safety import raise_if_read_blocked
         raise_if_read_blocked(str(local_path))
         logger.info("Using local video file: %s", video_url)
+        # ⤷ 出口 return：返回 local_path
         return local_path
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     if await _validate_image_url_async(video_url):
         blocked = check_website_access(video_url)
         if blocked:
@@ -981,25 +1327,36 @@ async def _materialize_video(video_url: str, task_id: Optional[str], temp_paths:
         await _download_media(
             video_url, path, 3, media_label="Video", accept="video/*,*/*;q=0.8",
             max_bytes=_MAX_VIDEO_BASE64_BYTES, timeout=60.0, retry_all=True)
+        # ⤷ 出口 return：返回 path
         return path
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise ValueError("Invalid video source. Provide an HTTP/HTTPS URL or a valid local file path.")
 
 
+# ┌── 异步函数（协程） def video_analyze_tool()
+# │  作用：Analyze a video via multimodal LLM. Returns JSON {success, analysis}.
+# │  参数：video_url: str, user_prompt: str, model: str = None, task_id: Optional[str] = None
+# │  返回：str
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def video_analyze_tool(
     video_url: str, user_prompt: str, model: str = None, task_id: Optional[str] = None) -> str:
     """Analyze a video via multimodal LLM. Returns JSON {success, analysis}."""
     async def stage(prompt: str, debug_call_data: dict, temp_paths: list) -> tuple:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         temp_video_path = await _materialize_video(video_url, task_id, temp_paths)
         video_size_bytes = temp_video_path.stat().st_size
         video_size_mb = video_size_bytes / (1024 * 1024)
         logger.info("Video ready (%.1f MB)", video_size_mb)
         detected_mime = _detect_video_mime_type(temp_video_path)
         if not detected_mime:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ValueError(_unsupported_video_format(temp_video_path.suffix))
         if video_size_bytes > _VIDEO_SIZE_WARN_BYTES:
             logger.warning("Video is %.1f MB — may be slow or rejected", video_size_mb)
         video_data_url = _video_to_base64_data_url(temp_video_path, mime_type=detected_mime)
         if len(video_data_url) > _MAX_VIDEO_BASE64_BYTES:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ValueError(
                 f"Video too large for API: base64 payload is {len(video_data_url) / (1024 * 1024):.1f} MB "
                 f"(limit {_MAX_VIDEO_BASE64_BYTES / (1024 * 1024):.0f} MB). "
@@ -1008,7 +1365,10 @@ async def video_analyze_tool(
         messages = _media_messages(prompt, "video_url", video_data_url)
         call_kwargs = _aux_call_kwargs(messages, model, 180.0, min_timeout=180.0)
         analysis = await _call_vision_llm(call_kwargs, "Empty video response, retrying once")
+        # ⤷ 出口 return：返回 (analysis, None)
         return analysis, None
+    # ⤷ 出口 return：返回 await _run_analysis('video', video_url, user_prompt, model, …
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await _run_analysis("video", video_url, user_prompt, model, stage)
 
 
@@ -1038,6 +1398,11 @@ VIDEO_ANALYZE_SCHEMA = {
 }
 
 
+# ┌── 函数 def _handle_video_analyze()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args: Dict[str, Any], **kw
+# │  返回：Awaitable[str]
+# └──────────────────────────────────────────────────────────────
 def _handle_video_analyze(args: Dict[str, Any], **kw: Any) -> Awaitable[str]:
     video_url, question = args.get("video_url", ""), args.get("question", "")
     full_prompt = (
@@ -1045,6 +1410,7 @@ def _handle_video_analyze(args: Dict[str, Any], **kw: Any) -> Awaitable[str]:
         "including visual content, motion, audio cues, text overlays, and scene "
         f"transitions. Then answer the following question:\n\n{question}")
     model = _configured_aux_model(("video", "vision"), ("AUXILIARY_VIDEO_MODEL", "AUXILIARY_VISION_MODEL"))
+    # ⤷ 出口 return：返回 video_analyze_tool(video_url, full_prompt, model, task_id=kw…
     return video_analyze_tool(video_url, full_prompt, model, task_id=kw.get("task_id"))
 
 

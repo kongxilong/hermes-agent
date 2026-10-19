@@ -6,6 +6,34 @@ context engine). Phase ORDER is load-bearing: later phases read attributes earli
 Symbols that tests patch on ``run_agent.*`` (``OpenAI``, ``get_tool_definitions``,
 ``logger``, …) are resolved through :func:`_ra` so the patch contract is preserved.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/agent_init.py（约 2332 行）
+# 地位：★ AIAgent 的构造函数在这里实现（函数名叫 init_agent(agent, ...)）。
+#
+# 为什么单独拆一个文件：run_agent.py 里 AIAgent.__init__ 只是转发到这里。
+#   因为初始化要做的事情实在太多（选模型、建客户端、装工具、建会话、配压缩引擎 ...），全塞进一个类里没法维护。
+#
+# 最重要的概念：阶段顺序是有意义的（ORDER is load-bearing）。
+#   init_agent 是一个「有序编排器」，依次调用 _init_* / _build_* 系列：
+#     路由(routing) → 回调(callbacks) → 客户端(client) → 工具(tools) → 会话(session)
+#     → 配置段(config sections) → 压缩(compression) → 上下文引擎(context engine)
+#   后面的阶段会读取前面阶段设置的属性，所以顺序不能乱改。
+#
+# 关键函数导览：
+#   _resolve_api_mode()       决定用哪种 API 协议（chat_completions / anthropic / codex / bedrock ...）
+#   _build_client()           构造 OpenAI / Anthropic 客户端
+#   _init_fallback_chain()    配置「主模型挂了就换备用模型」的降级链
+#   _load_tools()             装载工具清单
+#   _init_session_state()     初始化会话（会写数据库）
+#   _parse_compression_config() 解析上下文压缩配置
+#   _build_context_engine()   构造上下文引擎
+#   init_agent()              总入口，把上面全部串起来
+#
+# 注意：源码注释里提到，_ra() 是为了让测试能 patch run_agent 上的名字而做的间接层。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -51,6 +79,11 @@ logger = logging.getLogger("run_agent")
 _warned_unavailable_providers: set[str] = set()
 
 
+# ┌── 函数 def _warn_memory_provider_unavailable()
+# │  作用：Warn once per provider that a configured memory provider is unavailable.
+# │  参数：name: str, reason: str = ''
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _warn_memory_provider_unavailable(name: str, reason: str = "") -> None:
     """Warn once per provider that a configured memory provider is unavailable.
 
@@ -72,6 +105,11 @@ def _warn_memory_provider_unavailable(name: str, reason: str = "") -> None:
     )
 
 
+# ┌── 函数 def _provider_default_routes()
+# │  作用：Return known exact default routes for a canonical provider id.
+# │  参数：provider: str
+# │  返回：set[str]
+# └──────────────────────────────────────────────────────────────
 def _provider_default_routes(provider: str) -> set[str]:
     """Return known exact default routes for a canonical provider id."""
     routes: set[str] = set()
@@ -102,9 +140,15 @@ def _provider_default_routes(provider: str) -> set[str]:
 
     if provider == "gemini":
         routes.update(f"{route.rstrip('/')}/openai" for route in list(routes))
+    # ⤷ 出口 return：返回 routes
     return routes
 
 
+# ┌── 函数 def _context_route_mismatch()
+# │  作用：Return whether a context pin's configured route differs from runtime.
+# │  参数：configured_base_url: Any, active_base_url: Any, configured_provider: Any, active_provider: Any, already_normalized: bool = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _context_route_mismatch(
     configured_base_url: Any, active_base_url: Any, configured_provider: Any, active_provider: Any,
     *, already_normalized: bool = False,
@@ -113,12 +157,15 @@ def _context_route_mismatch(
     _norm = (lambda v: str(v or "")) if already_normalized else normalize_route_base_url
     configured_route, active_route = _norm(configured_base_url), _norm(active_base_url)
     if configured_route:
+        # ⤷ 出口 return：返回 configured_route != active_route
         return configured_route != active_route
 
     configured_provider = str(configured_provider or "").strip()
     active_provider = str(active_provider or "").strip()
     if not configured_provider:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.models import normalize_provider as normalize_model_provider
         configured_provider = normalize_model_provider(configured_provider)
@@ -134,29 +181,50 @@ def _context_route_mismatch(
     if active_route:
         configured_routes = _provider_default_routes(configured_provider)
         if configured_routes:
+            # ⤷ 出口 return：返回 active_route not in configured_routes
             return active_route not in configured_routes
         # Named/custom providers have no catalog default routes: an empty configured URL
         # with a matching provider identity is the same route (gateway display paths
         # compare the raw empty model.base_url and must not drop model.context_length).
+        # ⤷ 出口 return：返回 not (active_provider and configured_provider == active_provi…
         return not (active_provider and configured_provider == active_provider)
+    # ⤷ 出口 return：返回 bool(configured_provider and active_provider and (configured…
     return bool(
         configured_provider and active_provider and configured_provider != active_provider
     )
 
 
+# ┌── 函数 def _normalize_custom_provider_name()
+# │  作用：Mirror runtime normalization for a requested custom-provider identity.
+# │  参数：value: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _normalize_custom_provider_name(value: Any) -> str:
     """Mirror runtime normalization for a requested custom-provider identity."""
+    # ⤷ 出口 return：返回 str(value or '').strip().lower().replace(' ', '-')
     return str(value or "").strip().lower().replace(" ", "-")
 
 
+# ┌── 函数 def _custom_provider_runtime_ids()
+# │  作用：Return raw/menu identities that runtime accepts for a configured name.
+# │  参数：value: Any
+# │  返回：set[str]
+# └──────────────────────────────────────────────────────────────
 def _custom_provider_runtime_ids(value: Any) -> set[str]:
     """Return raw/menu identities that runtime accepts for a configured name."""
     normalized = _normalize_custom_provider_name(value)
     if not normalized:
+        # ⤷ 出口 return：返回 set()
         return set()
+    # ⤷ 出口 return：返回 {normalized, f'custom:{normalized}'}
     return {normalized, f"custom:{normalized}"}
 
 
+# ┌── 函数 def _build_codex_gpt5_autoraise_notice()
+# │  作用：One-time notice when Codex gpt-5.x raises compaction (``autoraise``: model/from/to).
+# │  参数：autoraise: Dict[str, Any], context_length: Optional[int] = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _build_codex_gpt5_autoraise_notice(
     autoraise: Dict[str, Any], context_length: Optional[int] = None
 ) -> str:
@@ -174,6 +242,7 @@ def _build_codex_gpt5_autoraise_notice(
         cap = "128K" if model.startswith("gpt-5.3-codex-spark") else "272K"
     from_pct = int(round(autoraise["from"] * 100))
     to_pct = int(round(autoraise["to"] * 100))
+    # ⤷ 出口 return：返回 f'ℹ Codex {model} caps context at {cap}, so auto-compaction …
     return (
         f"ℹ Codex {model} caps context at {cap}, so auto-compaction was raised "
         f"to {to_pct}% (from {from_pct}%) to use more of the window before "
@@ -182,6 +251,11 @@ def _build_codex_gpt5_autoraise_notice(
     )
 
 
+# ┌── 函数 def _resolve_compression_threshold()
+# │  作用：Global compaction threshold merged with a per-model override.
+# │  参数：global_threshold: float, model_cthresh: Optional[float], model: Optional[str] = ..., is_codex_autoraise: bool
+# │  返回：tuple[float, Optional[Dict[str, Any]]]
+# └──────────────────────────────────────────────────────────────
 def _resolve_compression_threshold(
     global_threshold: float, model_cthresh: Optional[float], *, model: Optional[str] = None,
     is_codex_autoraise: bool,
@@ -193,19 +267,34 @@ def _resolve_compression_threshold(
     keeps more raw context). Other overrides (Arcee Trinity) stay unconditional.
     """
     if model_cthresh is None:
+        # ⤷ 出口 return：返回 (global_threshold, None)
         return global_threshold, None
     if is_codex_autoraise:
         if model_cthresh <= global_threshold + 1e-9:
+            # ⤷ 出口 return：返回 (global_threshold, None)
             return global_threshold, None
+        # ⤷ 出口 return：返回 (model_cthresh, {'model': model, 'from': global_threshold, '…
         return model_cthresh, {"model": model, "from": global_threshold, "to": model_cthresh}
+    # ⤷ 出口 return：返回 (model_cthresh, None)
     return model_cthresh, None
 
 
+# ┌── 函数 def _codex_gpt55_autoraise_notice_marker()
+# │  作用：Per-profile marker path (``$HERMES_HOME`` is profile-scoped; not a config key).
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _codex_gpt55_autoraise_notice_marker():
     """Per-profile marker path (``$HERMES_HOME`` is profile-scoped; not a config key)."""
+    # ⤷ 出口 return：返回 get_hermes_home() / '.codex_gpt55_autoraise_notice'
     return get_hermes_home() / ".codex_gpt55_autoraise_notice"
 
 
+# ┌── 函数 def _codex_gpt55_autoraise_notice_state()
+# │  作用：Notice identity keyed on what it displays (model + from→to percentages).
+# │  参数：autoraise: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _codex_gpt55_autoraise_notice_state(autoraise: Dict[str, Any]) -> str:
     """Notice identity keyed on what it displays (model + from→to percentages).
 
@@ -215,20 +304,34 @@ def _codex_gpt55_autoraise_notice_state(autoraise: Dict[str, Any]) -> str:
     model = str(autoraise.get("model") or "").strip().lower().rsplit("/", 1)[-1]
     from_pct = int(round(float(autoraise["from"]) * 100))
     to_pct = int(round(float(autoraise["to"]) * 100))
+    # ⤷ 出口 return：返回 f'{model}:{from_pct}:{to_pct}'
     return f"{model}:{from_pct}:{to_pct}"
 
 
+# ┌── 函数 def _codex_gpt55_autoraise_notice_seen()
+# │  作用：True if this exact notice was already shown for this profile (unreadable = unseen).
+# │  参数：autoraise: Dict[str, Any]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _codex_gpt55_autoraise_notice_seen(autoraise: Dict[str, Any]) -> bool:
     """True if this exact notice was already shown for this profile (unreadable = unseen)."""
+    # ⤷ 关键分支 try/except：捕获 (OSError, KeyError, TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
         current = _codex_gpt55_autoraise_notice_state(autoraise)
+        # ⤷ 出口 return：返回 _codex_gpt55_autoraise_notice_marker().read_text(encoding='u…
         return _codex_gpt55_autoraise_notice_marker().read_text(
             encoding="utf-8"
         ).strip() == current
     except (OSError, KeyError, TypeError, ValueError):
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _record_codex_gpt55_autoraise_notice()
+# │  作用：Persist that the notice was shown. Best-effort: a failure only re-shows it later.
+# │  参数：autoraise: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _record_codex_gpt55_autoraise_notice(autoraise: Dict[str, Any]) -> None:
     """Persist that the notice was shown. Best-effort: a failure only re-shows it later."""
     with suppress(OSError, KeyError, TypeError, ValueError):
@@ -237,12 +340,24 @@ def _record_codex_gpt55_autoraise_notice(autoraise: Dict[str, Any]) -> None:
         marker.write_text(_codex_gpt55_autoraise_notice_state(autoraise), encoding="utf-8")
 
 
+# ┌── 函数 def _normalized_custom_base_url()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _normalized_custom_base_url(value: Any) -> str:
     if not isinstance(value, str):
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 出口 return：返回 value.strip().rstrip('/')
     return value.strip().rstrip("/")
 
 
+# ┌── 函数 def _custom_provider_model_matches()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent_model: str, entry: Dict[str, Any]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _custom_provider_model_matches(agent_model: str, entry: Dict[str, Any]) -> bool:
     agent_model_norm = str(agent_model or "").strip().lower()
     # Multi-model entries (`providers.<name>.models` mapping / legacy `models:` list):
@@ -251,20 +366,29 @@ def _custom_provider_model_matches(agent_model: str, entry: Dict[str, Any]) -> b
     models = entry.get("models")
     catalog = [str(m).strip().lower() for m in models] if isinstance(models, (dict, list, tuple)) else []
     if catalog and agent_model_norm in catalog:
+        # ⤷ 出口 return：返回 True
         return True
     provider_model = str(entry.get("model", "") or "").strip().lower()
+    # ⤷ 出口 return：返回 not provider_model and (not catalog) or provider_model == ag…
     return (not provider_model and not catalog) or provider_model == agent_model_norm
 
 
+# ┌── 函数 def _custom_provider_extra_body_for_agent()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：provider: str, model: str, base_url: str, custom_providers: List[Dict[str, Any]]
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _custom_provider_extra_body_for_agent(
     *, provider: str, model: str, base_url: str, custom_providers: List[Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
     provider_norm = (provider or "").strip().lower()
     if provider_norm != "custom" and not provider_norm.startswith("custom:"):
+        # ⤷ 出口 return：返回 None
         return None
     provider_key_filter = provider_norm.partition(":")[2].strip()
     target_url = _normalized_custom_base_url(base_url)
     if not target_url:
+        # ⤷ 出口 return：返回 None
         return None
 
     fallback: Optional[Dict[str, Any]] = None
@@ -284,12 +408,19 @@ def _custom_provider_extra_body_for_agent(
             continue
         if str(entry.get("model", "") or "").strip():
             if _custom_provider_model_matches(model, entry):
+                # ⤷ 出口 return：返回 dict(extra_body)
                 return dict(extra_body)
         elif fallback is None:
             fallback = dict(extra_body)
+    # ⤷ 出口 return：返回 fallback
     return fallback
 
 
+# ┌── 函数 def _merge_custom_provider_extra_body()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, custom_providers: List[Dict[str, Any]]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _merge_custom_provider_extra_body(agent, custom_providers: List[Dict[str, Any]]) -> None:
     extra_body = _custom_provider_extra_body_for_agent(
         provider=agent.provider, model=agent.model, base_url=agent.base_url,
@@ -306,18 +437,32 @@ def _merge_custom_provider_extra_body(agent, custom_providers: List[Dict[str, An
     agent.request_overrides = overrides
 
 
+# ┌── 函数 def _normalize_run_budget_seconds()
+# │  作用：Positive float or None (feature off). ``bool`` rejected: YAML ``true`` → 1s budget.
+# │  参数：value
+# │  返回：Optional[float]
+# └──────────────────────────────────────────────────────────────
 def _normalize_run_budget_seconds(value) -> Optional[float]:
     """Positive float or None (feature off). ``bool`` rejected: YAML ``true`` → 1s budget."""
     if value is None or isinstance(value, bool):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
         seconds = float(value)
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 seconds if seconds > 0 else None
     return seconds if seconds > 0 else None  # NaN compares False → None
 
 
 
+# ┌── 函数 def _refuse_checkpoint_required_on_codex_app_server()
+# │  作用：Fail closed at init: the codex app-server compacts its own thread without a truthful
+# │  参数：checkpoint_required: bool, api_mode: Optional[str]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _refuse_checkpoint_required_on_codex_app_server(
     checkpoint_required: bool, api_mode: Optional[str]
 ) -> None:
@@ -325,6 +470,7 @@ def _refuse_checkpoint_required_on_codex_app_server(
     pre-compaction boundary (default "native" mode), so a required checkpoint can't be
     guaranteed — the compress_context() guard alone cannot cover native turns."""
     if checkpoint_required and api_mode == "codex_app_server":
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(
             "BLOCKED_MISSING_PREREQUISITE: compression.checkpoint_required "
             "is incompatible with the codex_app_server API mode: the codex "
@@ -335,31 +481,58 @@ def _refuse_checkpoint_required_on_codex_app_server(
         )
 
 
+# ┌── 函数 def _parse_config_int()
+# │  作用：Strict int coercion: rejects bool (YAML ``true`` → 1) and fractional floats.
+# │  参数：raw: Any, default: int
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _parse_config_int(raw: Any, default: int) -> int:
     """Strict int coercion: rejects bool (YAML ``true`` → 1) and fractional floats."""
     if isinstance(raw, bool):
+        # ⤷ 出口 return：返回 default
         return default
     if isinstance(raw, int):
+        # ⤷ 出口 return：返回 raw
         return raw
     if isinstance(raw, float):
+        # ⤷ 出口 return：返回 int(raw) if raw.is_integer() else default
         return int(raw) if raw.is_integer() else default
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 int(str(raw).strip())
         return int(str(raw).strip())
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def _cfg_flag()
+# │  作用：Legacy string-set truthiness used by the ``compression`` section.
+# │  参数：cfg: Dict[str, Any], key: str, default: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _cfg_flag(cfg: Dict[str, Any], key: str, default: bool) -> bool:
     """Legacy string-set truthiness used by the ``compression`` section."""
+    # ⤷ 出口 return：返回 str(cfg.get(key, default)).lower() in {'true', '1', 'yes'}
     return str(cfg.get(key, default)).lower() in {"true", "1", "yes"}
 
 
+# ┌── 函数 def _cfg_dict()
+# │  作用：``cfg[key]`` if it is a mapping, else ``{}`` (malformed sections are ignored).
+# │  参数：cfg: Dict[str, Any], key: str
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _cfg_dict(cfg: Dict[str, Any], key: str) -> Dict[str, Any]:
     """``cfg[key]`` if it is a mapping, else ``{}`` (malformed sections are ignored)."""
     section = cfg.get(key, {})
+    # ⤷ 出口 return：返回 section if isinstance(section, dict) else {}
     return section if isinstance(section, dict) else {}
 
 
+# ┌── 类 class CompressionSettings（继承自：SimpleNamespace）
+# │  说明：Parsed ``compression`` config section (see ``_parse_compression_config``).
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class CompressionSettings(SimpleNamespace):
     """Parsed ``compression`` config section (see ``_parse_compression_config``)."""
 
@@ -370,6 +543,11 @@ _EXPLICIT_API_MODES = {
 }
 
 
+# ┌── 函数 def _resolve_api_mode()
+# │  作用：Set ``agent.api_mode`` (and provider rewrites) — ordered ladder, first match wins.
+# │  参数：agent, api_mode, provider_name, base_url
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _resolve_api_mode(agent, api_mode, provider_name, base_url):
     """Set ``agent.api_mode`` (and provider rewrites) — ordered ladder, first match wins."""
     from hermes_cli.providers import is_actual_route
@@ -405,6 +583,7 @@ def _resolve_api_mode(agent, api_mode, provider_name, base_url):
         # Host-mandated wire check — LAST, so the provider-slug rewrites above always win.
         # Covers api.meta.ai → codex_responses (prompt caching: 0% on chat vs 93-99%).
         # URL-driven, not provider-name-driven: `providers.meta` may point anywhere.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Note: provider="meta" without an api.meta.ai base_url (or with a non-api.meta.ai base_url)
             # intentionally falls through to chat_completions here. The wire protocol for Meta is URL-driven
@@ -418,6 +597,11 @@ def _resolve_api_mode(agent, api_mode, provider_name, base_url):
         agent.api_mode = _mandated if _mandated is not None else "chat_completions"
 
 
+# ┌── 函数 def _finalize_routing()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_mode, credential_pool
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _finalize_routing(agent, api_mode, credential_pool):
     from hermes_cli.providers import is_actual_route
     # Credential-pool validation runs AFTER provider auto-detection so a pool scoped to
@@ -425,6 +609,7 @@ def _finalize_routing(agent, api_mode, credential_pool):
     # Regression from #63048 which placed this check before the URL-based auto-detection block above (fixed
     # #63425).
     if credential_pool is not None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.credential_pool import credential_pool_matches_provider
             if not credential_pool_matches_provider(
@@ -501,6 +686,11 @@ def _finalize_routing(agent, api_mode, credential_pool):
         ).start()
 
 
+# ┌── 函数 def _set_defaults()
+# │  作用：Assign each ``name -> value`` on ``agent``; callables are factories (fresh per agent).
+# │  参数：agent, table: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _set_defaults(agent, table: Dict[str, Any]) -> None:
     """Assign each ``name -> value`` on ``agent``; callables are factories (fresh per agent)."""
     for name, value in table.items():
@@ -638,6 +828,11 @@ _STREAM_STATE: Dict[str, Any] = {
 }
 
 
+# ┌── 函数 def _init_prompt_cache_config()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_prompt_cache_config(agent):
     # Anthropic prompt caching (~75% input savings): auto-enabled for Claude on native
     # Anthropic, OpenRouter and anthropic_messages gateways. See _anthropic_prompt_cache_policy.
@@ -669,6 +864,11 @@ def _init_prompt_cache_config(agent):
             agent._cache_disabled = True
 
 
+# ┌── 函数 def _init_turn_state()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, run_budget_seconds
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_turn_state(agent, run_budget_seconds):
     _set_defaults(agent, _TURN_STATE)
     # Wall-clock run budget per turn: constructor arg wins, else agent.run_budget_seconds
@@ -678,6 +878,11 @@ def _init_turn_state(agent, run_budget_seconds):
     agent._credits_latch = new_credits_latch()  # threshold-notice latch (sticky keys + gates)
 
 
+# ┌── 函数 def _setup_logging()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _setup_logging(agent):
     # agent.log (INFO+) + errors.log (WARNING+); idempotent so per-message gateway agents
     # don't duplicate handlers.
@@ -691,6 +896,11 @@ def _setup_logging(agent):
     # would starve the root file handlers. Noise reduction belongs in hermes_logging.
 
 
+# ┌── 函数 def _print_key_banner()
+# │  作用：Masked credential line. ``key`` may be a callable Entra ID bearer provider (Azure
+# │  参数：key, label: str, warn_missing: bool = False
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_key_banner(key, label: str, warn_missing: bool = False) -> None:
     """Masked credential line. ``key`` may be a callable Entra ID bearer provider (Azure
     Foundry) — never invoke or inspect it. Keys ≤ 12 chars (incl. "dummy-key") are not shown."""
@@ -703,6 +913,11 @@ def _print_key_banner(key, label: str, warn_missing: bool = False) -> None:
         print("⚠️  Warning: API key appears invalid or missing")
 
 
+# ┌── 函数 def _init_anthropic_client()
+# │  作用：anthropic_messages: native Anthropic SDK (or AnthropicBedrock for Bedrock+Claude).
+# │  参数：agent, api_key, base_url, _provider_timeout
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_anthropic_client(agent, api_key, base_url, _provider_timeout):
     """anthropic_messages: native Anthropic SDK (or AnthropicBedrock for Bedrock+Claude)."""
     from agent.anthropic_adapter import build_anthropic_client
@@ -727,6 +942,7 @@ def _init_anthropic_client(agent, api_key, base_url, _provider_timeout):
     # callable provider: build_anthropic_client mints a fresh bearer per request (re-reading
     # auth.json, so other processes' refreshes are seen).
     if agent.provider == "minimax-oauth" and isinstance(effective_key, str) and effective_key:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.auth import build_minimax_oauth_token_provider
             effective_key = build_minimax_oauth_token_provider()
@@ -753,6 +969,11 @@ def _init_anthropic_client(agent, api_key, base_url, _provider_timeout):
         _print_key_banner(effective_key, "token")
 
 
+# ┌── 函数 def _init_moa_client()
+# │  作用：provider == "moa": virtual Mixture-of-Agents facade, no real HTTP client.
+# │  参数：agent, api_key
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_moa_client(agent, api_key):
     """provider == "moa": virtual Mixture-of-Agents facade, no real HTTP client."""
     from agent.moa_loop import build_moa_facade
@@ -775,6 +996,11 @@ def _init_moa_client(agent, api_key):
         print(f"🤖 AI Agent initialized with MoA preset: {agent.model}")
 
 
+# ┌── 函数 def _init_bedrock_client()
+# │  作用：bedrock_converse: boto3 directly, no OpenAI client.
+# │  参数：agent, base_url
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_bedrock_client(agent, base_url):
     """bedrock_converse: boto3 directly, no OpenAI client."""
     from agent.bedrock_adapter import bind_bedrock_runtime
@@ -784,6 +1010,11 @@ def _init_bedrock_client(agent, base_url):
         print(f"🤖 AI Agent initialized with model: {agent.model} (AWS Bedrock, {agent._bedrock_region}{_gr_label})")
 
 
+# ┌── 函数 def _explicit_client_kwargs()
+# │  作用：OpenAI-client kwargs from explicit CLI/gateway credentials (auth already resolved).
+# │  参数：agent, api_key, base_url, _provider_timeout
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _explicit_client_kwargs(agent, api_key, base_url, _provider_timeout) -> Dict[str, Any]:
     """OpenAI-client kwargs from explicit CLI/gateway credentials (auth already resolved)."""
     _parsed_url = urlparse(base_url)
@@ -815,9 +1046,15 @@ def _explicit_client_kwargs(agent, api_key, base_url, _provider_timeout) -> Dict
             _ph = _gpf(agent.provider)
             if _ph and _ph.default_headers:
                 client_kwargs["default_headers"] = dict(_ph.default_headers)
+    # ⤷ 出口 return：返回 client_kwargs
     return client_kwargs
 
 
+# ┌── 函数 def _routed_client_kwargs()
+# │  作用：OpenAI-client kwargs via the centralized provider router (no explicit creds).
+# │  参数：agent, fallback_model, _provider_timeout
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str, Any]:
     """OpenAI-client kwargs via the centralized provider router (no explicit creds).
 
@@ -832,6 +1069,7 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
         effective_provider = getattr(_routed_client, "_hermes_aux_effective_provider", "")
         if is_actual_route(effective_provider):
             agent.provider = normalize_provider(effective_provider)
+        # ⤷ 出口 return：返回 _client_kwargs_from_routed(_routed_client, _provider_timeout…
         return _client_kwargs_from_routed(_routed_client, _provider_timeout)
     # No credentials: try the fallback chain BEFORE failing (an exhausted single-entry pool
     # must not die with a misleading "No LLM provider configured"); only explicitly named
@@ -841,6 +1079,7 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
     # #17929.
     _explicit = (agent.provider or "").strip().lower()
     for _fb in _fallback_entries(fallback_model):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.fallback_config import resolve_entry_api_key
             _fb_explicit_key = resolve_entry_api_key(_fb)
@@ -855,6 +1094,7 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
             agent.provider = _fb["provider"]
             agent.model = _fb_model or _fb["model"]
             agent._fallback_activated = True
+            # ⤷ 出口 return：返回 _client_kwargs_from_routed(_fb_client, _provider_timeout)
             return _client_kwargs_from_routed(_fb_client, _provider_timeout)
     if _explicit and _explicit not in {"auto", "openrouter", "custom"}:
         # Explicit non-OpenRouter provider with no creds and no usable fallback: fail fast.
@@ -865,11 +1105,13 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
             _pcfg = PROVIDER_REGISTRY.get(_explicit)
             if _pcfg and _pcfg.api_key_env_vars:
                 _env_hint = _pcfg.api_key_env_vars[0]
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(
             f"Provider '{_explicit}' is set in config.yaml but no API key "
             f"was found. Set the {_env_hint} environment "
             f"variable, or switch to a different provider with `hermes model`."
         )
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise RuntimeError(
         "No LLM provider configured. Run `hermes model` to "
         "select a provider, or run `hermes setup` for first-time "
@@ -877,6 +1119,11 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
     )
 
 
+# ┌── 函数 def _apply_openai_header_policy()
+# │  作用：Mutate ``client_kwargs`` (== ``agent._client_kwargs``) with header/TLS policy, in order:
+# │  参数：agent, client_kwargs: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_openai_header_policy(agent, client_kwargs: Dict[str, Any]) -> None:
     """Mutate ``client_kwargs`` (== ``agent._client_kwargs``) with header/TLS policy, in order:
     OpenRouter Claude beta header → model.default_headers → custom-provider TLS/extra_headers."""
@@ -893,6 +1140,7 @@ def _apply_openai_header_policy(agent, client_kwargs: Dict[str, Any]) -> None:
             client_kwargs["default_headers"] = headers
     # model.default_headers override provider/SDK defaults (WAFs rejecting SDK headers).
     agent._apply_user_default_headers()
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import (
             apply_custom_provider_extra_headers_to_client_kwargs,
@@ -909,6 +1157,11 @@ def _apply_openai_header_policy(agent, client_kwargs: Dict[str, Any]) -> None:
         logger.debug("custom-provider TLS resolution skipped", exc_info=True)
 
 
+# ┌── 函数 def _init_openai_client()
+# │  作用：OpenAI-wire client: resolve kwargs, apply header/TLS policy, construct.
+# │  参数：agent, api_key, base_url, fallback_model, _provider_timeout
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_openai_client(agent, api_key, base_url, fallback_model, _provider_timeout):
     """OpenAI-wire client: resolve kwargs, apply header/TLS policy, construct."""
     if api_key and base_url:
@@ -920,17 +1173,20 @@ def _init_openai_client(agent, api_key, base_url, fallback_model, _provider_time
         agent.api_mode = "chat_completions"
         if hasattr(agent, "_transport_cache"):
             agent._transport_cache.clear()
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.bedrock_adapter import configure_bedrock_openai_client_kwargs
         configure_bedrock_openai_client_kwargs(client_kwargs, timeout=_provider_timeout)
     except Exception:
         if agent.provider == "bedrock" and "bedrock-mantle." in str(client_kwargs.get("base_url", "")):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
 
     agent._client_kwargs = client_kwargs  # stored for rebuilding after interrupt
     _apply_openai_header_policy(agent, client_kwargs)
     agent.api_key = client_kwargs.get("api_key", "")
     agent.base_url = client_kwargs.get("base_url", agent.base_url)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.ssl_guard import verify_ca_bundle
         verify_ca_bundle()
@@ -941,9 +1197,15 @@ def _init_openai_client(agent, api_key, base_url, fallback_model, _provider_time
                 print(f"🔗 Using custom base URL: {base_url}")
             _print_key_banner(client_kwargs.get("api_key", "none"), "API key", warn_missing=True)
     except Exception as e:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(f"Failed to initialize OpenAI client: {e}")
 
 
+# ┌── 函数 def _build_client()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_key, base_url, fallback_model
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_client(agent, api_key, base_url, fallback_model):
     # LLM client per wire mode (raw_codex=True: the main agent needs direct
     # responses.stream()). One provider/model timeout up front so every path applies it.
@@ -960,6 +1222,11 @@ def _build_client(agent, api_key, base_url, fallback_model):
         _init_openai_client(agent, api_key, base_url, fallback_model, _provider_timeout)
 
 
+# ┌── 函数 def _lazy_headers()
+# │  作用：Header factory ``(api_key, base_url) -> dict`` importing ``module.name`` at call time.
+# │  参数：module: str, name: str, pass_key: bool = False, pass_base: bool = False
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _lazy_headers(module: str, name: str, pass_key: bool = False, pass_base: bool = False):
     """Header factory ``(api_key, base_url) -> dict`` importing ``module.name`` at call time.
     ``pass_key`` forwards ``(key, base_url=base)``; ``pass_base`` forwards ``(base)``."""
@@ -967,8 +1234,11 @@ def _lazy_headers(module: str, name: str, pass_key: bool = False, pass_base: boo
         import importlib
         fn = getattr(importlib.import_module(module), name)
         if pass_key:
+            # ⤷ 出口 return：返回 fn(key, base_url=base)
             return fn(key, base_url=base)
+        # ⤷ 出口 return：返回 fn(base) if pass_base else fn()
         return fn(base) if pass_base else fn()
+    # ⤷ 出口 return：返回 factory
     return factory
 
 
@@ -987,13 +1257,25 @@ _HOST_DEFAULT_HEADERS: List[tuple[str, Callable[[Any, str], Dict[str, str]]]] = 
 ]
 
 
+# ┌── 函数 def _host_default_headers_factory()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：base_url: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _host_default_headers_factory(base_url: str):
     for host, factory in _HOST_DEFAULT_HEADERS:
         if base_url_host_matches(base_url, host):
+            # ⤷ 出口 return：返回 factory
             return factory
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _client_kwargs_from_routed()
+# │  作用：OpenAI-client kwargs mirroring a router-resolved client, keeping its provider headers
+# │  参数：client, timeout
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _client_kwargs_from_routed(client, timeout) -> Dict[str, Any]:
     """OpenAI-client kwargs mirroring a router-resolved client, keeping its provider headers
     (SDK stores them in ``_custom_headers``; older/mocked clients expose ``default_headers``)."""
@@ -1007,20 +1289,33 @@ def _client_kwargs_from_routed(client, timeout) -> Dict[str, Any]:
     )
     if headers:
         kwargs["default_headers"] = dict(headers)
+    # ⤷ 出口 return：返回 kwargs
     return kwargs
 
 
+# ┌── 函数 def _fallback_entries()
+# │  作用：Normalize legacy single-dict ``fallback_model`` / list ``fallback_providers``.
+# │  参数：fallback_model
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _fallback_entries(fallback_model) -> List[Dict[str, Any]]:
     """Normalize legacy single-dict ``fallback_model`` / list ``fallback_providers``."""
     if isinstance(fallback_model, dict):
         fallback_model = [fallback_model]
     if not isinstance(fallback_model, list):
+        # ⤷ 出口 return：返回 []
         return []
+    # ⤷ 出口 return：返回 [f for f in fallback_model if isinstance(f, dict) and f.get(…
     return [
         f for f in fallback_model if isinstance(f, dict) and f.get("provider") and f.get("model")
     ]
 
 
+# ┌── 函数 def _init_fallback_chain()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, fallback_model
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_fallback_chain(agent, fallback_model):
     # Stable pool-entry identity: OAuth refreshes can replace the token before a failed
     # request is recovered, so the key value alone can't attribute the failure.
@@ -1042,9 +1337,15 @@ def _init_fallback_chain(agent, fallback_model):
             print(f"🔄 Fallback chain ({len(chain)} providers): " + " → ".join(labels))
 
 
+# ┌── 函数 def _load_tools()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, enabled_toolsets, disabled_toolsets
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _load_tools(agent, enabled_toolsets, disabled_toolsets):
     # A multiplexed gateway may have switched HERMES_HOME since model_tools was imported;
     # make sure this profile's plugins are discovered before the tool snapshot.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import discover_plugins
         discover_plugins()
@@ -1052,6 +1353,7 @@ def _load_tools(agent, enabled_toolsets, disabled_toolsets):
         logger.warning("Plugin discovery failed during agent setup", exc_info=True)
 
     # Capture the registry generation FIRST so a concurrent refresh can detect staleness.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.registry import registry as _snapshot_registry
         agent._tool_snapshot_generation = _snapshot_registry._generation
@@ -1099,16 +1401,23 @@ def _load_tools(agent, enabled_toolsets, disabled_toolsets):
         print(f"💾 Prompt caching: ENABLED ({source}, {agent._cache_ttl} TTL)")
 
 
+# ┌── 函数 def _publish_session_id()
+# │  作用：Expose the session ID to tools via ContextVar (+ legacy os.environ fallback).
+# │  参数：session_id: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _publish_session_id(session_id: str) -> None:
     """Expose the session ID to tools via ContextVar (+ legacy os.environ fallback).
 
     If the ContextVar bridge fails to import, keep the root-agent env fallback but never let
     delegated construction publish a child ID process-wide.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.session_context import set_current_session_id
         set_current_session_id(session_id)
     except Exception:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.delegation_context import is_delegated_child_context
             delegated_child = is_delegated_child_context()
@@ -1118,6 +1427,11 @@ def _publish_session_id(session_id: str) -> None:
             os.environ["HERMES_SESSION_ID"] = session_id
 
 
+# ┌── 函数 def _init_session_state()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, session_id, session_db, parent_session_id, reasoning_config, max_tokens, checkpoints_enabled, checkpoint_max_snapshots  …共 10 个
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_session_state(agent, session_id, session_db, parent_session_id, reasoning_config, max_tokens,
     checkpoints_enabled, checkpoint_max_snapshots, checkpoint_max_total_size_mb, checkpoint_max_file_size_mb):
     agent.session_start = datetime.now()
@@ -1156,6 +1470,11 @@ def _init_session_state(agent, session_id, session_db, parent_session_id, reason
     agent._todo_store = TodoStore()
 
 
+# ┌── 函数 def _apply_display_config()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, _agent_cfg, platform
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _apply_display_config(agent, _agent_cfg, platform):
     # show_commentary: Codex phase=commentary → interim path (true) or reasoning channel.
     agent.show_commentary = bool(_cfg_dict(_agent_cfg, "display").get("show_commentary", True))
@@ -1183,6 +1502,7 @@ def _apply_display_config(agent, _agent_cfg, platform):
             _model_section.get("streaming"),
         )
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         agent._tool_guardrails = ToolCallGuardrailController(
             ToolCallGuardrailConfig.from_mapping(
@@ -1193,6 +1513,11 @@ def _apply_display_config(agent, _agent_cfg, platform):
         _ra().logger.warning("Tool loop guardrail config ignored: %s", _tlg_err)
 
 
+# ┌── 函数 def _memory_provider_init_kwargs()
+# │  作用：Scoping kwargs for ``MemoryManager.initialize_all`` (status_callback is CLI-only:
+# │  参数：agent, platform
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _memory_provider_init_kwargs(agent, platform) -> Dict[str, Any]:
     """Scoping kwargs for ``MemoryManager.initialize_all`` (status_callback is CLI-only:
     gateway status travels a different path and the indicator no-ops without it)."""
@@ -1222,9 +1547,15 @@ def _memory_provider_init_kwargs(agent, platform) -> Dict[str, Any]:
         from hermes_cli.profiles import get_active_profile_name
         kwargs["agent_identity"] = get_active_profile_name()
         kwargs["agent_workspace"] = "hermes"
+    # ⤷ 出口 return：返回 kwargs
     return kwargs
 
 
+# ┌── 函数 def _init_memory()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, _agent_cfg, skip_memory, platform
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_memory(agent, _agent_cfg, skip_memory, platform):
     # Persistent memory (MEMORY.md + USER.md) — loaded from disk
     agent._memory_store = None
@@ -1267,6 +1598,7 @@ def _init_memory(agent, _agent_cfg, skip_memory, platform):
     # External memory provider plugin (one at a time, alongside built-in): memory.provider.
     agent._memory_manager = None
     if not skip_memory:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _mem_provider_name = mem_config.get("provider", "") if mem_config else ""
             if _mem_provider_name and _mem_provider_name.strip():
@@ -1296,6 +1628,11 @@ def _init_memory(agent, _agent_cfg, skip_memory, platform):
     inject_memory_provider_tools(agent)
 
 
+# ┌── 函数 def _apply_agent_section()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, _agent_cfg
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _apply_agent_section(agent, _agent_cfg):
     # Skills config: nudge interval for skill creation reminders
     agent._skill_nudge_interval = 10
@@ -1346,6 +1683,7 @@ def _apply_agent_section(agent, _agent_cfg):
     agent._platform_hint_overrides = _cfg_dict(_agent_cfg, "platform_hints")
 
     # App-level API retry count (wraps each model API call). Default 3; 1 = single attempt.
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
         _api_retries = max(int(_agent_section.get("api_max_retries", 3)), 1)
     except (TypeError, ValueError):
@@ -1353,17 +1691,31 @@ def _apply_agent_section(agent, _agent_cfg):
     agent._api_max_retries = _api_retries
 
 
+# ┌── 函数 def _positive_int()
+# │  作用：``int(raw)`` when positive, else None. ``reject`` lists types refused outright (bool, float).
+# │  参数：raw: Any, reject: tuple = ...
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _positive_int(raw: Any, *, reject: tuple = ()) -> Optional[int]:
     """``int(raw)`` when positive, else None. ``reject`` lists types refused outright (bool, float)."""
     if reject and isinstance(raw, reject):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
         parsed = int(raw)
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 parsed if parsed > 0 else None
     return parsed if parsed > 0 else None
 
 
+# ┌── 函数 def _compression_threshold()
+# │  作用：Global threshold merged with the per-model override; stashes the autoraise notice.
+# │  参数：agent, cfg: Dict[str, Any]
+# │  返回：tuple[float, bool]
+# └──────────────────────────────────────────────────────────────
 def _compression_threshold(agent, cfg: Dict[str, Any]) -> tuple[float, bool]:
     """Global threshold merged with the per-model override; stashes the autoraise notice.
     Codex gpt-5.4/5.5 raise to 85% (272K cap → 50% would compact at ~136K); the opt-out flag
@@ -1392,9 +1744,15 @@ def _compression_threshold(agent, cfg: Dict[str, Any]) -> tuple[float, bool]:
                 or _is_codex_spark_fn(agent.model, agent.provider)
             ),
         )
+    # ⤷ 出口 return：返回 (threshold, notice_enabled)
     return threshold, notice_enabled
 
 
+# ┌── 函数 def _compression_codex_settings()
+# │  作用：``codex_app_server_auto`` / ``codex_responses_native`` / ``codex_responses_compact_threshold``.
+# │  参数：cfg: Dict[str, Any]
+# │  返回：tuple[str, bool, Optional[int]]
+# └──────────────────────────────────────────────────────────────
 def _compression_codex_settings(cfg: Dict[str, Any]) -> tuple[str, bool, Optional[int]]:
     """``codex_app_server_auto`` / ``codex_responses_native`` / ``codex_responses_compact_threshold``."""
     app_server_auto = str(cfg.get("codex_app_server_auto", "native") or "native").lower()
@@ -1418,9 +1776,15 @@ def _compression_codex_settings(cfg: Dict[str, Any]) -> tuple[str, bool, Optiona
                 "using the automatic threshold derived from local compression.",
                 _raw,
             )
+    # ⤷ 出口 return：返回 (app_server_auto, responses_native, compact_threshold)
     return app_server_auto, responses_native, compact_threshold
 
 
+# ┌── 函数 def _parse_compression_config()
+# │  作用：Parse the ``compression`` section. Defaults here MUST match DEFAULT_CONFIG.
+# │  参数：agent, _agent_cfg
+# │  返回：CompressionSettings
+# └──────────────────────────────────────────────────────────────
 def _parse_compression_config(agent, _agent_cfg) -> CompressionSettings:
     """Parse the ``compression`` section. Defaults here MUST match DEFAULT_CONFIG."""
     cfg = _cfg_dict(_agent_cfg, "compression")
@@ -1449,6 +1813,7 @@ def _parse_compression_config(agent, _agent_cfg) -> CompressionSettings:
     # Opt-in idle compaction: compact up front when a session resumes after this many
     # seconds idle (0 = disabled). Consumed by build_turn_context().
     idle_compact_after_seconds = max(0, int(cfg.get("idle_compact_after_seconds", 0)))
+    # ⤷ 出口 return：返回 CompressionSettings(threshold=threshold, autoraise_notice_en…
     return CompressionSettings(
         threshold=threshold,
         autoraise_notice_enabled=autoraise_notice_enabled,
@@ -1499,6 +1864,11 @@ def _parse_compression_config(agent, _agent_cfg) -> CompressionSettings:
     )
 
 
+# ┌── 函数 def _warn_invalid_config_int()
+# │  作用：Log + stderr-print an invalid integer config value (``print_fallback``: user-facing
+# │  参数：what: str, value: Any, requirement: str, fallback: str, print_fallback: str = ''
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _warn_invalid_config_int(
     what: str, value: Any, requirement: str, fallback: str, print_fallback: str = "",
 ) -> None:
@@ -1515,6 +1885,11 @@ def _warn_invalid_config_int(
     )
 
 
+# ┌── 函数 def _custom_provider_configured_base_url()
+# │  作用：Base URL of a named custom provider (``providers.<name>`` first, then
+# │  参数：_configured_provider: str, _agent_cfg, _custom_providers
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _custom_provider_configured_base_url(
     _configured_provider: str, _agent_cfg, _custom_providers
 ) -> str:
@@ -1539,6 +1914,7 @@ def _custom_provider_configured_base_url(
                     _entry.get("api") or _entry.get("url") or _entry.get("base_url")
                 )
                 if _url:
+                    # ⤷ 出口 return：返回 _url
                     return _url
     for _entry in _custom_providers:
         if not isinstance(_entry, dict):
@@ -1549,7 +1925,9 @@ def _custom_provider_configured_base_url(
         if _wanted in _key_ids | _custom_provider_runtime_ids(_entry.get("name")):
             _url = normalize_route_base_url(_entry.get("base_url"))
             if _url:
+                # ⤷ 出口 return：返回 _url
                 return _url
+    # ⤷ 出口 return：返回 ''
     return ""
 
 
@@ -1559,6 +1937,11 @@ _RUNTIME_FIRST_PROVIDER_IDS = {
 }
 
 
+# ┌── 函数 def _configured_default_base_url()
+# │  作用：Normalized route of the configured default model (``model.base_url``, else the named
+# │  参数：_agent_cfg, _model_cfg, _custom_providers
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _configured_default_base_url(_agent_cfg, _model_cfg, _custom_providers) -> str:
     """Normalized route of the configured default model (``model.base_url``, else the named
     custom provider's URL when ``model.provider`` is not a first-class/auth provider)."""
@@ -1578,9 +1961,15 @@ def _configured_default_base_url(_agent_cfg, _model_cfg, _custom_providers) -> s
         _configured_base_url = _custom_provider_configured_base_url(
             _configured_provider, _agent_cfg, _custom_providers
         )
+    # ⤷ 出口 return：返回 _configured_base_url
     return _configured_base_url
 
 
+# ┌── 函数 def _active_route_url()
+# │  作用：The runtime route, keeping the requested URL's query string when it is the same route.
+# │  参数：agent, base_url
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _active_route_url(agent, base_url) -> str:
     """The runtime route, keeping the requested URL's query string when it is the same route."""
     _active = str(agent.base_url or "")
@@ -1590,9 +1979,15 @@ def _active_route_url(agent, base_url) -> str:
             _without_query = urlunparse(urlparse(_requested)._replace(query=""))
             if normalize_route_base_url(_without_query) == normalize_route_base_url(_active):
                 _active = _requested
+    # ⤷ 出口 return：返回 normalize_route_base_url(_active)
     return normalize_route_base_url(_active)
 
 
+# ┌── 函数 def _scope_context_length_to_default_runtime()
+# │  作用：Return ``model.context_length`` only if it describes the active runtime.
+# │  参数：agent, _agent_cfg, _model_cfg, _custom_providers, _config_context_length, base_url
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _scope_context_length_to_default_runtime(
     agent, _agent_cfg, _model_cfg, _custom_providers, _config_context_length, base_url
 ) -> Optional[int]:
@@ -1636,13 +2031,20 @@ def _scope_context_length_to_default_runtime(
             _configured_default_model,
             _configured_base_url or _model_cfg.get("provider"),
         )
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 _config_context_length
     return _config_context_length
 
 
 _CTX_LEN_REQUIREMENT = "must be a positive integer (e.g. 256000, not '256K')"
 
 
+# ┌── 函数 def _warn_invalid_custom_provider_context_length()
+# │  作用：Surface a context_length the helper silently skipped (not a positive int).
+# │  参数：agent, _custom_providers
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _warn_invalid_custom_provider_context_length(agent, _custom_providers) -> None:
     """Surface a context_length the helper silently skipped (not a positive int)."""
     _target = normalize_route_base_url(agent.base_url)
@@ -1664,13 +2066,20 @@ def _warn_invalid_custom_provider_context_length(agent, _custom_providers) -> No
         return
 
 
+# ┌── 函数 def _resolve_context_length()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, _agent_cfg, base_url
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _resolve_context_length(agent, _agent_cfg, base_url):
     # Aux compression model context_length hint (custom endpoints often can't report it).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _aux_cfg = cfg_get(_agent_cfg, "auxiliary", "compression", default={})
     except Exception:
         _aux_cfg = {}
     _aux_ctx = _aux_cfg.get("context_length") if isinstance(_aux_cfg, dict) else None
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
         agent._aux_compression_context_length_config = int(_aux_ctx) if _aux_ctx is not None else None
     except (TypeError, ValueError):
@@ -1681,6 +2090,7 @@ def _resolve_context_length(agent, _agent_cfg, base_url):
 
     _config_context_length = _model_section.get("context_length")
     if _config_context_length is not None:
+        # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
         try:
             _config_context_length = int(_config_context_length)
         except (TypeError, ValueError):
@@ -1692,6 +2102,7 @@ def _resolve_context_length(agent, _agent_cfg, base_url):
             _config_context_length = None
 
     # Resolve custom_providers before route-scoping: a named provider may keep its URL here.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import get_compatible_custom_providers
         _custom_providers = get_compatible_custom_providers(_agent_cfg)
@@ -1734,9 +2145,15 @@ def _resolve_context_length(agent, _agent_cfg, base_url):
     _effective_context_length = agent._effective_lmstudio_context_length(
         _config_context_length, _lmstudio_runtime_context_length,
     )
+    # ⤷ 出口 return：返回 (_config_context_length, _custom_providers, _effective_conte…
     return _config_context_length, _custom_providers, _effective_context_length, _model_cfg
 
 
+# ┌── 函数 def _select_context_engine()
+# │  作用：Config-driven context engine: ``context.engine`` → plugins/context_engine/<name>/ →
+# │  参数：_agent_cfg
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _select_context_engine(_agent_cfg):
     """Config-driven context engine: ``context.engine`` → plugins/context_engine/<name>/ →
     general plugin system → None (built-in ContextCompressor)."""
@@ -1745,9 +2162,11 @@ def _select_context_engine(_agent_cfg):
         _ctx_cfg = _agent_cfg.get("context", {}) if isinstance(_agent_cfg, dict) else {}
         _engine_name = _ctx_cfg.get("engine", "compressor") or "compressor"
     if _engine_name == "compressor":
+        # ⤷ 出口 return：返回 None
         return None  # built-in; don't auto-activate plugins
     _selected_engine = None
     _copy_failed = False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from plugins.context_engine import load_context_engine
         _selected_engine = load_context_engine(_engine_name)
@@ -1755,6 +2174,7 @@ def _select_context_engine(_agent_cfg):
         _ra().logger.debug("Context engine load from plugins/context_engine/: %s", _ce_load_err)
 
     if _selected_engine is None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.plugins import get_plugin_context_engine
             _candidate = get_plugin_context_engine()
@@ -1764,6 +2184,7 @@ def _select_context_engine(_agent_cfg):
             # Deep-copy the shared singleton so a child's update_model() can't mutate the
             # parent's. Uncopyable state (locks, DB conns) → built-in with an ACCURATE message.
             import copy
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 # Copy can fail for engines holding uncopyable state (locks, DB connections, clients); in
                 # that case fall back to the built-in compressor with an ACCURATE message rather than
@@ -1784,14 +2205,21 @@ def _select_context_engine(_agent_cfg):
         _ra().logger.warning(
             "Context engine '%s' not found — falling back to built-in compressor", _engine_name
         )
+    # ⤷ 出口 return：返回 _selected_engine
     return _selected_engine
 
 
+# ┌── 函数 def _compressor_max_tokens()
+# │  作用：``agent.max_tokens``, or the native-Gemini adapter default when unset: generateContent
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _compressor_max_tokens(agent):
     """``agent.max_tokens``, or the native-Gemini adapter default when unset: generateContent
     still sends maxOutputTokens=65,535 and the threshold is pct×(window − max_tokens), so
     reserving 0 let the provider 400 before compaction fired."""
     if agent.max_tokens is not None:
+        # ⤷ 出口 return：返回 agent.max_tokens
         return agent.max_tokens
     with suppress(Exception):
         from agent.gemini_native_adapter import (
@@ -1801,10 +2229,17 @@ def _compressor_max_tokens(agent):
             "gemini", "google", "google-gemini", "google-ai-studio",
         }
         if _gemini_provider or is_native_gemini_base_url(agent.base_url):
+            # ⤷ 出口 return：返回 GEMINI_DEFAULT_MAX_OUTPUT_TOKENS
             return GEMINI_DEFAULT_MAX_OUTPUT_TOKENS
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _build_context_engine()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, _agent_cfg, cs, _custom_providers, _effective_context_length, session_db
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_context_engine(agent, _agent_cfg, cs, _custom_providers, _effective_context_length, session_db):
     _selected_engine = _select_context_engine(_agent_cfg)
     if _selected_engine is not None:
@@ -1883,6 +2318,11 @@ def _build_context_engine(agent, _agent_cfg, cs, _custom_providers, _effective_c
     agent.compression_idle_compact_after_seconds = cs.idle_compact_after_seconds
 
 
+# ┌── 函数 def _enforce_minimum_context()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _enforce_minimum_context(agent):
     # Reject windows below the 64K floor needed for reliable tool-calling; an explicit
     # positive model.context_length on LM Studio is allowed below the floor.
@@ -1894,6 +2334,7 @@ def _enforce_minimum_context(agent):
         and agent._config_context_length > 0
     )
     if _ctx and _ctx < MINIMUM_CONTEXT_LENGTH and not _allow_lmstudio_explicit_below_floor:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise ValueError(
             f"Model {agent.model} has a context window of {_ctx:,} tokens, "
             f"which is below the minimum {MINIMUM_CONTEXT_LENGTH:,} required "
@@ -1905,6 +2346,11 @@ def _enforce_minimum_context(agent):
         )
 
 
+# ┌── 函数 def _warn_nonagentic_hermes_model()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _warn_nonagentic_hermes_model(agent):
     # Nous Hermes 3/4 are chat models, not tool-call-tuned. cli.py show_banner() already
     # warns on the CLI, so skip platform=="cli"; non-quiet non-CLI surfaces still get it.
@@ -1924,6 +2370,11 @@ def _warn_nonagentic_hermes_model(agent):
             _ra().logger.warning(_hermes_warn)
 
 
+# ┌── 函数 def _inject_context_engine_tools()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _inject_context_engine_tools(agent):
     # Context engine tool schemas (lcm_*), deduped against existing names (plugins may
     # register the same schemas; duplicates 400 provider-side) and gated on enabled_toolsets
@@ -1965,6 +2416,7 @@ def _inject_context_engine_tools(agent):
                 _names.add(_tname)
 
     if agent.context_compressor:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             agent.context_compressor.on_session_start(
                 agent.session_id, hermes_home=str(get_hermes_home()),
@@ -1976,17 +2428,24 @@ def _inject_context_engine_tools(agent):
             _ra().logger.debug("Context engine on_session_start: %s", _ce_err)
 
 
+# ┌── 函数 def _configure_ollama_num_ctx()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, _model_cfg, _config_context_length
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _configure_ollama_num_ctx(agent, _model_cfg, _config_context_length):
     # Ollama defaults num_ctx to 2048, so detect the max window and send num_ctx per request.
     # model.ollama_num_ctx overrides; model.context_length caps the detected value (VRAM).
     agent._ollama_num_ctx: int | None = None
     _override = _model_cfg.get("ollama_num_ctx") if isinstance(_model_cfg, dict) else None
     if _override is not None:
+        # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
         try:
             agent._ollama_num_ctx = int(_override)
         except (TypeError, ValueError):
             _ra().logger.debug("Invalid ollama_num_ctx config value: %r", _override)
     if agent._ollama_num_ctx is None and agent.base_url and is_local_endpoint(agent.base_url):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # api_key may be a callable (Entra token provider); detection needs a string.
             _key = agent.api_key if isinstance(agent.api_key, str) else ""
@@ -2032,6 +2491,11 @@ def _configure_ollama_num_ctx(agent, _model_cfg, _config_context_length):
         )
 
 
+# ┌── 函数 def _emit_compression_summary()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, cs
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _emit_compression_summary(agent, cs):
     # Codex autoraise notice: once per profile/config state (persisted marker; the gateway
     # rebuilds the agent per message). The display gate hides the banner, not the autoraise.
@@ -2073,6 +2537,11 @@ def _emit_compression_summary(agent, cs):
     agent._compression_feasibility_checked = False
 
 
+# ┌── 函数 def _snapshot_primary_runtime()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _snapshot_primary_runtime(agent):
     # Per-turn restoration snapshot: after a fallback, the next turn restores these so the
     # preferred model gets a fresh attempt.
@@ -2105,6 +2574,11 @@ def _snapshot_primary_runtime(agent):
         })
 
 
+# ┌── 函数 def _init_usage_state()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _init_usage_state(agent):
     from agent.runtime_cwd import scope_terminal_cwd
     agent._subdirectory_hints = SubdirectoryHintTracker(
@@ -2169,6 +2643,11 @@ _CALLBACK_PARAMS = (
 )
 
 
+# ┌── 函数 def init_agent()
+# │  作用：Initialize the AI Agent (body of :meth:`AIAgent.__init__`).
+# │  参数：agent, base_url: str = None, api_key: str = None, provider: str = None, api_mode: str = None, acp_command: str = None, acp_args: list[str] | None = None, command: str = None  …共 80 个
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def init_agent(
     agent, base_url: str = None, api_key: str = None, provider: str = None, api_mode: str = None,
     acp_command: str = None, acp_args: list[str] | None = None, command: str = None,
@@ -2284,6 +2763,7 @@ def init_agent(
     )
 
     # Load config once for memory, skills, and compression sections
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config_readonly as _load_agent_config
         _agent_cfg = _load_agent_config()
@@ -2321,12 +2801,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

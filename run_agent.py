@@ -5,6 +5,35 @@
     agent = AIAgent(base_url="http://localhost:30000/v1", model="claude-opus-4-20250514")
     response = agent.run_conversation("Tell me about the latest Python updates")
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：run_agent.py（约 1560 行）
+# 地位：★ 整个项目的「大脑」，学这个项目建议第一个读它。
+#
+# 它是什么：
+#   定义 AIAgent 这个类。一次对话的全部流程都在这里：接收用户消息 → 组织成请求发给大模型
+#   → 拿到回复 → 如果模型说要调用工具就执行工具 → 把工具结果再喂给模型 → 直到模型给出最终答案。
+#   这个「模型 ↔ 工具」来回循环，就是常说的 Agent Loop（代理循环）。
+#
+# 典型用法（源码注释里给的例子）：
+#   agent = AIAgent(base_url=..., model=...)
+#   response = agent.run_conversation('帮我看看最新的 Python 更新')
+#
+# 核心类：
+#   class AIAgent —— 继承三个 Mixin（ClientLifecycleMixin / StreamDeliveryMixin / StatusOutputMixin）。
+#     Mixin 就是「把一批方法从别的文件拼进来」，所以你在本文件找不到的方法，去那三个文件里找。
+#     它有 70+ 个方法，重点看：__init__（初始化，真正实现在 agent/agent_init.py）、
+#     run_conversation（一轮对话，实现在 agent/conversation_loop.py）。
+#
+# 必须理解的 3 件事：
+#   1. 本文件是「调度中心」：具体实现大多被拆到 agent/ 下的小文件，这里只做转发（thin wrapper）。
+#   2. 文件末尾的 __getattr__ 是懒加载：访问不存在的名字时才去 import，为了启动快 + 避免循环导入。
+#   3. _launch_cwd_for_session / _session_source_for_agent 这类小函数是「根据运行环境算参数」的辅助逻辑。
+#
+# 阅读顺序建议：run_agent.py → agent/agent_init.py → agent/conversation_loop.py → agent/tool_executor.py
+# ==========================================================================
+#
 
 # hermes_bootstrap must be the very first import (UTF-8 stdio on Windows; no-op on POSIX).
 try:
@@ -29,6 +58,11 @@ from pathlib import Path
 from hermes_constants import get_hermes_home
 
 
+# ┌── 函数 def _launch_cwd_for_session()
+# │  作用：cwd to stamp on a new session row (``hermes -c`` / ``--resume``), or None.
+# │  参数：source: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _launch_cwd_for_session(source: str) -> Optional[str]:
     """cwd to stamp on a new session row (``hermes -c`` / ``--resume``), or None.
 
@@ -36,23 +70,39 @@ def _launch_cwd_for_session(source: str) -> Optional[str]:
     stable host cwd for the agent's tools.
     """
     if source != "cli" or (os.environ.get("TERMINAL_ENV") or "local").strip().lower() not in ("", "local"):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 os.getcwd()
         return os.getcwd()
     except OSError:  # cwd was unlinked out from under us
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _session_source_for_agent()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：platform: Optional[str]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _session_source_for_agent(platform: Optional[str]) -> str:
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.session_context import get_session_env
 
         source = get_session_env("HERMES_SESSION_SOURCE", "")
     except Exception:
         source = os.environ.get("HERMES_SESSION_SOURCE", "")
+    # ⤷ 出口 return：返回 str(source or '').strip() or platform or 'cli'
     return str(source or "").strip() or platform or "cli"
 
 
+# ┌── 函数 def _gateway_origin_json()
+# │  作用：Gateway routing ``origin_json`` for a session row; None when the agent carries no gateway identity.
+# │  参数：agent: 'AIAgent'
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _gateway_origin_json(agent: "AIAgent") -> Optional[str]:
     """Gateway routing ``origin_json`` for a session row; None when the agent carries no gateway identity.
 
@@ -62,6 +112,7 @@ def _gateway_origin_json(agent: "AIAgent") -> Optional[str]:
     session_key = getattr(agent, "_gateway_session_key", None)
     user_id = getattr(agent, "_user_id", None)
     if not (chat_id or session_key or user_id):
+        # ⤷ 出口 return：返回 None
         return None
     origin: Dict[str, Any] = {
         "platform": getattr(agent, "platform", None) or "", "chat_id": chat_id,
@@ -72,6 +123,7 @@ def _gateway_origin_json(agent: "AIAgent") -> Optional[str]:
         origin["user_id_alt"] = agent._user_id_alt
     profile = getattr(agent, "_profile_name", None)
     if not profile:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.profiles import get_active_profile_name
             profile = get_active_profile_name()
@@ -81,9 +133,12 @@ def _gateway_origin_json(agent: "AIAgent") -> Optional[str]:
             profile = None
     if profile:
         origin["profile"] = profile
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 json.dumps(origin)
         return json.dumps(origin)
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
 
 
@@ -143,39 +198,74 @@ _MAX_TOOL_WORKERS = 8
 _openrouter_prewarm_done = threading.Event()
 
 
+# ┌── 函数 def _quietly()
+# │  作用：Run one teardown step, swallowing any exception so sibling steps still run.
+# │  参数：fn: Callable, *args, **kwargs
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _quietly(fn: Callable, *args, **kwargs) -> None:
     """Run one teardown step, swallowing any exception so sibling steps still run."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         fn(*args, **kwargs)
     except Exception:
         pass
 
 
+# ┌── 函数 def _call_engine_hook()
+# │  作用：Invoke an optional context-engine lifecycle hook; failures are logged, never raised.
+# │  参数：engine: Any, hook: str, *args, **kwargs
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _call_engine_hook(engine: Any, hook: str, *args, **kwargs) -> None:
     """Invoke an optional context-engine lifecycle hook; failures are logged, never raised."""
     if not hasattr(engine, hook):
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         getattr(engine, hook)(*args, **kwargs)
     except Exception as exc:
         logger.debug("context engine %s during transition: %s", hook, exc)
 
 
+# ┌── 函数 def _positive_int()
+# │  作用：``value`` when it is a real positive int (bools excluded), else None.
+# │  参数：value: Any
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _positive_int(value: Any) -> Optional[int]:
     """``value`` when it is a real positive int (bools excluded), else None."""
+    # ⤷ 出口 return：返回 value if isinstance(value, int) and (not isinstance(value, b…
     return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
 
 
+# ┌── 函数 def _review_should_defer()
+# │  作用：True when an automatic background review targets the managed local runtime under ``defer: auto``.
+# │  参数：agent: Any, task_cfg: Optional[Dict[str, Any]]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _review_should_defer(agent: Any, task_cfg: Optional[Dict[str, Any]]) -> bool:
     """True when an automatic background review targets the managed local runtime under ``defer: auto``."""
     from agent.review_idle_queue import defer_mode, review_targets_managed_local
+    # ⤷ 出口 return：返回 defer_mode(task_cfg) == 'auto' and review_targets_managed_lo…
     return defer_mode(task_cfg) == "auto" and review_targets_managed_local(agent, task_cfg)
 
 
+# ┌── 函数 def _review_queue_key()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _review_queue_key(agent: Any) -> str:
+    # ⤷ 出口 return：返回 str(getattr(agent, 'session_id', None) or id(agent))
     return str(getattr(agent, "session_id", None) or id(agent))
 
 
+# ┌── 函数 def _notify_context_engine_session_end()
+# │  作用：Tell the context engine the session ended (flush DAG, close DBs) at the same lifecycle moment as the
+# │  参数：agent: Any, messages: Optional[list]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _notify_context_engine_session_end(agent: Any, messages: Optional[list]) -> None:
     """Tell the context engine the session ended (flush DAG, close DBs) at the same lifecycle moment as the
     memory manager, so per-session engine state never leaks into the next session."""
@@ -184,6 +274,11 @@ def _notify_context_engine_session_end(agent: Any, messages: Optional[list]) -> 
         _quietly(lambda: engine.on_session_end(agent.session_id or "", messages or []))
 
 
+# ┌── 函数 def _pool_may_recover_from_rate_limit()
+# │  作用：Wait for credential-pool rotation (True) or fall back to ``fallback_model`` (False) after a 429.
+# │  参数：pool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _pool_may_recover_from_rate_limit(pool) -> bool:
     """Wait for credential-pool rotation (True) or fall back to ``fallback_model`` (False) after a 429.
 
@@ -191,15 +286,25 @@ def _pool_may_recover_from_rate_limit(pool) -> bool:
 
     See issues #11314 and #13636.
     """
+    # ⤷ 出口 return：返回 pool is not None and pool.has_available() and (len(pool.entr…
     return pool is not None and pool.has_available() and len(pool.entries()) > 1
 
 
+# ┌── 类 class _StreamErrorEvent（继承自：Exception）
+# │  说明：Provider error synthesized from a standalone Responses ``type=error`` SSE frame (Codex-style backends).
+# │  成员：共 1 个方法；全部是下划线开头的内部方法；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _StreamErrorEvent(Exception):
     """Provider error synthesized from a standalone Responses ``type=error`` SSE frame (Codex-style backends).
 
     Gives ``_summarize_api_error`` / the entitlement detector the familiar ``.body`` / ``.status_code`` shape.
     """
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, message: str, code: Optional[str] = ..., param: Optional[str] = ..., status_code: Optional[int] = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, message: str, *, code: Optional[str] = None, param: Optional[str] = None,
                  status_code: Optional[int] = None) -> None:
         super().__init__(message)
@@ -208,6 +313,11 @@ class _StreamErrorEvent(Exception):
         self.body: Dict[str, Any] = {"error": {"message": message, "code": code, "param": param, "type": "error"}}
 
 
+# ┌── 类 class AIAgent（继承自：ClientLifecycleMixin, StreamDeliveryMixin, StatusOutputMixin, ApiRequestHooksMixin, ApiErrorSummaryMixin, InterruptControlMixin, TurnExplainersMixin, ActivityTrackingMixin, RateLimitCreditsMixin, SessionPersistenceMixin, CompressionFacadeMixin, TurnFacadeMixin, VisionMessagePrepMixin, ReasoningParamsMixin）
+# │  说明：AI Agent with tool calling capabilities.
+# │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
+# │  成员：共 71 个方法；对外可用 9 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class AIAgent(
     ClientLifecycleMixin, StreamDeliveryMixin, StatusOutputMixin, ApiRequestHooksMixin, ApiErrorSummaryMixin,
     InterruptControlMixin, TurnExplainersMixin, ActivityTrackingMixin, RateLimitCreditsMixin,
@@ -220,16 +330,34 @@ class AIAgent(
         "have been dropped to keep the conversation alive. See issue #15236.]"
     )
 
+    # ┌── 函数 def base_url()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：str
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def base_url(self) -> str:
+        # ⤷ 出口 return：返回 self._base_url
         return self._base_url
 
+    # ┌── 函数 def base_url()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, value: str
+    # │  返回：None
+    # │  【语法】带 @setter 装饰器：调用本函数时，等价于 base_url = setter(base_url)，即先经过一层包装。
+    # └──────────────────────────────────────────────────────────────
     @base_url.setter
     def base_url(self, value: str) -> None:
         self._base_url = value
         self._base_url_lower = value.lower() if value else ""
         self._base_url_hostname = base_url_hostname(value)
 
+    # ┌── 函数 def __init__()
+    # │  作用：Forwarder — see ``agent.agent_init.init_agent`` (same keyword parameters, minus ``tool_delay``).
+    # │  参数：self, base_url: str = None, api_key: str = None, provider: str = None, api_mode: str = None, acp_command: str = None, acp_args: list[str] | None = None, command: str = None  …共 81 个
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(
         self,
         base_url: str = None, api_key: str = None, provider: str = None, api_mode: str = None,
@@ -279,25 +407,40 @@ class AIAgent(
         from agent.agent_init import init_agent
         init_agent(self, **init_kwargs)
 
+    # ┌── 函数 def _get_session_db_for_recall()
+    # │  作用：SessionDB for recall, opening the default state DB when no ``session_db`` was passed so the
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _get_session_db_for_recall(self):
         """SessionDB for recall, opening the default state DB when no ``session_db`` was passed so the
         advertised ``session_search`` tool stays usable."""
         # Persistence-isolated forks (background review) must not lazily open the canonical state DB —
         # that would re-arm the flush to write the fork's harness turn into the user's real session.
         if getattr(self, "_persist_disabled", False):
+            # ⤷ 出口 return：返回 None
             return None
         if self._session_db is not None:
+            # ⤷ 出口 return：返回 self._session_db
             return self._session_db
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_state_registry import acquire
 
             self._session_db = acquire()
             self._owns_session_db = True  # we opened it, so close() must release it
+            # ⤷ 出口 return：返回 self._session_db
             return self._session_db
         except Exception:
             logger.debug("SessionDB unavailable for recall", exc_info=True)
+            # ⤷ 出口 return：返回 None
             return None
 
+    # ┌── 函数 def _session_row_model_config()
+    # │  作用：``model_config`` for the session row: the init config plus the live YOLO bypass.
+    # │  参数：self
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _session_row_model_config(self) -> Any:
         """``model_config`` for the session row: the init config plus the live YOLO bypass.
 
@@ -305,6 +448,7 @@ class AIAgent(
         /yolo toggle for ``hermes --resume``.
         """
         model_config = self._session_init_model_config
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.approval import is_session_yolo_enabled
             if is_session_yolo_enabled(self.session_id):
@@ -312,16 +456,24 @@ class AIAgent(
                 model_config["yolo_mode"] = True
         except Exception:
             pass
+        # ⤷ 出口 return：返回 model_config
         return model_config
 
+    # ┌── 函数 def _ensure_db_session()
+    # │  作用：Create the session DB row on first use; a transient failure leaves it to retry next turn.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _ensure_db_session(self) -> None:
         """Create the session DB row on first use; a transient failure leaves it to retry next turn."""
         if getattr(self, "_persist_disabled", False) or self._session_db_created or not self._session_db:
             return
         source = _session_source_for_agent(self.platform)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Persist the profile name explicitly, including "default": profile-keyed consumers treat NULL
             # as unowned.
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.profiles import get_active_profile_name
                 profile_for_session = get_active_profile_name()
@@ -349,6 +501,11 @@ class AIAgent(
             # Transient failure (e.g. SQLite lock): _session_db_created stays False so the next turn retries.
             logger.warning("Session DB creation failed (will retry next turn): %s", e)
 
+    # ┌── 函数 def _transition_context_engine_session()
+    # │  作用：Drive the context engine's session transition: on_session_end → on_session_reset → on_session_start
+    # │  参数：self, old_session_id: Optional[str] = ..., new_session_id: Optional[str] = ..., previous_messages: Optional[list] = ..., carry_over_context: bool = ..., reset_engine: bool = ..., **extra_context
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _transition_context_engine_session(
         self, *, old_session_id: Optional[str] = None, new_session_id: Optional[str] = None,
         previous_messages: Optional[list] = None, carry_over_context: bool = False, reset_engine: bool = True,
@@ -378,6 +535,11 @@ class AIAgent(
         if carry_over_context and old_session_id and target_session_id:
             _call_engine_hook(engine, "carry_over_new_session_context", old_session_id, target_session_id)
 
+    # ┌── 函数 def reset_session_state()
+    # │  作用：Reset session-scoped token/cost counters and compressor state for a fresh session.
+    # │  参数：self, previous_messages: Optional[list] = None, old_session_id: Optional[str] = None, carry_over_context: bool = False
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def reset_session_state(self, previous_messages: Optional[list] = None, old_session_id: Optional[str] = None,
                             carry_over_context: bool = False):
         """Reset session-scoped token/cost counters and compressor state for a fresh session.
@@ -420,11 +582,18 @@ class AIAgent(
         target_session_id = getattr(self, "session_id", "") or ""
         if (engine is not None and hasattr(engine, "bind_session_state") and target_session_id
                 and target_session_id != getattr(engine, "_session_id", "")):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 engine.bind_session_state(getattr(self, "_session_db", None), target_session_id)
             except Exception as exc:
                 logger.debug("context engine bind_session_state during reset: %s", exc)
 
+    # ┌── 函数 def _effective_lmstudio_context_length()
+    # │  作用：Return a safe context budget from explicit intent and verified runtime.
+    # │  参数：config_context_length: Optional[int], runtime_context_length: Any
+    # │  返回：Optional[int]
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _effective_lmstudio_context_length(config_context_length: Optional[int], runtime_context_length: Any) -> Optional[int]:
         """Return a safe context budget from explicit intent and verified runtime."""
@@ -433,35 +602,58 @@ class AIAgent(
         if bool(getattr(runtime_context_length, "rejected", False)) or (
             bool(getattr(runtime_context_length, "load_attempted", False)) and runtime is None
         ):
+            # ⤷ 出口 return：返回 None
             return None
         if runtime is not None and explicit is not None:
+            # ⤷ 出口 return：返回 min(runtime, explicit)
             return min(runtime, explicit)
+        # ⤷ 出口 return：返回 runtime if runtime is not None else explicit
         return runtime if runtime is not None else explicit
 
+    # ┌── 函数 def _lmstudio_load_was_unverified()
+    # │  作用：Return true when a management load was rejected or unverifiable.
+    # │  参数：load_result: Any
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _lmstudio_load_was_unverified(load_result: Any) -> bool:
         """Return true when a management load was rejected or unverifiable."""
+        # ⤷ 出口 return：返回 bool(getattr(load_result, 'rejected', False)) or (bool(getat…
         return bool(getattr(load_result, "rejected", False)) or (
             bool(getattr(load_result, "load_attempted", False)) and getattr(load_result, "context_length", None) is None
         )
 
+    # ┌── 函数 def _ensure_lmstudio_runtime_loaded()
+    # │  作用：Preload LM Studio unless configured to rely on JIT loading.
+    # │  参数：self, config_context_length: Optional[int] = None
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _ensure_lmstudio_runtime_loaded(self, config_context_length: Optional[int] = None) -> Any:
         """Preload LM Studio unless configured to rely on JIT loading."""
         if (self.provider or "").strip().lower() != "lmstudio":
+            # ⤷ 出口 return：返回 None
             return None
         if (getattr(self, "lmstudio_load_mode", "explicit") or "explicit").strip().lower() == "jit":
             logger.debug("LM Studio explicit preload skipped: lmstudio_load_mode=jit")
+            # ⤷ 出口 return：返回 None
             return None
         from hermes_cli.models_local import ensure_lmstudio_model_loaded
 
         if config_context_length is None:
             config_context_length = getattr(self, "_config_context_length", None)
+        # ⤷ 出口 return：返回 ensure_lmstudio_model_loaded(self.model, self.base_url, geta…
         return ensure_lmstudio_model_loaded(
             self.model, self.base_url, getattr(self, "api_key", ""), config_context_length, return_load_result=True,
         )
 
     switch_model = _forward("agent.agent_runtime_helpers", "switch_model")
 
+    # ┌── 函数 def _disable_codex_reasoning_replay()
+    # │  作用：On HTTP 400 ``invalid_encrypted_content``: disable Responses reasoning replay and pop
+    # │  参数：self, messages: Optional[List[Dict[str, Any]]] = None
+    # │  返回：Dict[str, int]
+    # └──────────────────────────────────────────────────────────────
     def _disable_codex_reasoning_replay(self, messages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, int]:
         """On HTTP 400 ``invalid_encrypted_content``: disable Responses reasoning replay and pop
         ``codex_reasoning_items`` from every assistant message. Returns ``{"messages", "items"}`` counts."""
@@ -474,15 +666,22 @@ class AIAgent(
                 stripped_messages += 1
                 stripped_items += len(items)
         self._codex_reasoning_replay_enabled = False
+        # ⤷ 出口 return：返回 {'messages': stripped_messages, 'items': stripped_items}
         return {"messages": stripped_messages, "items": stripped_items}
 
     _stream_diag_init = _forward_static("agent.stream_diag", "stream_diag_init")
     _stream_diag_capture_response = _forward("agent.stream_diag", "stream_diag_capture_response")
     _flatten_exception_chain = _forward_static("agent.stream_diag", "flatten_exception_chain")
 
+    # ┌── 函数 def _is_provider_stream_parse_error()
+    # │  作用：True for a malformed Anthropic event-stream frame (surfaced by the SDK as a plain ``ValueError``);
+    # │  参数：self, error: BaseException
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_provider_stream_parse_error(self, error: BaseException) -> bool:
         """True for a malformed Anthropic event-stream frame (surfaced by the SDK as a plain ``ValueError``);
         that is wire trouble, not local validation, so it follows the truncated-JSON retry path."""
+        # ⤷ 出口 return：返回 getattr(self, 'api_mode', None) == 'anthropic_messages' and …
         return (getattr(self, "api_mode", None) == "anthropic_messages" and isinstance(error, ValueError)
                 and not isinstance(error, (UnicodeEncodeError, json.JSONDecodeError))
                 and any(marker in str(error).strip().lower() for marker in PROVIDER_STREAM_PARSE_MARKERS))
@@ -490,8 +689,14 @@ class AIAgent(
     _log_stream_retry = _forward("agent.stream_diag", "log_stream_retry")
     _emit_stream_drop = _forward("agent.stream_diag", "emit_stream_drop")
 
+    # ┌── 函数 def _emit_auxiliary_failure()
+    # │  作用：Surface a compact warning for failed auxiliary work.
+    # │  参数：self, task: str, exc: BaseException
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _emit_auxiliary_failure(self, task: str, exc: BaseException) -> None:
         """Surface a compact warning for failed auxiliary work."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             detail = self._summarize_api_error(exc)
         except Exception:
@@ -501,39 +706,81 @@ class AIAgent(
             detail = detail[:217].rstrip() + "..."
         self._emit_warning(f"⚠ Auxiliary {task} failed: {detail}")
 
+    # ┌── 函数 def _current_main_runtime()
+    # │  作用：Return the live main runtime for session-scoped auxiliary routing.
+    # │  参数：self
+    # │  返回：Dict[str, str]
+    # └──────────────────────────────────────────────────────────────
     def _current_main_runtime(self) -> Dict[str, str]:
         """Return the live main runtime for session-scoped auxiliary routing."""
+        # ⤷ 出口 return：返回 {key: getattr(self, key, '') or '' for key in ('model', 'pro…
         return {key: getattr(self, key, "") or "" for key in ("model", "provider", "base_url", "api_key", "api_mode", "auth_mode")}
 
     _check_compression_model_feasibility = _forward("agent.conversation_compression", "check_compression_model_feasibility")
     _replay_compression_warning = _forward("agent.conversation_compression", "replay_compression_warning")
 
+    # ┌── 函数 def _hostname_for()
+    # │  作用：Hostname of ``base_url``, or of the agent's own base URL when None.
+    # │  参数：self, base_url: Optional[str]
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _hostname_for(self, base_url: Optional[str]) -> str:
         """Hostname of ``base_url``, or of the agent's own base URL when None."""
         if base_url is not None:
+            # ⤷ 出口 return：返回 base_url_hostname(base_url)
             return base_url_hostname(base_url)
+        # ⤷ 出口 return：返回 getattr(self, '_base_url_hostname', '') or base_url_hostname…
         return getattr(self, "_base_url_hostname", "") or base_url_hostname(getattr(self, "_base_url_lower", ""))
 
+    # ┌── 函数 def _is_direct_openai_url()
+    # │  作用：Return True when a base URL targets OpenAI's native API.
+    # │  参数：self, base_url: str = None
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_direct_openai_url(self, base_url: str = None) -> bool:
         """Return True when a base URL targets OpenAI's native API."""
+        # ⤷ 出口 return：返回 self._hostname_for(base_url) == 'api.openai.com'
         return self._hostname_for(base_url) == "api.openai.com"
 
+    # ┌── 函数 def _is_azure_openai_url()
+    # │  作用：True when a base URL targets Azure OpenAI (standard client, but NO Responses API support).
+    # │  参数：self, base_url: str = None
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_azure_openai_url(self, base_url: str = None) -> bool:
         """True when a base URL targets Azure OpenAI (standard client, but NO Responses API support)."""
         url = str(base_url).lower() if base_url is not None else (getattr(self, "_base_url_lower", "") or "")
+        # ⤷ 出口 return：返回 base_url_host_matches(url, 'openai.azure.com')
         return base_url_host_matches(url, "openai.azure.com")
 
+    # ┌── 函数 def _is_github_copilot_url()
+    # │  作用：Return True when a base URL targets GitHub Copilot's OpenAI-compatible API.
+    # │  参数：self, base_url: str = None
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_github_copilot_url(self, base_url: str = None) -> bool:
         """Return True when a base URL targets GitHub Copilot's OpenAI-compatible API."""
         hostname = self._hostname_for(base_url)
+        # ⤷ 出口 return：返回 bool(hostname) and (hostname == 'api.githubcopilot.com' or h…
         return bool(hostname) and (hostname == "api.githubcopilot.com" or hostname.endswith(".githubcopilot.com"))
 
+    # ┌── 函数 def _resolved_api_call_timeout()
+    # │  作用：Per-call request timeout: per-model ``timeout_seconds`` > provider ``request_timeout_seconds`` >
+    # │  参数：self
+    # │  返回：float
+    # └──────────────────────────────────────────────────────────────
     def _resolved_api_call_timeout(self) -> float:
         """Per-call request timeout: per-model ``timeout_seconds`` > provider ``request_timeout_seconds`` >
         ``HERMES_API_TIMEOUT`` > 1800s."""
         cfg = get_provider_request_timeout(self.provider, self.model)
+        # ⤷ 出口 return：返回 cfg if cfg is not None else env_float('HERMES_API_TIMEOUT', …
         return cfg if cfg is not None else env_float("HERMES_API_TIMEOUT", 1800.0)
 
+    # ┌── 函数 def _resolved_api_call_stale_timeout_base()
+    # │  作用：Base non-stream stale timeout: per-model ``stale_timeout_seconds`` > provider-wide >
+    # │  参数：self
+    # │  返回：tuple[float, bool]
+    # └──────────────────────────────────────────────────────────────
     def _resolved_api_call_stale_timeout_base(self) -> tuple[float, bool]:
         """Base non-stream stale timeout: per-model ``stale_timeout_seconds`` > provider-wide >
         ``HERMES_API_CALL_STALE_TIMEOUT`` > reasoning floor > 90s.
@@ -543,24 +790,34 @@ class AIAgent(
         """
         cfg = get_provider_stale_timeout(self.provider, self.model)
         if cfg is not None:
+            # ⤷ 出口 return：返回 (cfg, False)
             return cfg, False
         env_timeout = os.getenv("HERMES_API_CALL_STALE_TIMEOUT")
         if env_timeout is not None:
+            # ⤷ 出口 return：返回 (float(env_timeout), False)
             return float(env_timeout), False
         # Reasoning-model floor (cloud gateways idle-kill mid-think); not "implicit" so the local-endpoint
         # short-circuit does not disable stale detection here.
         from agent.reasoning_timeouts import get_reasoning_stale_timeout_floor
         reasoning_floor = get_reasoning_stale_timeout_floor(self.model)
         if reasoning_floor is not None:
+            # ⤷ 出口 return：返回 (reasoning_floor, False)
             return reasoning_floor, False
+        # ⤷ 出口 return：返回 (90.0, True)
         return 90.0, True
 
+    # ┌── 函数 def _compute_non_stream_stale_timeout()
+    # │  作用：Effective non-stream stale timeout for ``api_payload`` (an ``api_kwargs`` dict or legacy ``messages``
+    # │  参数：self, api_payload: Any
+    # │  返回：float
+    # └──────────────────────────────────────────────────────────────
     def _compute_non_stream_stale_timeout(self, api_payload: Any) -> float:
         """Effective non-stream stale timeout for ``api_payload`` (an ``api_kwargs`` dict or legacy ``messages``
         list), scaled by estimated context size and capped by the run budget."""
         stale_base, uses_implicit_default = self._resolved_api_call_stale_timeout_base()
         base_url = getattr(self, "_base_url", None) or self.base_url or ""
         if uses_implicit_default and base_url and is_local_endpoint(base_url):
+            # ⤷ 出口 return：返回 float('inf')
             return float("inf")
 
         from agent.chat_completion_helpers import estimate_request_context_tokens
@@ -573,27 +830,43 @@ class AIAgent(
         if run_budget and started and not self._stale_timeout_is_explicit():
             remaining = float(run_budget) - (time.time() - started)
             timeout = min(timeout, max(60.0, remaining * 0.5))
+        # ⤷ 出口 return：返回 timeout
         return timeout
 
+    # ┌── 函数 def _stale_timeout_is_explicit()
+    # │  作用：True when the user explicitly configured the stale timeout (config or env var); implicit values
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _stale_timeout_is_explicit(self) -> bool:
         """True when the user explicitly configured the stale timeout (config or env var); implicit values
         (reasoning floors, the 90s default) yield to the run-budget cap, explicit ones never do."""
+        # ⤷ 出口 return：返回 get_provider_stale_timeout(self.provider, self.model) is not…
         return (get_provider_stale_timeout(self.provider, self.model) is not None
                 or os.getenv("HERMES_API_CALL_STALE_TIMEOUT") is not None)
 
+    # ┌── 函数 def _codex_silent_hang_hint()
+    # │  作用：Actionable hint when the request matches a known Codex silent-reject shape (currently the ``gpt-5.5``
+    # │  参数：self, model: Optional[str] = None
+    # │  返回：Optional[str]
+    # └──────────────────────────────────────────────────────────────
     def _codex_silent_hang_hint(self, model: Optional[str] = None) -> Optional[str]:
         """Actionable hint when the request matches a known Codex silent-reject shape (currently the ``gpt-5.5``
         family: connection accepted, no events, no error), else None. Makes the stale timeout actionable."""
         if self.api_mode != "codex_responses":
+            # ⤷ 出口 return：返回 None
             return None
         from agent.codex_responses_adapter import classify_responses_route
 
         if not classify_responses_route(self).is_codex_backend:
+            # ⤷ 出口 return：返回 None
             return None
         eff_model = (model if model is not None else self.model) or ""
         # Match the gpt-5.5 family at word boundaries (bare, -codex, vendor-prefixed) but not gpt-5.50.
         if not re.search(r"(?:^|[/\-_])gpt-5\.5(?:$|[\-_])", eff_model.lower()):
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 f'Codex backend appears to be silently rejecting {eff_model!…
         return (
             f"Codex backend appears to be silently rejecting {eff_model!r} "
             "on chatgpt.com/backend-api/codex (no stream events, no error). "
@@ -605,21 +878,45 @@ class AIAgent(
             "See hermes-agent#21444 for symptom history."
         )
 
+    # ┌── 函数 def _is_openrouter_url()
+    # │  作用：Return True when the base URL targets OpenRouter.
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_openrouter_url(self) -> bool:
         """Return True when the base URL targets OpenRouter."""
+        # ⤷ 出口 return：返回 base_url_host_matches(self._base_url_lower, 'openrouter.ai')
         return base_url_host_matches(self._base_url_lower, "openrouter.ai")
 
+    # ┌── 函数 def _is_copilot_url()
+    # │  作用：Return True when the base URL targets GitHub Copilot or GitHub Models.
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_copilot_url(self) -> bool:
         """Return True when the base URL targets GitHub Copilot or GitHub Models."""
+        # ⤷ 出口 return：返回 any((base_url_host_matches(self._base_url_lower, h) for h in…
         return any(base_url_host_matches(self._base_url_lower, h) for h in ("api.githubcopilot.com", "models.github.ai"))
 
+    # ┌── 函数 def _is_copilot_provider()
+    # │  作用：True when the active provider is GitHub Copilot under any alias (``copilot`` / ``github-copilot`` /
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_copilot_provider(self) -> bool:
         """True when the active provider is GitHub Copilot under any alias (``copilot`` / ``github-copilot`` /
         ``github``) or by base URL; a bare equality check would silently skip credential recovery."""
+        # ⤷ 出口 return：返回 (self.provider or '').strip().lower() in {'copilot', 'github…
         return (self.provider or "").strip().lower() in {"copilot", "github-copilot", "github"} or self._is_copilot_url()
 
+    # ┌── 函数 def _is_codex_backend()
+    # │  作用：Return True for the ChatGPT OAuth Codex Responses backend.
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_codex_backend(self) -> bool:
         """Return True for the ChatGPT OAuth Codex Responses backend."""
+        # ⤷ 出口 return：返回 getattr(self, 'api_mode', None) == 'codex_responses' and get…
         return (getattr(self, "api_mode", None) == "codex_responses"
                 and getattr(self, "_base_url_hostname", "") == "chatgpt.com"
                 and "/backend-api/codex" in (getattr(self, "_base_url_lower", "") or ""))
@@ -627,12 +924,25 @@ class AIAgent(
     _anthropic_prompt_cache_policy = _forward("agent.agent_runtime_helpers", "anthropic_prompt_cache_policy")
     _direct_native_anthropic_tool_cache_capability = _forward("agent.agent_runtime_helpers", "_direct_native_anthropic_tool_cache_capability")
 
+    # ┌── 函数 def _model_requires_responses_api()
+    # │  作用：True for GPT-5.x, which OpenAI and OpenRouter reject on /v1/chat/completions
+    # │  参数：model: str
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _model_requires_responses_api(model: str) -> bool:
         """True for GPT-5.x, which OpenAI and OpenRouter reject on /v1/chat/completions
         (``unsupported_api_for_model``)."""
+        # ⤷ 出口 return：返回 model.lower().rsplit('/', 1)[-1].startswith('gpt-5')
         return model.lower().rsplit("/", 1)[-1].startswith("gpt-5")  # strip vendor prefix ("openai/gpt-5.4")
 
+    # ┌── 函数 def _provider_model_requires_responses_api()
+    # │  作用：Return True when this provider/model pair should use Responses API.
+    # │  参数：model: str, provider: Optional[str] = ...
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _provider_model_requires_responses_api(model: str, *, provider: Optional[str] = None) -> bool:
         """Return True when this provider/model pair should use Responses API."""
@@ -641,53 +951,93 @@ class AIAgent(
         # Nous serves GPT-5.x via chat completions (its /v1/responses returns 404); generic custom endpoints
         # may relay GPT-5 without full Responses semantics — only direct OpenAI/xAI URLs auto-upgrade.
         if normalized_provider in ("nous", "custom") or is_actual_route(provider):
+            # ⤷ 出口 return：返回 False
             return False
         if normalized_provider == "copilot":
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.models import _should_use_copilot_responses_api
+                # ⤷ 出口 return：返回 _should_use_copilot_responses_api(model)
                 return _should_use_copilot_responses_api(model)
             except Exception:
                 pass  # fall back to the generic GPT-5 rule
+        # ⤷ 出口 return：返回 AIAgent._model_requires_responses_api(model)
         return AIAgent._model_requires_responses_api(model)
 
+    # ┌── 函数 def _max_tokens_param()
+    # │  作用：``max_completion_tokens`` for newer OpenAI families (and Azure / Copilot serving them), else
+    # │  参数：self, value: int
+    # │  返回：dict
+    # └──────────────────────────────────────────────────────────────
     def _max_tokens_param(self, value: int) -> dict:
         """``max_completion_tokens`` for newer OpenAI families (and Azure / Copilot serving them), else
         ``max_tokens``. URL-first, then model-name fallback for third-party endpoints fronting those models."""
         if (self._is_direct_openai_url() or self._is_azure_openai_url() or self._is_github_copilot_url()
                 or model_forces_max_completion_tokens(self.model)):
+            # ⤷ 出口 return：返回 {'max_completion_tokens': value}
             return {"max_completion_tokens": value}
+        # ⤷ 出口 return：返回 {'max_tokens': value}
         return {"max_tokens": value}
 
+    # ┌── 函数 def _requested_output_cap_from_api_kwargs()
+    # │  作用：Extract the outgoing response token cap from a prepared request.
+    # │  参数：api_kwargs: Any
+    # │  返回：Optional[int]
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _requested_output_cap_from_api_kwargs(api_kwargs: Any) -> Optional[int]:
         """Extract the outgoing response token cap from a prepared request."""
         if not isinstance(api_kwargs, dict):
+            # ⤷ 出口 return：返回 None
             return None
         for key in ("max_output_tokens", "max_completion_tokens", "max_tokens"):
+            # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
             try:
                 value = int(api_kwargs.get(key))
             except (TypeError, ValueError):
                 continue
             if value > 0:
+                # ⤷ 出口 return：返回 value
                 return value
+        # ⤷ 出口 return：返回 None
         return None
 
+    # ┌── 函数 def _has_content_after_think_block()
+    # │  作用：True when text remains after stripping reasoning blocks (reasoning-only output is retried).
+    # │  参数：self, content: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _has_content_after_think_block(self, content: str) -> bool:
         """True when text remains after stripping reasoning blocks (reasoning-only output is retried)."""
+        # ⤷ 出口 return：返回 bool(content) and bool(self._strip_think_blocks(content).str…
         return bool(content) and bool(self._strip_think_blocks(content).strip())
 
     _strip_think_blocks = _forward("agent.agent_runtime_helpers", "strip_think_blocks")
 
+    # ┌── 函数 def _has_natural_response_ending()
+    # │  作用：Heuristic: does visible assistant text look intentionally finished?
+    # │  参数：content: str
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _has_natural_response_ending(content: str) -> bool:
         """Heuristic: does visible assistant text look intentionally finished?"""
         stripped = (content or "").rstrip()
         if not stripped:
+            # ⤷ 出口 return：返回 False
             return False
         last = stripped[-1]
         # Closing punctuation/brackets, a fenced-code close, or an emoji (Misc Symbols, Dingbats, Emoticons, ...).
+        # ⤷ 出口 return：返回 stripped.endswith('```') or last in '.!?:)"\']}。！？：）】」』》^' o…
         return stripped.endswith("```") or last in '.!?:)"\']}。！？：）】」』》^' or ord(last) >= 0x1F300
 
+    # ┌── 函数 def _is_ollama_glm_backend()
+    # │  作用：Ollama-hosted GLM models misreport finish_reason='stop'. Matches only explicit Ollama signatures
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_ollama_glm_backend(self) -> bool:
         """Ollama-hosted GLM models misreport finish_reason='stop'. Matches only explicit Ollama signatures
         (port 11434, "ollama" in URL, provider ollama), never arbitrary local proxies; excludes Ollama Cloud
@@ -704,29 +1054,44 @@ class AIAgent(
         model_lower = (self.model or "").lower()
         provider_lower = (self.provider or "").lower()
         if "glm" not in model_lower and provider_lower != "zai":
+            # ⤷ 出口 return：返回 False
             return False
         base = self._base_url_lower
         # Ollama Cloud (hosted service or :cloud proxy) forwards finish_reason faithfully — do not rewrite.
         if "ollama.com" in base or ":cloud" in model_lower:
+            # ⤷ 出口 return：返回 False
             return False
         if "ollama" in base or ":11434" in base:
+            # ⤷ 出口 return：返回 True
             return True
+        # ⤷ 出口 return：返回 provider_lower == 'ollama'
         return provider_lower == "ollama"
 
+    # ┌── 函数 def _should_treat_stop_as_truncated()
+    # │  作用：Detect conservative stop->length misreports for Ollama-hosted GLM models.
+    # │  参数：self, finish_reason: str, assistant_message, messages: Optional[list] = None
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _should_treat_stop_as_truncated(self, finish_reason: str, assistant_message, messages: Optional[list] = None) -> bool:
         """Detect conservative stop->length misreports for Ollama-hosted GLM models."""
         if finish_reason != "stop" or self.api_mode != "chat_completions" or not self._is_ollama_glm_backend():
+            # ⤷ 出口 return：返回 False
             return False
         if not any(isinstance(msg, dict) and msg.get("role") == "tool" for msg in (messages or [])):
+            # ⤷ 出口 return：返回 False
             return False
         if assistant_message is None or getattr(assistant_message, "tool_calls", None):
+            # ⤷ 出口 return：返回 False
             return False
         content = getattr(assistant_message, "content", None)
         if not isinstance(content, str):
+            # ⤷ 出口 return：返回 False
             return False
         visible_text = self._strip_think_blocks(content).strip()
         if len(visible_text) < 20 or not re.search(r"\s", visible_text):
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 出口 return：返回 not self._has_natural_response_ending(visible_text)
         return not self._has_natural_response_ending(visible_text)
 
     _looks_like_codex_intermediate_ack = _forward("agent.agent_runtime_helpers", "looks_like_codex_intermediate_ack")
@@ -737,6 +1102,11 @@ class AIAgent(
     from agent.background_review import _MEMORY_REVIEW_PROMPT, _SKILL_REVIEW_PROMPT, _COMBINED_REVIEW_PROMPT
     _summarize_background_review_actions = _forward_static("agent.background_review", "summarize_background_review_actions")
 
+    # ┌── 函数 def _spawn_background_review()
+    # │  作用：Post-turn review entry point: decide WHEN, then spawn.
+    # │  参数：self, messages_snapshot: List[Dict], review_memory: bool = False, review_skills: bool = False, focus: Optional[str] = None, explicit: bool = False
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _spawn_background_review(self, messages_snapshot: List[Dict], review_memory: bool = False,
                                  review_skills: bool = False, focus: Optional[str] = None, explicit: bool = False) -> None:
         """Post-turn review entry point: decide WHEN, then spawn.
@@ -769,6 +1139,11 @@ class AIAgent(
             return
         self._spawn_background_review_now(**kwargs)
 
+    # ┌── 函数 def _spawn_background_review_now()
+    # │  作用：Spawn the background memory/skill review thread.
+    # │  参数：self, messages_snapshot: List[Dict], review_memory: bool = False, review_skills: bool = False, focus: Optional[str] = None, task_cfg: Optional[Dict[str, Any]] = None, _requeue_attempts: int = 0, explicit: bool = False
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _spawn_background_review_now(self, messages_snapshot: List[Dict], review_memory: bool = False,
                                      review_skills: bool = False, focus: Optional[str] = None,
                                      task_cfg: Optional[Dict[str, Any]] = None, _requeue_attempts: int = 0,
@@ -789,6 +1164,7 @@ class AIAgent(
         review_run = prepare_background_review_run(self)
         if review_run is None:
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             target, _prompt = spawn_background_review_thread(
                 self, messages_snapshot, review_memory=review_memory, review_skills=review_skills,
@@ -807,16 +1183,23 @@ class AIAgent(
             threading.Thread(target=propagate_context_to_thread(_target_with_requeue), daemon=True, name="bg-review").start()
         except Exception:
             finish_background_review_run(self, review_run)
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
 
     _REVIEW_REQUEUE_MAX_ATTEMPTS = 3
 
+    # ┌── 函数 def _maybe_requeue_preempted_review()
+    # │  作用：Requeue a deferred-mode review that a live turn cancelled.
+    # │  参数：self, review_run, kwargs
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _maybe_requeue_preempted_review(self, review_run, kwargs) -> None:
         """Requeue a deferred-mode review that a live turn cancelled.
 
         Only for automatic reviews on the managed local runtime; bounded attempts stop a busy box cycling
         forever.
         """
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Not cancelled == ran to completion (or was never admitted).
             if not review_run.cancel_requested.is_set() or kwargs.get("focus") is not None:
@@ -835,11 +1218,17 @@ class AIAgent(
     _build_memory_write_metadata = _forward("agent.background_review", "build_memory_write_metadata")
     _apply_pending_steer_to_tool_results = _forward("agent.agent_runtime_helpers", "apply_pending_steer_to_tool_results")
 
+    # ┌── 函数 def get_activity_summary()
+    # │  作用：Diagnostic snapshot: ``last_activity_*`` plus the short aliases gateway and delegate readers use.
+    # │  参数：self
+    # │  返回：dict
+    # └──────────────────────────────────────────────────────────────
     def get_activity_summary(self) -> dict:
         """Diagnostic snapshot: ``last_activity_*`` plus the short aliases gateway and delegate readers use."""
         from agent.session_activity import build_activity_snapshot
 
         provenance = getattr(self, "_last_activity_provenance", None)
+        # ⤷ 出口 return：返回 build_activity_snapshot(last_activity_at=getattr(self, '_las…
         return build_activity_snapshot(
             last_activity_at=getattr(self, "_last_activity_ts", None),
             last_activity_description=getattr(self, "_last_activity_desc", None) or "",
@@ -851,6 +1240,11 @@ class AIAgent(
             },
         )
 
+    # ┌── 函数 def shutdown_memory_provider()
+    # │  作用：Shut down the memory provider and context engine at session end (idempotent: gateway cleanup and
+    # │  参数：self, messages: list = None
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def shutdown_memory_provider(self, messages: list = None) -> None:
         """Shut down the memory provider and context engine at session end (idempotent: gateway cleanup and
         ``close()`` may both call it)."""
@@ -858,6 +1252,7 @@ class AIAgent(
             return
         self._memory_provider_shutdown = True
         if self._memory_manager:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 self._memory_manager.on_session_end(messages or [])
             except Exception as e:
@@ -865,6 +1260,11 @@ class AIAgent(
             _quietly(lambda: self._memory_manager.shutdown_all())
         _notify_context_engine_session_end(self, messages)
 
+    # ┌── 函数 def commit_memory_session()
+    # │  作用：Flush end-of-session extraction on session_id rotation (/new, compression) without tearing providers
+    # │  参数：self, messages: list = None
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def commit_memory_session(self, messages: list = None) -> None:
         """Flush end-of-session extraction on session_id rotation (/new, compression) without tearing providers
         down."""
@@ -872,6 +1272,11 @@ class AIAgent(
             _quietly(lambda: self._memory_manager.on_session_end(messages or []))
         _notify_context_engine_session_end(self, messages)
 
+    # ┌── 函数 def _sync_external_memory_for_turn()
+    # │  作用：Mirror a completed turn into external memory providers (``sync_all`` + ``queue_prefetch_all``).
+    # │  参数：self, original_user_message: Any, final_response: Any, interrupted: bool, messages: list | None = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _sync_external_memory_for_turn(self, *, original_user_message: Any, final_response: Any, interrupted: bool,
                                        messages: list | None = None) -> None:
         """Mirror a completed turn into external memory providers (``sync_all`` + ``queue_prefetch_all``).
@@ -892,6 +1297,7 @@ class AIAgent(
         response_text = _summarize_user_message_for_log(final_response, sep="\n")
         if not (user_text and response_text):
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             sync_kwargs = {"session_id": self.session_id or "", **({"messages": messages} if messages is not None else {})}
             # Stashed by build_turn_context() for this turn, None on a human turn.
@@ -905,6 +1311,11 @@ class AIAgent(
         except Exception:
             pass
 
+    # ┌── 函数 def release_clients()
+    # │  作用：Release LLM clients and child agents WITHOUT tearing down session tool state (gateway cache
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def release_clients(self) -> None:
         """Release LLM clients and child agents WITHOUT tearing down session tool state (gateway cache
         eviction: the session may resume on the same task_id, so processes, sandbox, browser, computer-use and
@@ -915,6 +1326,11 @@ class AIAgent(
         _quietly(self._drop_shared_client, lambda c: self._retire_shared_openai_client(c, reason="cache_evict"))
         self._close_request_clients("cache_evict")
 
+    # ┌── 函数 def close()
+    # │  作用：Release every resource this agent holds (idempotent); each phase is guarded so one failure never
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def close(self) -> None:
         """Release every resource this agent holds (idempotent); each phase is guarded so one failure never
         blocks the rest."""
@@ -938,8 +1354,14 @@ class AIAgent(
 
     # -- close()/release_clients() phases -------------------------------------------------------------
 
+    # ┌── 函数 def _close_active_children()
+    # │  作用：Detach and close per-turn child agents; ``soft`` releases their clients first, falling back to close().
+    # │  参数：self, soft: bool
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_active_children(self, *, soft: bool) -> None:
         """Detach and close per-turn child agents; ``soft`` releases their clients first, falling back to close()."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             with self._active_children_lock:
                 children = list(self._active_children)
@@ -948,6 +1370,7 @@ class AIAgent(
             return
         for child in children:
             if soft:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     child.release_clients()
                     continue
@@ -955,6 +1378,11 @@ class AIAgent(
                     pass
             _quietly(lambda: child.close())
 
+    # ┌── 函数 def _drop_shared_client()
+    # │  作用：Hand the shared OpenAI/httpx client to ``close_fn`` and clear the attribute.
+    # │  参数：self, close_fn: Callable[[Any], None]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _drop_shared_client(self, close_fn: Callable[[Any], None]) -> None:
         """Hand the shared OpenAI/httpx client to ``close_fn`` and clear the attribute."""
         # Retire the OpenAI/httpx client to release sockets immediately. #70773: eviction runs on the
@@ -967,11 +1395,21 @@ class AIAgent(
             close_fn(client)
             self.client = None
 
+    # ┌── 函数 def _close_request_clients()
+    # │  作用：Drop the cached per-request wire clients (reused across sequential LLM calls).
+    # │  参数：self, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_request_clients(self, reason: str) -> None:
         """Drop the cached per-request wire clients (reused across sequential LLM calls)."""
         _quietly(self._close_cached_request_openai_client, reason=reason)
         _quietly(self._close_cached_request_anthropic_client, reason=reason)
 
+    # ┌── 函数 def _close_codex_session()
+    # │  作用：Close the Codex app-server session (else the child keeps running); the attribute is cleared BEFORE
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_codex_session(self) -> None:
         """Close the Codex app-server session (else the child keeps running); the attribute is cleared BEFORE
         close() so a concurrent reader can't grab a half-closed session."""
@@ -980,12 +1418,23 @@ class AIAgent(
             self._codex_session = None
             codex_session.close()
 
+    # ┌── 函数 def _trim_process_memory()
+    # │  作用：Return freed heap pages to the OS on glibc; safe no-op elsewhere.
+    # │  参数：无
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _trim_process_memory() -> None:
         """Return freed heap pages to the OS on glibc; safe no-op elsewhere."""
         from hermes_cli.mem_trim import trim_memory
         trim_memory(force=True, reason="agent close")
 
+    # ┌── 函数 def _finalize_owned_session_row()
+    # │  作用：End the session row unless ownership was handed forward (compression helpers, review forks sharing
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _finalize_owned_session_row(self) -> None:
         """End the session row unless ownership was handed forward (compression helpers, review forks sharing
         the parent's id; end_session() is first-reason-wins), then release the SQLite handle ONLY when this
@@ -1002,6 +1451,11 @@ class AIAgent(
             from hermes_state_registry import release_or_close
             release_or_close(session_db)
 
+    # ┌── 函数 def _hydrate_todo_store()
+    # │  作用：Replay the most recent todo tool response (the gateway builds a fresh AIAgent per message). Only
+    # │  参数：self, history: List[Dict[str, Any]]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _hydrate_todo_store(self, history: List[Dict[str, Any]]) -> None:
         """Replay the most recent todo tool response (the gateway builds a fresh AIAgent per message). Only
         results paired with an earlier assistant ``todo`` call count — a forged bare ``role: tool`` message
@@ -1011,6 +1465,7 @@ class AIAgent(
             last_todo_response, last_todo_revision = found
             # Restore only when history carries a newer revision than the store holds; empty lists are an
             # authoritative clear.
+            # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
             try:
                 history_revision = max(0, int(last_todo_revision or 0))
             except (TypeError, ValueError):
@@ -1021,6 +1476,11 @@ class AIAgent(
                     self._vprint(f"{self.log_prefix}📋 Restored {len(last_todo_response)} todo item(s) from history")
         _set_interrupt(False)
 
+    # ┌── 函数 def _latest_todo_response()
+    # │  作用：Walk history backwards for the newest paired, size-bounded todo result → ``(todos, revision)``.
+    # │  参数：self, history: List[Dict[str, Any]]
+    # │  返回：Optional[tuple]
+    # └──────────────────────────────────────────────────────────────
     def _latest_todo_response(self, history: List[Dict[str, Any]]) -> Optional[tuple]:
         """Walk history backwards for the newest paired, size-bounded todo result → ``(todos, revision)``."""
         from tools.todo_tool import MAX_TODO_RESULT_CHARS
@@ -1036,41 +1496,68 @@ class AIAgent(
                 continue
             if '"todos"' not in content:  # cheap pre-filter before json.loads
                 continue
+            # ⤷ 关键分支 try/except：捕获 (json.JSONDecodeError, TypeError)，出错走兜底而不是崩溃。
             try:
                 data = json.loads(content)
             except (json.JSONDecodeError, TypeError):
                 continue
             if "todos" in data and isinstance(data["todos"], list):
+                # ⤷ 出口 return：返回 (data['todos'], data.get('revision', 1))
                 return data["todos"], data.get("revision", 1)
+        # ⤷ 出口 return：返回 None
         return None
 
+    # ┌── 函数 def _tool_response_matches_todo_call()
+    # │  作用：True when the nearest prior assistant message issued a ``todo`` call with this ``tool_call_id``; a
+    # │  参数：cls, history: List[Dict[str, Any]], tool_index: int
+    # │  返回：bool
+    # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
+    # └──────────────────────────────────────────────────────────────
     @classmethod
     def _tool_response_matches_todo_call(cls, history: List[Dict[str, Any]], tool_index: int) -> bool:
         """True when the nearest prior assistant message issued a ``todo`` call with this ``tool_call_id``; a
         ``user``/``system`` boundary or missing id means unpaired → must not hydrate."""
         tool_call_id = history[tool_index].get("tool_call_id") if 0 <= tool_index < len(history) else None
         if not tool_call_id:
+            # ⤷ 出口 return：返回 False
             return False
         for prior in reversed(history[:tool_index]):
             role = prior.get("role")
             if role == "assistant":
+                # ⤷ 出口 return：返回 cls._assistant_has_todo_tool_call(prior, tool_call_id)
                 return cls._assistant_has_todo_tool_call(prior, tool_call_id)
             if role in {"user", "system"}:
+                # ⤷ 出口 return：返回 False
                 return False
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ┌── 函数 def _assistant_has_todo_tool_call()
+    # │  作用：True when the assistant message issued a ``todo`` call with this id.
+    # │  参数：cls, assistant_msg: Dict[str, Any], tool_call_id: str
+    # │  返回：bool
+    # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
+    # └──────────────────────────────────────────────────────────────
     @classmethod
     def _assistant_has_todo_tool_call(cls, assistant_msg: Dict[str, Any], tool_call_id: str) -> bool:
         """True when the assistant message issued a ``todo`` call with this id."""
         tool_calls = assistant_msg.get("tool_calls")
+        # ⤷ 出口 return：返回 isinstance(tool_calls, list) and any((cls._get_tool_call_id_…
         return isinstance(tool_calls, list) and any(
             cls._get_tool_call_id_static(tc) == tool_call_id and cls._get_tool_call_name_static(tc) == "todo"
             for tc in tool_calls
         )
 
+    # ┌── 函数 def is_interrupted()
+    # │  作用：Check if an interrupt has been requested.
+    # │  参数：self
+    # │  返回：bool
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def is_interrupted(self) -> bool:
         """Check if an interrupt has been requested."""
+        # ⤷ 出口 return：返回 self._interrupt_requested
         return self._interrupt_requested
 
     _build_system_prompt = _forward("agent.system_prompt", "build_system_prompt")
@@ -1078,17 +1565,31 @@ class AIAgent(
     # Call ID of a tool_call entry (dict or object); policy owner: ``message_sanitization.coalesce_tool_call_id``.
     _get_tool_call_id_static = staticmethod(_sanitize_coalesce_tool_call_id)
 
+    # ┌── 函数 def _get_tool_call_name_static()
+    # │  作用：Function name of a tool_call entry (dict or object); Gemini requires it on every ``role: tool`` message.
+    # │  参数：tc
+    # │  返回：str
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _get_tool_call_name_static(tc) -> str:
         """Function name of a tool_call entry (dict or object); Gemini requires it on every ``role: tool`` message."""
         if isinstance(tc, dict):
             fn = tc.get("function")
+            # ⤷ 出口 return：返回 fn.get('name', '') or '' if isinstance(fn, dict) else ''
             return (fn.get("name", "") or "") if isinstance(fn, dict) else ""
+        # ⤷ 出口 return：返回 getattr(getattr(tc, 'function', None), 'name', '') or ''
         return getattr(getattr(tc, "function", None), "name", "") or ""
 
     _VALID_API_ROLES = frozenset({"system", "user", "assistant", "tool", "function", "developer"})
     _sanitize_api_messages = _forward_static("agent.agent_runtime_helpers", "sanitize_api_messages")
 
+    # ┌── 函数 def _is_thinking_only_assistant()
+    # │  作用：True if ``msg`` is an assistant turn whose only payload is reasoning (no text, no tool_calls).
+    # │  参数：msg: Dict[str, Any], drop_codex_reasoning_items: bool = ...
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _is_thinking_only_assistant(msg: Dict[str, Any], *, drop_codex_reasoning_items: bool = True) -> bool:
         """True if ``msg`` is an assistant turn whose only payload is reasoning (no text, no tool_calls).
@@ -1097,12 +1598,15 @@ class AIAgent(
         the turn is dropped from the API copy; the transcript keeps the reasoning block.
         """
         if not isinstance(msg, dict) or msg.get("role") != "assistant" or msg.get("tool_calls"):
+            # ⤷ 出口 return：返回 False
             return False
         # Prefill stubs are thinking-only by construction; checked before content inspection since
         # repair_empty_non_final_messages may have healed content.
         if msg.get("_thinking_prefill"):
+            # ⤷ 出口 return：返回 True
             return True
         if AIAgent._content_has_real_payload(msg.get("content")):
+            # ⤷ 出口 return：返回 False
             return False
         # A native compaction checkpoint makes a carrier never thinking-only, regardless of api_mode or
         # reasoning field. Checked above every reasoning branch so no carrier shape is dropped.
@@ -1113,41 +1617,62 @@ class AIAgent(
         from agent.native_compaction import has_compaction_checkpoint
 
         if has_compaction_checkpoint(msg.get("codex_reasoning_items")):
+            # ⤷ 出口 return：返回 False
             return False
         reasoning = msg.get("reasoning_content") or msg.get("reasoning")
         rd = msg.get("reasoning_details")
         if (isinstance(reasoning, str) and reasoning.strip()) or (isinstance(rd, list) and rd):
+            # ⤷ 出口 return：返回 True
             return True
         # Codex Responses keeps encrypted reasoning under a separate key; only real items count as
         # thinking-only, empty/junk lists fall through to generic empty-turn handling.
         codex_items = msg.get("codex_reasoning_items")
         if drop_codex_reasoning_items and isinstance(codex_items, list):
             return any(isinstance(item, dict) and item.get("type") == "reasoning" for item in codex_items)
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ┌── 函数 def _content_has_real_payload()
+    # │  作用：True when assistant ``content`` carries anything beyond (redacted) thinking blocks / whitespace.
+    # │  参数：content: Any
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _content_has_real_payload(content: Any) -> bool:
         """True when assistant ``content`` carries anything beyond (redacted) thinking blocks / whitespace."""
         if isinstance(content, str):
+            # ⤷ 出口 return：返回 bool(content.strip())
             return bool(content.strip())
         if isinstance(content, list):
             for block in content:
                 if not isinstance(block, dict):
                     if block:  # non-empty non-dict string etc.
+                        # ⤷ 出口 return：返回 True
                         return True
                     continue
                 btype = block.get("type")
                 if btype == "text":
                     text = block.get("text", "")
                     if isinstance(text, str) and text.strip():
+                        # ⤷ 出口 return：返回 True
                         return True
                 elif btype not in {"thinking", "redacted_thinking"}:
+                    # ⤷ 出口 return：返回 True
                     return True  # tool_use, image, document, etc. — real payload
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 出口 return：返回 content is not None and content != ''
         return content is not None and content != ""
 
     _drop_thinking_only_and_merge_users = _forward_static("agent.agent_runtime_helpers", "drop_thinking_only_and_merge_users")
 
+    # ┌── 函数 def _cap_delegate_task_calls()
+    # │  作用：Cap delegate_task calls in one turn at max_concurrent_children (non-delegate calls all kept);
+    # │  参数：tool_calls: list
+    # │  返回：list
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _cap_delegate_task_calls(tool_calls: list) -> list:
         """Cap delegate_task calls in one turn at max_concurrent_children (non-delegate calls all kept);
@@ -1156,6 +1681,7 @@ class AIAgent(
         max_children = _get_max_concurrent_children()
         delegate_count = sum(1 for tc in tool_calls if tc.function.name == "delegate_task")
         if delegate_count <= max_children:
+            # ⤷ 出口 return：返回 tool_calls
             return tool_calls
         kept_delegates, truncated = 0, []
         for tc in tool_calls:
@@ -1166,8 +1692,15 @@ class AIAgent(
             truncated.append(tc)
         logger.warning("Truncated %d excess delegate_task call(s) to enforce "
                        "max_concurrent_children=%d limit", delegate_count - max_children, max_children)
+        # ⤷ 出口 return：返回 truncated
         return truncated
 
+    # ┌── 函数 def _deduplicate_tool_calls()
+    # │  作用：Drop duplicate (tool_name, arguments) pairs in one turn (first wins). Valid JSON arguments are
+    # │  参数：tool_calls: list
+    # │  返回：list
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _deduplicate_tool_calls(tool_calls: list) -> list:
         """Drop duplicate (tool_name, arguments) pairs in one turn (first wins). Valid JSON arguments are
@@ -1175,6 +1708,7 @@ class AIAgent(
         seen, unique = set(), []
         for tc in tool_calls:
             arguments = tc.function.arguments
+            # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
             try:
                 arguments = json.dumps(json.loads(arguments), separators=(",", ":"), sort_keys=True)
             except (TypeError, ValueError):
@@ -1185,6 +1719,7 @@ class AIAgent(
                 continue
             seen.add(key)
             unique.append(tc)
+        # ⤷ 出口 return：返回 unique if len(unique) < len(tool_calls) else tool_calls
         return unique if len(unique) < len(tool_calls) else tool_calls
 
     # Distinct ids per assistant turn, in place (policy owner: ``message_sanitization``). Collisions get a
@@ -1204,24 +1739,41 @@ class AIAgent(
     _interruptible_streaming_api_call = _forward("agent.chat_completion_helpers", "interruptible_streaming_api_call")
     _try_activate_fallback = _forward("agent.chat_completion_helpers", "try_activate_fallback")
 
+    # ┌── 函数 def _has_pending_fallback()
+    # │  作用：Whether a fallback provider remains (mirrors ``try_activate_fallback``'s guard) — gates the
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _has_pending_fallback(self) -> bool:
         """Whether a fallback provider remains (mirrors ``try_activate_fallback``'s guard) — gates the
         "trying fallback..." status so we never announce one that won't be attempted.
 
         See #17446.
         """
+        # ⤷ 出口 return：返回 getattr(self, '_fallback_index', 0) < len(getattr(self, '_fa…
         return getattr(self, "_fallback_index", 0) < len(getattr(self, "_fallback_chain", None) or [])
 
     _restore_primary_runtime = _forward("agent.agent_runtime_helpers", "restore_primary_runtime")
     _try_recover_primary_transport = _forward("agent.agent_runtime_helpers", "try_recover_primary_transport")
     _build_api_kwargs = _forward("agent.chat_completion_helpers", "build_api_kwargs")
 
+    # ┌── 函数 def _set_tool_guardrail_halt()
+    # │  作用：Record the first guardrail decision that should stop this turn.
+    # │  参数：self, decision: ToolGuardrailDecision
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _set_tool_guardrail_halt(self, decision: ToolGuardrailDecision) -> None:
         """Record the first guardrail decision that should stop this turn."""
         if decision.should_halt and self._tool_guardrail_halt_decision is None:
             self._tool_guardrail_halt_decision = decision
 
+    # ┌── 函数 def _toolguard_controlled_halt_response()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, decision: ToolGuardrailDecision
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _toolguard_controlled_halt_response(self, decision: ToolGuardrailDecision) -> str:
+        # ⤷ 出口 return：返回 f"I stopped retrying {decision.tool_name or 'a tool'} becaus…
         return (
             f"I stopped retrying {decision.tool_name or 'a tool'} because it hit the tool-call guardrail "
             f"({decision.code}) after {decision.count} repeated non-progressing "
@@ -1229,6 +1781,11 @@ class AIAgent(
             "to change strategy instead of repeating the same call."
         )
 
+    # ┌── 函数 def _append_guardrail_observation()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, tool_name: str, function_args: dict, function_result: str, failed: bool, tool_call_id: str = ...
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _append_guardrail_observation(self, tool_name: str, function_args: dict, function_result: str, *,
                                       failed: bool, tool_call_id: str = "") -> str:
         decision = self._tool_guardrails.after_call(tool_name, function_args, function_result, failed=failed)
@@ -1236,6 +1793,7 @@ class AIAgent(
         # at result construction so tool results stay append-only / cache-safe.
         stall_notice = result_stub = None
         if self._stall_guards_enabled():
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 observation = self._tool_guardrails.observe_call(
                     tool_name, function_args, function_result if isinstance(function_result, str) else None,
@@ -1260,16 +1818,34 @@ class AIAgent(
                 self._set_tool_guardrail_halt(streak_halt)
         if stall_notice:
             function_result = (function_result or "") + "\n\n" + stall_notice
+        # ⤷ 出口 return：返回 function_result
         return function_result
 
+    # ┌── 函数 def _stall_guards_enabled()
+    # │  作用：Config gate for the runtime anti-stall guards (agent.stall_guards).
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _stall_guards_enabled(self) -> bool:
         """Config gate for the runtime anti-stall guards (agent.stall_guards)."""
+        # ⤷ 出口 return：返回 bool(getattr(self, '_stall_guards', True))
         return bool(getattr(self, "_stall_guards", True))
 
+    # ┌── 函数 def _guardrail_block_result()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, decision: ToolGuardrailDecision
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _guardrail_block_result(self, decision: ToolGuardrailDecision) -> str:
         self._set_tool_guardrail_halt(decision)
+        # ⤷ 出口 return：返回 toolguard_synthetic_result(decision)
         return toolguard_synthetic_result(decision)
 
+    # ┌── 函数 def _execute_tool_calls()
+    # │  作用：Execute the assistant's tool calls and append results to ``messages``.
+    # │  参数：self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _execute_tool_calls(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
         """Execute the assistant's tool calls and append results to ``messages``.
 
@@ -1279,8 +1855,10 @@ class AIAgent(
         tool_calls = assistant_message.tool_calls
         args = (assistant_message, messages, effective_task_id, api_call_count)
         self._executing_tools = True  # allow _vprint during tool execution even with stream consumers
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             if len(tool_calls) <= 1:
+                # ⤷ 出口 return：返回 self._execute_tool_calls_sequential(*args)
                 return self._execute_tool_calls_sequential(*args)
 
             from agent.tool_dispatch_helpers import _plan_tool_batch_segments
@@ -1289,18 +1867,26 @@ class AIAgent(
             segments = _plan_tool_batch_segments(tool_calls, execution_cwd=exec_cwd)
             if len(segments) == 1:
                 run = self._execute_tool_calls_concurrent if segments[0][0] == "parallel" else self._execute_tool_calls_sequential
+                # ⤷ 出口 return：返回 run(*args)
                 return run(*args)
             from agent.tool_executor import execute_tool_calls_segmented
+            # ⤷ 出口 return：返回 execute_tool_calls_segmented(self, *args, segments=segments)
             return execute_tool_calls_segmented(self, *args, segments=segments)
         finally:
             self._executing_tools = False
 
+    # ┌── 函数 def _dispatch_delegate_task()
+    # │  作用：Single call site for delegate_task dispatch; new DELEGATE_TASK_SCHEMA fields are added only here.
+    # │  参数：self, function_args: dict
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _dispatch_delegate_task(self, function_args: dict) -> str:
         """Single call site for delegate_task dispatch; new DELEGATE_TASK_SCHEMA fields are added only here."""
         from tools.delegate_tool import _strip_model_hidden_task_fields, delegate_task as _delegate_task
         # Top-level MODEL delegations always run in the background (handle returned, results re-enter as
         # messages). An ORCHESTRATOR SUBAGENT (depth > 0) stays synchronous — it needs results in-turn and
         # owns no gateway session. The schema-level `background` param is intentionally ignored.
+        # ⤷ 出口 return：返回 _delegate_task(goal=function_args.get('goal'), context=funct…
         return _delegate_task(
             goal=function_args.get("goal"), context=function_args.get("context"),
             tasks=_strip_model_hidden_task_fields(function_args.get("tasks")),
@@ -1312,6 +1898,12 @@ class AIAgent(
 
     _invoke_tool = _forward("agent.agent_runtime_helpers", "invoke_tool")
 
+    # ┌── 函数 def _wrap_verbose()
+    # │  作用：Word-wrap verbose tool output to the terminal width (each existing line separately), continuation
+    # │  参数：label: str, text: str, indent: str = '     '
+    # │  返回：str
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _wrap_verbose(label: str, text: str, indent: str = "     ") -> str:
         """Word-wrap verbose tool output to the terminal width (each existing line separately), continuation
@@ -1324,31 +1916,43 @@ class AIAgent(
                 out_lines.append(raw_line)
             else:
                 out_lines.extend(textwrap.wrap(raw_line, width=wrap_width, break_long_words=True, break_on_hyphens=False) or [raw_line])
+        # ⤷ 出口 return：返回 f'{indent}{label}' + ('\n' + indent).join(out_lines)
         return f"{indent}{label}" + ("\n" + indent).join(out_lines)
 
     _execute_tool_calls_concurrent = _forward("agent.tool_executor", "execute_tool_calls_concurrent")
     _execute_tool_calls_sequential = _forward("agent.tool_executor", "execute_tool_calls_sequential")
     _handle_max_iterations = _forward("agent.chat_completion_helpers", "handle_max_iterations")
 
+    # ┌── 函数 def _conversation_root_id()
+    # │  作用：Session-lineage ROOT id for Portal usage attribution, so one conversation keeps a single
+    # │  参数：self
+    # │  返回：Optional[str]
+    # └──────────────────────────────────────────────────────────────
     def _conversation_root_id(self) -> Optional[str]:
         """Session-lineage ROOT id for Portal usage attribution, so one conversation keeps a single
         ``conversation=`` tag across compression rotation; subagents resolve via ``_parent_session_id``."""
         cached = getattr(self, "_cached_conversation_root", None)
         if cached:
+            # ⤷ 出口 return：返回 str(cached)
             return str(cached)
         sid = getattr(self, "session_id", None)
         if not sid:
+            # ⤷ 出口 return：返回 None
             return None
         # Subagents may not have a DB row yet on their first turn; walking from the parent id still lands
         # on the right root.
         start = getattr(self, "_parent_session_id", None) or sid
         db = getattr(self, "_session_db", None)
         if db is None:
+            # ⤷ 出口 return：返回 start
             return start
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 db.get_conversation_root(start) or start
             return db.get_conversation_root(start) or start
         except Exception:
             logger.debug("Conversation root lineage walk failed", exc_info=True)
+            # ⤷ 出口 return：返回 start
             return start
 
 
@@ -1371,6 +1975,11 @@ _LIST_TOOLS_USAGE = """
   python run_agent.py --save_trajectories --query='your question here'"""
 
 
+# ┌── 函数 def _print_tool_listing()
+# │  作用：``--list_tools``: print toolsets (basic / composite / scenario / legacy), every tool, and usage examples.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _print_tool_listing() -> None:
     """``--list_tools``: print toolsets (basic / composite / scenario / legacy), every tool, and usage examples."""
     from model_tools import get_all_tool_names, get_available_toolsets
@@ -1411,15 +2020,27 @@ def _print_tool_listing() -> None:
     print(_LIST_TOOLS_USAGE)
 
 
+# ┌── 函数 def _parse_toolset_arg()
+# │  作用：Comma-separated toolset CLI arg → list (echoed), or None when absent.
+# │  参数：raw: Optional[str], label: str
+# │  返回：Optional[List[str]]
+# └──────────────────────────────────────────────────────────────
 def _parse_toolset_arg(raw: Optional[str], label: str) -> Optional[List[str]]:
     """Comma-separated toolset CLI arg → list (echoed), or None when absent."""
     if not raw:
+        # ⤷ 出口 return：返回 None
         return None
     names = [t.strip() for t in raw.split(",")]
     print(f"{label}: {names}")
+    # ⤷ 出口 return：返回 names
     return names
 
 
+# ┌── 函数 def _save_sample_trajectory()
+# │  作用：``--save_sample``: write one trajectory (same format as batch_runner) to a UUID-named JSON file.
+# │  参数：agent: 'AIAgent', result: dict, user_query: str, model: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _save_sample_trajectory(agent: "AIAgent", result: dict, user_query: str, model: str) -> None:
     """``--save_sample``: write one trajectory (same format as batch_runner) to a UUID-named JSON file."""
     sample_filename = f"sample_{str(uuid.uuid4())[:8]}.json"
@@ -1427,6 +2048,7 @@ def _save_sample_trajectory(agent: "AIAgent", result: dict, user_query: str, mod
         "conversations": agent._convert_to_trajectory_format(result['messages'], user_query, result['completed']),
         "timestamp": datetime.now().isoformat(), "model": model, "completed": result['completed'], "query": user_query,
     }
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         with open(sample_filename, "w", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False, indent=2))
@@ -1435,6 +2057,11 @@ def _save_sample_trajectory(agent: "AIAgent", result: dict, user_query: str, mod
         print(f"\n⚠️ Failed to save sample: {e}")
 
 
+# ┌── 函数 def main()
+# │  作用：Main function for running the agent directly.
+# │  参数：query: str = None, model: str = '', api_key: str = None, base_url: str = '', max_turns: int = 10, enabled_toolsets: str = None, disabled_toolsets: str = None, list_tools: bool = False  …共 12 个
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def main(
     query: str = None, model: str = "", api_key: str = None, base_url: str = "", max_turns: int = 10,
     enabled_toolsets: str = None, disabled_toolsets: str = None, list_tools: bool = False,
@@ -1469,6 +2096,7 @@ def main(
     print("🤖 AI Agent with Tool Calling")
     print("=" * 50)
     if list_tools:
+        # ⤷ 出口 return：返回 _print_tool_listing()
         return _print_tool_listing()
 
     enabled_toolsets_list = _parse_toolset_arg(enabled_toolsets, "🎯 Enabled toolsets")
@@ -1478,6 +2106,7 @@ def main(
         print("   - Successful conversations → trajectory_samples.jsonl")
         print("   - Failed conversations → failed_trajectories.jsonl")
 
+    # ⤷ 关键分支 try/except：捕获 RuntimeError，出错走兜底而不是崩溃。
     try:
         agent = AIAgent(
             base_url=base_url, model=model, api_key=api_key, max_iterations=max_turns,
@@ -1504,6 +2133,10 @@ def main(
     print("\n👋 Agent execution completed!")
 
 
+# ┌── 程序入口
+# │  【语法】if __name__ == "__main__"：只有被 `python 这个文件.py` 直接运行时才执行，
+# │  被 import 时不执行。这是 Python 脚本的标准入口写法。
+# └──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import fire
     fire.Fire(main)
@@ -1549,12 +2182,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

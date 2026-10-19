@@ -5,6 +5,31 @@ enables the ``kanban`` toolset. Tools rather than ``hermes kanban`` shell-outs: 
 in the agent's process (reach ``kanban.db`` from a container/SSH terminal backend, no
 shlex quoting of JSON metadata, structured-JSON failures). Humans use CLI/dashboard.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：tools/kanban_tools.py（约 1026 行）
+# 地位：看板（Kanban）工具——给「多 Agent 协作」用的任务板。
+#
+# 使用场景：一个编排者（orchestrator）Agent 把任务拆给多个工人（worker）Agent，
+#   大家通过看板同步进度：创建任务、认领、完成、阻塞、请求评审、评论、附件。
+#
+# 为什么做成工具而不是命令行：源码注释给了理由——
+#   在 Agent 进程内直接访问 kanban.db（容器/SSH 后端也能访问到），
+#   不用 shell 转义 JSON，失败时返回结构化 JSON。命令行是给人用的，工具是给 AI 用的。
+#
+# 权限模型（值得学）：
+#   _is_delegated_child_context()   是不是被派生的子 Agent
+#   _is_dispatcher_owned_worker()   是不是调度器管理的工人
+#   _enforce_worker_task_ownership() 工人只能改自己的任务
+#   _reject_delegated_child_mutation() 某些操作子 Agent 不能做
+#
+# 工具清单：kanban_show / list / complete / block / request_review / request_changes /
+#          heartbeat / comment / attach / attach_url / attachments / create / unblock / link
+#
+# 装饰器用法：@_kanban_handler('kanban_show') —— 统一的注册 + 校验包装，简化了每个 handler。
+# ==========================================================================
+#
 from __future__ import annotations
 
 import functools
@@ -34,89 +59,162 @@ KANBAN_LIST_MAX_LIMIT = 200
 
 # --- Gating ---
 
+# ┌── 函数 def _profile_has_kanban_toolset()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _profile_has_kanban_toolset() -> bool:
     from tools.kanban_toolset_context import kanban_toolset_requested
 
     requested = kanban_toolset_requested()
     if requested:
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         config = load_config()
         # Preserve the legacy profile-wide opt-in for callers using bundles.
         if "kanban" in (config.get("toolsets") or []):
+            # ⤷ 出口 return：返回 True
             return True
         if requested is not None:
             # Never borrow another platform's opt-in during schema assembly.
+            # ⤷ 出口 return：返回 False
             return False
         # Offer-time skill discovery has no platform selection. A saved opt-in
         # makes the playbook relevant; actual schemas still use the scope above.
         from hermes_cli.tools_config import _get_platform_tools
 
         platforms = config.get("platform_toolsets") or {}
+        # ⤷ 出口 return：返回 any(('kanban' in _get_platform_tools(config, platform, inclu…
         return any(
             "kanban" in _get_platform_tools(config, platform, include_default_mcp_servers=False)
             for platform, names in platforms.items() if isinstance(names, list)
         )
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _delegation_ctx()
+# │  作用：``agent.delegation_context.<predicate>()``; ``default`` when it cannot be evaluated.
+# │  参数：predicate: str, default: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _delegation_ctx(predicate: str, default: bool) -> bool:
     """``agent.delegation_context.<predicate>()``; ``default`` when it cannot be evaluated."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent import delegation_context
+        # ⤷ 出口 return：返回 getattr(delegation_context, predicate)()
         return getattr(delegation_context, predicate)()
     except Exception:
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def _is_delegated_child_context()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_delegated_child_context() -> bool:
+    # ⤷ 出口 return：返回 _delegation_ctx('is_delegated_child_context', False)
     return _delegation_ctx("is_delegated_child_context", False)
 
 
+# ┌── 函数 def _is_dispatcher_owned_worker()
+# │  作用：False for delegate_task children AND for cron jobs fired in-process from
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_dispatcher_owned_worker() -> bool:
     """False for delegate_task children AND for cron jobs fired in-process from
     a worker — i.e. whenever HERMES_KANBAN_* is present but not ours."""
+    # ⤷ 出口 return：返回 _delegation_ctx('is_dispatcher_owned_worker_context', True)
     return _delegation_ctx("is_dispatcher_owned_worker_context", True)
 
 
+# ┌── 函数 def _visible()
+# │  作用：check_fn core: never for delegate children; dispatcher-spawned env workers
+# │  参数：to_env_worker: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _visible(*, to_env_worker: bool) -> bool:
     """check_fn core: never for delegate children; dispatcher-spawned env workers
     (HERMES_KANBAN_TASK) per flag; else the profile toolset decides."""
     if _is_delegated_child_context():
+        # ⤷ 出口 return：返回 False
         return False
     if os.environ.get("HERMES_KANBAN_TASK") and _is_dispatcher_owned_worker():
+        # ⤷ 出口 return：返回 to_env_worker
         return to_env_worker
+    # ⤷ 出口 return：返回 _profile_has_kanban_toolset()
     return _profile_has_kanban_toolset()
 
 
+# ┌── 函数 def _check_kanban_mode()
+# │  作用：Lifecycle tools: dispatcher workers + profiles with the ``kanban`` toolset.
+# │  参数：无
+# │  返回：bool
+# │  【语法】带 @no_cache_check_fn 装饰器：调用本函数时，等价于 _check_kanban_mode = no_cache_check_fn(_check_kanban_mode)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @no_cache_check_fn
 def _check_kanban_mode() -> bool:
     """Lifecycle tools: dispatcher workers + profiles with the ``kanban`` toolset."""
+    # ⤷ 出口 return：返回 _visible(to_env_worker=True)
     return _visible(to_env_worker=True)
 
 
+# ┌── 函数 def _check_kanban_orchestrator_mode()
+# │  作用：Board-routing tools (kanban_list, kanban_unblock): hidden from task workers.
+# │  参数：无
+# │  返回：bool
+# │  【语法】带 @no_cache_check_fn 装饰器：调用本函数时，等价于 _check_kanban_orchestrator_mode = no_cache_check_fn(_check_kanban_orchestrator_mode)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @no_cache_check_fn
 def _check_kanban_orchestrator_mode() -> bool:
     """Board-routing tools (kanban_list, kanban_unblock): hidden from task workers."""
+    # ⤷ 出口 return：返回 _visible(to_env_worker=False)
     return _visible(to_env_worker=False)
 
 
 # --- Shared helpers: validation failures raise _Reject; _kanban_handler renders it ---
 
+# ┌── 类 class _Reject（继承自：Exception）
+# │  说明：Carries a finished ``tool_error`` payload out of a validation helper.
+# │  成员：共 1 个方法；全部是下划线开头的内部方法；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _Reject(Exception):
     """Carries a finished ``tool_error`` payload out of a validation helper."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, message: str
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, message: str):
         super().__init__(tool_error(message))
 
 
+# ┌── 函数 def _check()
+# │  作用：Reject (as a tool error) unless ``cond`` is truthy.
+# │  参数：cond: Any, message: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _check(cond: Any, message: str) -> None:
     """Reject (as a tool error) unless ``cond`` is truthy."""
     if not cond:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _Reject(message)
 
 
+# ┌── 函数 def _kanban_handler()
+# │  作用：Wrap a handler so every failure is a structured tool error. ``ValueError``
+# │  参数：tool_name: str
+# │  返回：Callable
+# └──────────────────────────────────────────────────────────────
 def _kanban_handler(tool_name: str) -> Callable:
     """Wrap a handler so every failure is a structured tool error. ``ValueError``
     (invalid board slug, DB validation such as cycle/self-link, ``AttachmentTooLarge``)
@@ -124,64 +222,115 @@ def _kanban_handler(tool_name: str) -> Callable:
     def deco(fn):
         @functools.wraps(fn)
         def wrapper(args: dict, **kw) -> str:
+            # ⤷ 关键分支 try/except：捕获 _Reject、Exception，出错走兜底而不是崩溃。
             try:
+                # ⤷ 出口 return：返回 fn(args, **kw)
                 return fn(args, **kw)
             except _Reject as e:
+                # ⤷ 出口 return：返回 e.args[0]
                 return e.args[0]
             except Exception as e:
                 if not isinstance(e, ValueError):
                     logger.exception(f"{tool_name} failed")
+                # ⤷ 出口 return：返回 tool_error(f'{tool_name}: {e}')
                 return tool_error(f"{tool_name}: {e}")
+        # ⤷ 出口 return：返回 wrapper
         return wrapper
+    # ⤷ 出口 return：返回 deco
     return deco
 
 
+# ┌── 函数 def _reject_delegated_child_mutation()
+# │  作用：A delegate_task child shares the parent's process, so inherited HERMES_KANBAN_*
+# │  参数：tool_name: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reject_delegated_child_mutation(tool_name: str) -> None:
     """A delegate_task child shares the parent's process, so inherited HERMES_KANBAN_*
     env is not proof of ownership: it may report findings but must not mutate."""
     if _delegation_ctx("is_delegated_child_process_context", False):
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _Reject(
             f"{tool_name} refused: delegate_task child agents are not Kanban run owners. "
             "Return findings to the parent agent; the dispatcher worker or an explicitly "
             "configured Kanban orchestrator must perform board mutations.")
 
 
+# ┌── 函数 def _default_task_id()
+# │  作用：``task_id`` arg or the dispatcher's env var. A delegate child or an
+# │  参数：arg: Optional[str]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _default_task_id(arg: Optional[str]) -> Optional[str]:
     """``task_id`` arg or the dispatcher's env var. A delegate child or an
     in-process cron job must never inherit the worker's task id implicitly."""
     if arg:
+        # ⤷ 出口 return：返回 arg
         return arg
     if _is_delegated_child_context() or not _is_dispatcher_owned_worker():
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 os.environ.get('HERMES_KANBAN_TASK') or None
     return os.environ.get("HERMES_KANBAN_TASK") or None
 
 
+# ┌── 函数 def _require_task_id()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _require_task_id(args: dict) -> str:
     tid = _default_task_id(args.get("task_id"))
     _check(tid, "task_id is required (or set HERMES_KANBAN_TASK in the env)")
+    # ⤷ 出口 return：返回 tid
     return tid
 
 
+# ┌── 函数 def _own_task_env()
+# │  作用：``$var`` only when this worker is scoped to ``task_id``; else None.
+# │  参数：task_id: str, var: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _own_task_env(task_id: str, var: str) -> Optional[str]:
     """``$var`` only when this worker is scoped to ``task_id``; else None."""
+    # ⤷ 出口 return：返回 os.environ.get(var) if os.environ.get('HERMES_KANBAN_TASK') …
     return os.environ.get(var) if os.environ.get("HERMES_KANBAN_TASK") == task_id else None
 
 
+# ┌── 函数 def _worker_run_id()
+# │  作用：This worker's dispatcher run id when it is scoped to task_id.
+# │  参数：task_id: str
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _worker_run_id(task_id: str) -> Optional[int]:
     """This worker's dispatcher run id when it is scoped to task_id."""
     raw = _own_task_env(task_id, "HERMES_KANBAN_RUN_ID")
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 int(raw) if raw else None
         return int(raw) if raw else None
     except ValueError:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _stamp_worker_session_metadata()
+# │  作用：Add trusted worker session id metadata for this worker's own task.
+# │  参数：task_id: str, metadata: Optional[dict]
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _stamp_worker_session_metadata(task_id: str, metadata: Optional[dict]) -> Optional[dict]:
     """Add trusted worker session id metadata for this worker's own task."""
     session_id = _own_task_env(task_id, "HERMES_SESSION_ID")
+    # ⤷ 出口 return：返回 {**(metadata or {}), 'worker_session_id': session_id} if ses…
     return {**(metadata or {}), "worker_session_id": session_id} if session_id else metadata
 
 
+# ┌── 函数 def _enforce_worker_task_ownership()
+# │  作用：A dispatcher-spawned worker may only mutate its own HERMES_KANBAN_TASK; a
+# │  参数：tid: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _enforce_worker_task_ownership(tid: str) -> None:
     """A dispatcher-spawned worker may only mutate its own HERMES_KANBAN_TASK; a
     prompt-injected ``task_id`` must not corrupt sibling/cross-tenant runs.
@@ -193,30 +342,49 @@ def _enforce_worker_task_ownership(tid: str) -> None:
     """
     env_tid = os.environ.get("HERMES_KANBAN_TASK")
     if env_tid and tid != env_tid:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _Reject(
             f"worker is scoped to task {env_tid}; refusing to mutate {tid}. Use kanban_comment "
             f"to hand off information to other tasks, or kanban_create to spawn follow-up work.")
 
 
+# ┌── 函数 def _worker_guard()
+# │  作用：Worker mutation preamble, in order: delegate-child rejection, task id
+# │  参数：tool_name: str, args: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _worker_guard(tool_name: str, args: dict) -> str:
     """Worker mutation preamble, in order: delegate-child rejection, task id
     resolution, task-scope ownership. Returns the task id."""
     _reject_delegated_child_mutation(tool_name)
     tid = _require_task_id(args)
     _enforce_worker_task_ownership(tid)
+    # ⤷ 出口 return：返回 tid
     return tid
 
 
+# ┌── 函数 def _require_orchestrator_tool()
+# │  作用：The check_fn already hides orchestrator tools from workers; this catches
+# │  参数：tool_name: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _require_orchestrator_tool(tool_name: str) -> None:
     """The check_fn already hides orchestrator tools from workers; this catches
     a stale registration or test harness routing a worker here anyway."""
     if os.environ.get("HERMES_KANBAN_TASK"):
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _Reject(
             f"{tool_name} is orchestrator-only; dispatcher-spawned workers must use "
             "kanban_complete, kanban_block, kanban_heartbeat, or kanban_comment for their "
             "assigned task.")
 
 
+# ┌── 函数 def _board()
+# │  作用：``with _board(slug) as (kb, conn)``; lazy import so the module loads in non-kanban
+# │  参数：board: Optional[str], quiet_close: bool = ...
+# │  返回：（未标注类型）
+# │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+# └──────────────────────────────────────────────────────────────
 @contextmanager
 def _board(board: Optional[str], *, quiet_close: bool = False):
     """``with _board(slug) as (kb, conn)``; lazy import so the module loads in non-kanban
@@ -225,70 +393,130 @@ def _board(board: Optional[str], *, quiet_close: bool = False):
     from hermes_cli import kanban_db as kb
     from hermes_cli import kanban_db_connect as kbc
     conn = kbc.connect(board=board)
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield kb, conn
     finally:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             conn.close()
         except Exception:
             if not quiet_close:
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
 
 
+# ┌── 函数 def _existing_task()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：kb, conn, tid: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _existing_task(kb, conn, tid: str):
     task = kb.get_task(conn, tid)
     _check(task is not None, f"task {tid} not found")
+    # ⤷ 出口 return：返回 task
     return task
 
 
+# ┌── 函数 def _ok()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：**fields
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _ok(**fields: Any) -> str:
+    # ⤷ 出口 return：返回 json.dumps({'ok': True, **fields})
     return json.dumps({"ok": True, **fields})
 
 
+# ┌── 函数 def _ok_landed()
+# │  作用：Success payload reporting where the task actually landed (routing may
+# │  参数：kb, conn, tid: str, default_status: str, **extra
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _ok_landed(kb, conn, tid: str, default_status: str, **extra: Any) -> str:
     """Success payload reporting where the task actually landed (routing may
     not leave it in the requested status)."""
     run = kb.latest_run(conn, tid)
     landed = kb.get_task(conn, tid)
+    # ⤷ 出口 return：返回 _ok(task_id=tid, run_id=run.id if run else None, status=land…
     return _ok(task_id=tid, run_id=run.id if run else None,
                status=landed.status if landed else default_status, **extra)
 
 
+# ┌── 函数 def _redact()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact(value: Any) -> str:
+    # ⤷ 出口 return：返回 redact_sensitive_text(str(value), force=True)
     return redact_sensitive_text(str(value), force=True)
 
 
+# ┌── 函数 def _redact_opt()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _redact_opt(value: Any) -> Any:
+    # ⤷ 出口 return：返回 _redact(value) if value else value
     return _redact(value) if value else value
 
 
+# ┌── 函数 def _redact_metadata()
+# │  作用：Redact via a JSON round-trip; None if the result can't be re-parsed.
+# │  参数：metadata: dict
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _redact_metadata(metadata: dict) -> Optional[dict]:
     """Redact via a JSON round-trip; None if the result can't be re-parsed."""
+    # ⤷ 关键分支 try/except：捕获 json.JSONDecodeError，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 json.loads(redact_sensitive_text(json.dumps(metadata), force…
         return json.loads(redact_sensitive_text(json.dumps(metadata), force=True))
     except json.JSONDecodeError:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _coerce_str_list()
+# │  作用：Accept a single string (convenience) or a list/tuple; with ``strip`` the
+# │  参数：value: Any, name: str, what: str, strip: bool = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _coerce_str_list(value: Any, name: str, what: str, *, strip: bool = False):
     """Accept a single string (convenience) or a list/tuple; with ``strip`` the
     items are stringified, stripped, and empties dropped."""
     if value is None:
+        # ⤷ 出口 return：返回 None
         return None
     if isinstance(value, str):
         value = [value]
     if not isinstance(value, (list, tuple)):
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _Reject(f"{name} must be a list of {what}, got {type(value).__name__}")
     if strip:
         value = [str(x).strip() for x in value if str(x).strip()]
+    # ⤷ 出口 return：返回 value
     return value
 
 
+# ┌── 函数 def _require_dict_metadata()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：metadata: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _require_dict_metadata(metadata: Any) -> None:
     _check(metadata is None or isinstance(metadata, dict),
            f"metadata must be an object/dict, got {type(metadata).__name__}")
 
 
+# ┌── 函数 def _merge_artifacts()
+# │  作用：Fold ``artifacts`` into ``metadata["artifacts"]`` (merged with, never overwriting, a
+# │  参数：metadata: Any, artifacts: list[str]
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _merge_artifacts(metadata: Any, artifacts: list[str]) -> dict:
     """Fold ``artifacts`` into ``metadata["artifacts"]`` (merged with, never overwriting, a
     list the worker passed manually). Artifacts ride inside metadata so the completed-event
@@ -301,29 +529,49 @@ def _merge_artifacts(metadata: Any, artifacts: list[str]) -> dict:
         metadata["artifacts"] = list(dict.fromkeys(s for s in merged if s))
     else:
         metadata["artifacts"] = artifacts
+    # ⤷ 出口 return：返回 metadata
     return metadata
 
 
+# ┌── 函数 def _require_text()
+# │  作用：``args[name]``; rejects when missing or blank.
+# │  参数：args: dict, name: str, message: Optional[str] = None
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _require_text(args: dict, name: str, message: Optional[str] = None) -> Any:
     """``args[name]``; rejects when missing or blank."""
     value = args.get(name)
     _check(value and str(value).strip(), message or f"{name} is required")
+    # ⤷ 出口 return：返回 value
     return value
 
 
 _BOOL_WORDS = {"true": True, "1": True, "yes": True, "false": False, "0": False, "no": False}
 
 
+# ┌── 函数 def _parse_bool_arg()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：args: dict, name: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _parse_bool_arg(args: dict, name: str) -> bool:
     value = args.get(name)
     if value is None or isinstance(value, bool):
+        # ⤷ 出口 return：返回 bool(value)
         return bool(value)
     parsed = _BOOL_WORDS.get(str(value).strip().lower())
     _check(parsed is not None, f"{name} must be a boolean or 'true'/'false'")
+    # ⤷ 出口 return：返回 parsed
     return parsed
 
 
+# ┌── 函数 def _opt_int()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any, default: Optional[int] = None
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _opt_int(value: Any, default: Optional[int] = None) -> Optional[int]:
+    # ⤷ 出口 return：返回 int(value) if value is not None else default
     return int(value) if value is not None else default
 
 
@@ -342,14 +590,26 @@ _ATTACHMENT_FIELDS = tuple(
 _CREATED_FIELDS = ("status", "workspace_kind", "workspace_path", "project_id")
 
 
+# ┌── 函数 def _fields()
+# │  作用：``{name: getattr(obj, name)}``; every value None when ``obj`` is None.
+# │  参数：obj: Any, names: tuple[str, ...]
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _fields(obj: Any, names: tuple[str, ...]) -> dict[str, Any]:
     """``{name: getattr(obj, name)}``; every value None when ``obj`` is None."""
+    # ⤷ 出口 return：返回 {n: getattr(obj, n) if obj is not None else None for n in na…
     return {n: getattr(obj, n) if obj is not None else None for n in names}
 
 
+# ┌── 函数 def _task_summary_dict()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：kb, conn, task
+# │  返回：dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _task_summary_dict(kb, conn, task) -> dict[str, Any]:
     parents = kb.parent_ids(conn, task.id)
     children = kb.child_ids(conn, task.id)
+    # ⤷ 出口 return：返回 {**_fields(task, _TASK_SUMMARY_FIELDS), 'parents': parents, …
     return {
         **_fields(task, _TASK_SUMMARY_FIELDS), "parents": parents, "children": children,
         "parent_count": len(parents), "child_count": len(children)}
@@ -360,15 +620,23 @@ def _task_summary_dict(kb, conn, task) -> dict[str, Any]:
 _GOAL_MODE_BLOCK_ALLOWED_KINDS = frozenset({"dependency", "needs_input"})
 
 
+# ┌── 函数 def _goal_judge_available()
+# │  作用：``judge_goal`` fails open (no auxiliary model -> ``"continue"``), which is
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _goal_judge_available() -> bool:
     """``judge_goal`` fails open (no auxiliary model -> ``"continue"``), which is
     indistinguishable from "not done yet" and would wedge every goal_mode
     worker; so the gate is enforced only when a judge is actually reachable."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.auxiliary_client import get_text_auxiliary_client
         client, model = get_text_auxiliary_client("goal_judge")
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 client is not None and bool(model)
     return client is not None and bool(model)
 
 
@@ -392,6 +660,11 @@ _GOAL_GATE_MESSAGES = {
             "matching the card before requesting review.")}}
 
 
+# ┌── 函数 def _goal_gate()
+# │  作用：Goal-mode pre-handoff judge gate: a worker must not complete / request
+# │  参数：tool_name: str, task, tid: str, evidence: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _goal_gate(tool_name: str, task, tid: str, evidence: str) -> None:
     """Goal-mode pre-handoff judge gate: a worker must not complete / request
     review before acceptance criteria are met. ``blocked`` gets its own
@@ -399,6 +672,7 @@ def _goal_gate(tool_name: str, task, tid: str, evidence: str) -> None:
     A broken judge fails open (logged) so it cannot permanently wedge work."""
     if not task or not task.goal_mode or not _goal_judge_available():
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         verdict, reason, _, _, _ = judge_goal(
             goal=f"{task.title}\n\n{task.body or ''}".strip(), last_response=evidence.strip())
@@ -409,6 +683,7 @@ def _goal_gate(tool_name: str, task, tid: str, evidence: str) -> None:
     if verdict == "done":
         return
     key = "blocked" if verdict == "blocked" else "continue"
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise _Reject(_GOAL_GATE_MESSAGES[tool_name][key].format(reason=reason, tid=tid))
 
 
@@ -436,16 +711,24 @@ _AUTO_HEARTBEAT_MIN_INTERVAL_SECONDS = 60.0
 _auto_heartbeat_last_attempt: float = 0.0
 
 
+# ┌── 函数 def heartbeat_current_worker_from_env()
+# │  作用：Claim extension + board heartbeat for the current worker; True iff a write was
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def heartbeat_current_worker_from_env() -> bool:
     """Claim extension + board heartbeat for the current worker; True iff a write was
     attempted. ``HERMES_KANBAN_RUN_ID`` pins the run row so a reclaimed stale run is not
     heartbeated; ``HERMES_KANBAN_CLAIM_LOCK`` absent -> default claimer (local workers)."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _auto_heartbeat_last_attempt
     tid = os.environ.get("HERMES_KANBAN_TASK")
     now = time.monotonic()
     if not tid or (now - _auto_heartbeat_last_attempt) < _AUTO_HEARTBEAT_MIN_INTERVAL_SECONDS:
+        # ⤷ 出口 return：返回 False
         return False
     _auto_heartbeat_last_attempt = now
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli import kanban_db_dispatch as kbd
         with _board(None, quiet_close=True) as (kb, conn):
@@ -453,13 +736,16 @@ def heartbeat_current_worker_from_env() -> bool:
                    (kbd.heartbeat_worker, {"note": None, "expected_run_id": _worker_run_id(tid)}))
             for fn, kwargs in ops:
                 op = fn.__name__
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     fn(conn, tid, **kwargs)
                 except Exception:
                     logger.debug("auto-heartbeat: %s failed", op, exc_info=True)
+        # ⤷ 出口 return：返回 True
         return True
     except Exception:
         logger.debug("auto-heartbeat: bridge failed", exc_info=True)
+        # ⤷ 出口 return：返回 False
         return False
 
 
@@ -471,17 +757,25 @@ _comment_poll_last_attempt: float = 0.0
 _comment_watermark: dict[str, int] = {}
 
 
+# ┌── 函数 def inject_new_comments_from_env()
+# │  作用：Steer new operator comments on the worker's task into ``agent``; True iff a
+# │  参数：agent: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def inject_new_comments_from_env(agent: Any) -> bool:
     """Steer new operator comments on the worker's task into ``agent``; True iff a
     steer was injected; never raises. Own comments (``HERMES_PROFILE``) are skipped."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _comment_poll_last_attempt
     tid = os.environ.get("HERMES_KANBAN_TASK")
     now = time.monotonic()
     if (not tid or agent is None or not hasattr(agent, "steer")
             or (now - _comment_poll_last_attempt) < _COMMENT_POLL_MIN_INTERVAL_SECONDS):
+        # ⤷ 出口 return：返回 False
         return False
     _comment_poll_last_attempt = now
     seen = _comment_watermark.get(tid)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         with _board(None, quiet_close=True) as (kb, conn):
             rows = kb.list_comments_after(conn, tid, after_id=seen or 0)
@@ -491,17 +785,20 @@ def inject_new_comments_from_env(agent: Any) -> bool:
     if seen is None:
         _comment_watermark[tid] = max((c.id for c in rows), default=0)
     if seen is None or not rows:
+        # ⤷ 出口 return：返回 False
         return False
     # Advance past everything read (including our own notes) so nothing is re-injected.
     _comment_watermark[tid] = max(c.id for c in rows)
     own = (os.environ.get("HERMES_PROFILE") or "").strip()
     fresh = [c for c in rows if (c.author or "").strip() != own and (c.body or "").strip()]
     if not fresh:
+        # ⤷ 出口 return：返回 False
         return False
     lines = [f"- {c.author or 'operator'}: {c.body.strip()}" for c in fresh]
     note = ("New note" + ("s" if len(fresh) > 1 else "")
             + " on your kanban task from the operator (delivered mid-run). "
             + "Take it into account for the work you're doing right now:\n" + "\n".join(lines))
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         return bool(agent.steer(note))
     except Exception:
@@ -511,12 +808,19 @@ def inject_new_comments_from_env(agent: Any) -> bool:
 
 # --- Handlers ---
 
+# ┌── 函数 def _handle_show()
+# │  作用：Full task state: row, parents, children, comments, runs, last 50 events.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_show = _kanban_handler(_handle_show)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_show")
 def _handle_show(args: dict, **kw) -> str:
     """Full task state: row, parents, children, comments, runs, last 50 events."""
     tid = _require_task_id(args)
     with _board(args.get("board")) as (kb, conn):
         task = _existing_task(kb, conn, tid)
+        # ⤷ 出口 return：返回 json.dumps({'task': _fields(task, _TASK_FIELDS), 'parents': …
         return json.dumps({
             "task": _fields(task, _TASK_FIELDS),
             "parents": kb.parent_ids(conn, tid),
@@ -529,15 +833,23 @@ def _handle_show(args: dict, **kw) -> str:
             "worker_context": kb.build_worker_context(conn, tid)})
 
 
+# ┌── 函数 def _handle_list()
+# │  作用：Task summaries with the same core filters as the CLI.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_list = _kanban_handler(_handle_list)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_list")
 def _handle_list(args: dict, **kw) -> str:
     """Task summaries with the same core filters as the CLI."""
     _require_orchestrator_tool("kanban_list")
     include_archived = _parse_bool_arg(args, "include_archived")
     limit = args.get("limit")
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
         limit = KANBAN_LIST_DEFAULT_LIMIT if limit is None else int(limit)
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 tool_error('limit must be an integer')
         return tool_error("limit must be an integer")
     _check(limit >= 1, "limit must be >= 1")
     _check(limit <= KANBAN_LIST_MAX_LIMIT, f"limit must be <= {KANBAN_LIST_MAX_LIMIT}")
@@ -551,6 +863,7 @@ def _handle_list(args: dict, **kw) -> str:
             tenant=args.get("tenant"), include_archived=include_archived, limit=limit + 1)
         truncated = len(rows) > limit
         tasks = rows[:limit]
+        # ⤷ 出口 return：返回 json.dumps({'tasks': [_task_summary_dict(kb, conn, t) for t …
         return json.dumps({
             "tasks": [_task_summary_dict(kb, conn, t) for t in tasks],
             "count": len(tasks), "limit": limit, "truncated": truncated,
@@ -559,6 +872,12 @@ def _handle_list(args: dict, **kw) -> str:
             "promoted": promoted})
 
 
+# ┌── 函数 def _handle_complete()
+# │  作用：Mark the current task done with a structured handoff.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_complete = _kanban_handler(_handle_complete)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_complete")
 def _handle_complete(args: dict, **kw) -> str:
     """Mark the current task done with a structured handoff."""
@@ -583,6 +902,7 @@ def _handle_complete(args: dict, **kw) -> str:
         # actually reachable — see _goal_judge_available for why an unavailable judge fails open.
         task = kb.get_task(conn, tid)
         _goal_gate("kanban_complete", task, tid, (summary or result or "").strip())
+        # ⤷ 关键分支 try/except：捕获 kb.ArtifactPreservationError、kb.HallucinatedCardsError，出错走兜底而不是崩溃。
         try:
             ok = kb.complete_task(
                 conn, tid, result=result, summary=summary, metadata=metadata,
@@ -593,6 +913,7 @@ def _handle_complete(args: dict, **kw) -> str:
             # gate runs before the write txn), so the worker can simply call kanban_complete again. Spell
             # that out — without it the model often interprets a tool_error as a terminal failure and either
             # blocks or crashes the run instead of retrying. See #22923.
+            # ⤷ 出口 return：返回 tool_error(f'kanban_complete could not preserve the declared…
             return tool_error(
                 f"kanban_complete could not preserve the declared artifacts: {artifact_err}. "
                 f"Your task is still in-flight and its scratch workspace was kept. Fix the "
@@ -602,6 +923,7 @@ def _handle_complete(args: dict, **kw) -> str:
             # The gate runs before the write txn, so the task was NOT mutated;
             # say so explicitly or the model treats the error as terminal and
             # blocks/crashes instead of retrying. Audit event already landed.
+            # ⤷ 出口 return：返回 tool_error(f"kanban_complete blocked: the following created_…
             return tool_error(
                 f"kanban_complete blocked: the following created_cards do not exist or were not "
                 f"created by this worker: {', '.join(hall_err.phantom)}. Your task is still "
@@ -612,9 +934,16 @@ def _handle_complete(args: dict, **kw) -> str:
         _check(ok, (task.last_failure_error if task else None) or
                f"could not complete {tid} (unknown id, stale run, or already terminal)")
         run = kb.latest_run(conn, tid)
+        # ⤷ 出口 return：返回 _ok(task_id=tid, run_id=run.id if run else None)
         return _ok(task_id=tid, run_id=run.id if run else None)
 
 
+# ┌── 函数 def _handle_block()
+# │  作用：Transition the task to blocked with a reason a human will read.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_block = _kanban_handler(_handle_block)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_block")
 def _handle_block(args: dict, **kw) -> str:
     """Transition the task to blocked with a reason a human will read."""
@@ -643,9 +972,16 @@ def _handle_block(args: dict, **kw) -> str:
                f"the completion judge will evaluate it.")
         ok = kb.block_task(conn, tid, reason=reason, kind=kind, expected_run_id=_worker_run_id(tid))
         _check(ok, f"could not block {tid} (unknown id or not in running/ready)")
+        # ⤷ 出口 return：返回 _ok_landed(kb, conn, tid, 'blocked', block_kind=kind)
         return _ok_landed(kb, conn, tid, "blocked", block_kind=kind)
 
 
+# ┌── 函数 def _handle_request_review()
+# │  作用：Move implementation into the first-class review phase.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_request_review = _kanban_handler(_handle_request_review)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_request_review")
 def _handle_request_review(args: dict, **kw) -> str:
     """Move implementation into the first-class review phase."""
@@ -674,6 +1010,7 @@ def _handle_request_review(args: dict, **kw) -> str:
                f"Installed profiles: {', '.join(list_profile_names())}")
     with _board(args.get("board")) as (kb, conn):
         _goal_gate("kanban_request_review", kb.get_task(conn, tid), tid, summary)
+        # ⤷ 关键分支 try/except：捕获 kb.ArtifactPreservationError，出错走兜底而不是崩溃。
         try:
             ok, fail_reason = kb.request_review(
                 conn, tid, summary=summary, metadata=metadata, reviewer=reviewer,
@@ -682,6 +1019,7 @@ def _handle_request_review(args: dict, **kw) -> str:
             # Same contract as kanban_complete (#22923): the transition rolled
             # back, the task is untouched and retryable — say so explicitly or
             # the model treats the tool_error as terminal.
+            # ⤷ 出口 return：返回 tool_error(f'kanban_request_review could not preserve the de…
             return tool_error(
                 f"kanban_request_review could not preserve the declared artifacts: {artifact_err}. "
                 f"Your task is still in-flight (no state change) and its scratch workspace was "
@@ -689,9 +1027,16 @@ def _handle_request_review(args: dict, **kw) -> str:
                 f"kanban_request_review with the same handoff.")
         _check(ok, f"could not request review for {tid}: "
                    f"{fail_reason or 'unknown id or not in running/ready'}")
+        # ⤷ 出口 return：返回 _ok_landed(kb, conn, tid, 'review')
         return _ok_landed(kb, conn, tid, "review")
 
 
+# ┌── 函数 def _handle_request_changes()
+# │  作用：Return a reviewer-owned running task to its implementer.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_request_changes = _kanban_handler(_handle_request_changes)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_request_changes")
 def _handle_request_changes(args: dict, **kw) -> str:
     """Return a reviewer-owned running task to its implementer."""
@@ -702,9 +1047,16 @@ def _handle_request_changes(args: dict, **kw) -> str:
         ok, detail = kb.request_changes(
             conn, tid, reason=reason, expected_run_id=_worker_run_id(tid))
         _check(ok, f"could not request changes for {tid}: {detail or 'invalid review state'}")
+        # ⤷ 出口 return：返回 _ok_landed(kb, conn, tid, 'ready', implementer=detail)
         return _ok_landed(kb, conn, tid, "ready", implementer=detail)
 
 
+# ┌── 函数 def _handle_heartbeat()
+# │  作用：Signal liveness: extend the claim TTL AND record a heartbeat event.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_heartbeat = _kanban_handler(_handle_heartbeat)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_heartbeat")
 def _handle_heartbeat(args: dict, **kw) -> str:
     """Signal liveness: extend the claim TTL AND record a heartbeat event.
@@ -719,9 +1071,16 @@ def _handle_heartbeat(args: dict, **kw) -> str:
         ok = kbd.heartbeat_worker(
             conn, tid, note=args.get("note"), expected_run_id=_worker_run_id(tid))
         _check(ok, f"could not heartbeat {tid} (unknown id or not running)")
+        # ⤷ 出口 return：返回 _ok(task_id=tid)
         return _ok(task_id=tid)
 
 
+# ┌── 函数 def _handle_comment()
+# │  作用：Append a comment to a task's thread.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_comment = _kanban_handler(_handle_comment)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_comment")
 def _handle_comment(args: dict, **kw) -> str:
     """Append a comment to a task's thread."""
@@ -741,9 +1100,15 @@ def _handle_comment(args: dict, **kw) -> str:
     author = os.environ.get("HERMES_PROFILE") or "worker"
     with _board(args.get("board")) as (kb, conn):
         cid = kb.add_comment(conn, tid, author=author, body=str(body))
+        # ⤷ 出口 return：返回 _ok(task_id=tid, comment_id=cid)
         return _ok(task_id=tid, comment_id=cid)
 
 
+# ┌── 函数 def _store_attachment()
+# │  作用：Store via ``kanban_db.store_attachment_bytes`` (shared size cap, per-task
+# │  参数：board, tid, filename, data, content_type
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _store_attachment(board, tid, filename, data, content_type) -> str:
     """Store via ``kanban_db.store_attachment_bytes`` (shared size cap, per-task
     dir, metadata row) so agent, dashboard, and CLI surfaces stay in lockstep."""
@@ -751,9 +1116,16 @@ def _store_attachment(board, tid, filename, data, content_type) -> str:
         att_id = kb.store_attachment_bytes(
             conn, tid, str(filename), data,
             content_type=content_type, uploaded_by="agent", board=board)
+        # ⤷ 出口 return：返回 _ok(task_id=tid, attachment_id=att_id, size=len(data))
         return _ok(task_id=tid, attachment_id=att_id, size=len(data))
 
 
+# ┌── 函数 def _handle_attach()
+# │  作用：Attach an inline (base64) file to a task.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_attach = _kanban_handler(_handle_attach)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_attach")
 def _handle_attach(args: dict, **kw) -> str:
     """Attach an inline (base64) file to a task."""
@@ -762,16 +1134,24 @@ def _handle_attach(args: dict, **kw) -> str:
     content_b64 = _require_text(args, "content_base64")
     import base64
     import binascii
+    # ⤷ 关键分支 try/except：捕获 (binascii.Error, ValueError)，出错走兜底而不是崩溃。
     try:
         data = base64.b64decode(str(content_b64), validate=True)
     except (binascii.Error, ValueError) as e:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _Reject(f"content_base64 is not valid base64: {e}")
+    # ⤷ 出口 return：返回 _store_attachment(args.get('board'), tid, filename, data, ar…
     return _store_attachment(args.get("board"), tid, filename, data, args.get("content_type"))
 
 
 _MAX_ATTACH_URL_REDIRECTS = 5
 
 
+# ┌── 函数 def _download_url_with_cap()
+# │  作用：Fetch ``url`` over http(s) capped at ``max_bytes`` -> ``(data, content_type)``.
+# │  参数：url: str, max_bytes: int
+# │  返回：tuple[bytes, Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _download_url_with_cap(url: str, max_bytes: int) -> tuple[bytes, Optional[str]]:
     """Fetch ``url`` over http(s) capped at ``max_bytes`` -> ``(data, content_type)``.
     Every hop is SSRF-checked (redirects followed manually) so a model-controlled URL, or a
@@ -785,8 +1165,10 @@ def _download_url_with_cap(url: str, max_bytes: int) -> tuple[bytes, Optional[st
     for _ in range(_MAX_ATTACH_URL_REDIRECTS + 1):
         scheme = (urlparse(current_url).scheme or "").lower()
         if scheme not in ("http", "https"):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ValueError(f"unsupported URL scheme {scheme!r}; only http/https are allowed")
         if not is_safe_url(current_url):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ValueError(
                 f"URL blocked by SSRF protection (private/internal address): {current_url}")
         chunks: list[bytes] = []
@@ -796,6 +1178,7 @@ def _download_url_with_cap(url: str, max_bytes: int) -> tuple[bytes, Optional[st
             if resp.is_redirect:
                 location = resp.headers.get("location")
                 if not location:
+                    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                     raise ValueError(f"redirect without Location header from {current_url}")
                 current_url = urljoin(current_url, location)
                 continue
@@ -804,12 +1187,21 @@ def _download_url_with_cap(url: str, max_bytes: int) -> tuple[bytes, Optional[st
             for chunk in resp.iter_bytes(1024 * 1024):
                 total += len(chunk)
                 if total > max_bytes:
+                    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                     raise ValueError(f"attachment exceeds {max_bytes // (1024 * 1024)} MB limit")
                 chunks.append(chunk)
+        # ⤷ 出口 return：返回 (b''.join(chunks), content_type)
         return b"".join(chunks), content_type
+    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
     raise ValueError(f"too many redirects fetching {url}")
 
 
+# ┌── 函数 def _handle_attach_url()
+# │  作用：Attach a file fetched server-side from an http(s) URL (shared size cap).
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_attach_url = _kanban_handler(_handle_attach_url)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_attach_url")
 def _handle_attach_url(args: dict, **kw) -> str:
     """Attach a file fetched server-side from an http(s) URL (shared size cap)."""
@@ -821,29 +1213,46 @@ def _handle_attach_url(args: dict, **kw) -> str:
         # Derive a name from the URL path's leaf component.
         from urllib.parse import unquote, urlparse
         filename = unquote(urlparse(url).path.rsplit("/", 1)[-1]).strip() or "download"
+    # ⤷ 关键分支 try/except：捕获 ValueError、Exception，出错走兜底而不是崩溃。
     try:
         data, fetched_ct = _download_url_with_cap(url, kb.KANBAN_ATTACHMENT_MAX_BYTES)
     except ValueError as e:
+        # ⤷ 出口 return：返回 tool_error(f'kanban_attach_url: {e}')
         return tool_error(f"kanban_attach_url: {e}")
     except Exception as e:
         logger.exception("kanban_attach_url download failed")
+        # ⤷ 出口 return：返回 tool_error(f'kanban_attach_url: failed to fetch {url}: {e}')
         return tool_error(f"kanban_attach_url: failed to fetch {url}: {e}")
+    # ⤷ 出口 return：返回 _store_attachment(args.get('board'), tid, filename, data, ar…
     return _store_attachment(
         args.get("board"), tid, filename, data, args.get("content_type") or fetched_ct)
 
 
+# ┌── 函数 def _handle_attachments()
+# │  作用：List a task's attachments (read-only; no ownership restriction).
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_attachments = _kanban_handler(_handle_attachments)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_attachments")
 def _handle_attachments(args: dict, **kw) -> str:
     """List a task's attachments (read-only; no ownership restriction)."""
     tid = _require_task_id(args)
     with _board(args.get("board")) as (kb, conn):
         _existing_task(kb, conn, tid)
+        # ⤷ 出口 return：返回 json.dumps({'ok': True, 'task_id': tid, 'attachments': [_fie…
         return json.dumps({
             "ok": True, "task_id": tid,
             "attachments": [
                 _fields(a, _ATTACHMENT_FIELDS) for a in kb.list_attachments(conn, tid)]})
 
 
+# ┌── 函数 def _handle_create()
+# │  作用：Create a (child) task; orchestrator workers use this to fan out.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_create = _kanban_handler(_handle_create)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_create")
 def _handle_create(args: dict, **kw) -> str:
     """Create a (child) task; orchestrator workers use this to fan out."""
@@ -895,9 +1304,15 @@ def _handle_create(args: dict, **kw) -> str:
             initial_status=str(args.get("initial_status") or "running"),
             created_by=os.environ.get("HERMES_PROFILE") or "worker", session_id=session_id)
         landed = _fields(kb.get_task(conn, new_tid), _CREATED_FIELDS)
+        # ⤷ 出口 return：返回 _ok(task_id=new_tid, **landed, subscribed=_maybe_auto_subscr…
         return _ok(task_id=new_tid, **landed, subscribed=_maybe_auto_subscribe(conn, new_tid))
 
 
+# ┌── 函数 def _resolve_notify_target()
+# │  作用：``kanban_db.add_notify_sub`` kwargs for the calling session, or None (CLI/cron/tests).
+# │  参数：无
+# │  返回：Optional[dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _resolve_notify_target() -> Optional[dict[str, Any]]:
     """``kanban_db.add_notify_sub`` kwargs for the calling session, or None (CLI/cron/tests).
     Gateway sessions: ``HERMES_SESSION_PLATFORM``/``CHAT_ID`` ContextVars. TUI/desktop:
@@ -909,6 +1324,7 @@ def _resolve_notify_target() -> Optional[dict[str, Any]]:
     if not platform or not chat_id:
         session_key = env("HERMES_SESSION_KEY", "") or os.environ.get("HERMES_SESSION_KEY", "")
         if not session_key:
+            # ⤷ 出口 return：返回 None
             return None
         platform, chat_id = "tui", session_key
     chat_type = env("HERMES_SESSION_CHAT_TYPE", "") or None
@@ -916,6 +1332,7 @@ def _resolve_notify_target() -> Optional[dict[str, Any]]:
     message_id = env("HERMES_SESSION_MESSAGE_ID", "") or ""
     notifier_profile = env("HERMES_SESSION_PROFILE", "") or os.environ.get("HERMES_PROFILE")
     if not notifier_profile:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.profiles import get_active_profile_name
             notifier_profile = get_active_profile_name() or "default"
@@ -934,6 +1351,7 @@ def _resolve_notify_target() -> Optional[dict[str, Any]]:
             delivery_metadata["direct_messages_topic_id"] = str(thread_id)
         if message_id:
             delivery_metadata["telegram_reply_to_message_id"] = str(message_id)
+    # ⤷ 出口 return：返回 dict(platform=platform, chat_id=chat_id, chat_type=chat_type…
     return dict(
         platform=platform, chat_id=chat_id, chat_type=chat_type, thread_id=thread_id,
         user_id=env("HERMES_SESSION_USER_ID", "") or None,
@@ -943,20 +1361,29 @@ def _resolve_notify_target() -> Optional[dict[str, Any]]:
         delivery_metadata=delivery_metadata or None)
 
 
+# ┌── 函数 def _maybe_auto_subscribe()
+# │  作用：Subscribe the calling session to completion/block events; True iff a row was
+# │  参数：conn: Any, task_id: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
     """Subscribe the calling session to completion/block events; True iff a row was
     written (surfaced as ``subscribed`` so an orchestrator can fall back to explicit
     ``kanban_notify-subscribe``). Gated by ``kanban.auto_subscribe_on_create`` (default
     True). Failures are logged and swallowed: bookkeeping must never fail kanban_create."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if not cfg_get(load_config(), "kanban", "auto_subscribe_on_create", default=True):
+            # ⤷ 出口 return：返回 False
             return False
     except Exception:
         pass  # unreadable config keeps the user-friendly default (True)
     target = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         target = _resolve_notify_target()
         if target is None:
+            # ⤷ 出口 return：返回 False
             return False  # CLI / cron / test — no persistent channel
         from hermes_cli import kanban_db_notify as _kbn
         # Inheritance and explicit subscriptions already encode the delivery policy.
@@ -964,8 +1391,10 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
         if any(sub["platform"] == target["platform"] and sub["chat_id"] == target["chat_id"]
                and (sub["thread_id"] or "") == (target["thread_id"] or "")
                for sub in _kbn.list_notify_subs(conn, task_id)):
+            # ⤷ 出口 return：返回 True
             return True
         _kbn.add_notify_sub(conn, task_id=task_id, **target)
+        # ⤷ 出口 return：返回 True
         return True
     except Exception as _exc:
         logger.warning(
@@ -974,6 +1403,12 @@ def _maybe_auto_subscribe(conn: Any, task_id: str) -> bool:
         return False
 
 
+# ┌── 函数 def _handle_unblock()
+# │  作用：Transition a blocked task to ready, or todo while parents remain open.
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_unblock = _kanban_handler(_handle_unblock)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_unblock")
 def _handle_unblock(args: dict, **kw) -> str:
     """Transition a blocked task to ready, or todo while parents remain open."""
@@ -985,9 +1420,16 @@ def _handle_unblock(args: dict, **kw) -> str:
     _enforce_worker_task_ownership(tid)
     with _board(args.get("board")) as (kb, conn):
         _check(kb.unblock_task(conn, tid), f"could not unblock {tid} (not blocked or unknown)")
+        # ⤷ 出口 return：返回 _ok(task_id=tid, **_fields(kb.get_task(conn, tid), ('status'…
         return _ok(task_id=tid, **_fields(kb.get_task(conn, tid), ("status",)))
 
 
+# ┌── 函数 def _handle_link()
+# │  作用：Add a parent→child dependency edge after the fact (cycles/self-links → ValueError).
+# │  参数：args: dict, **kw
+# │  返回：str
+# │  【语法】带 @_kanban_handler 装饰器：调用本函数时，等价于 _handle_link = _kanban_handler(_handle_link)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_kanban_handler("kanban_link")
 def _handle_link(args: dict, **kw) -> str:
     """Add a parent→child dependency edge after the fact (cycles/self-links → ValueError)."""
@@ -997,6 +1439,7 @@ def _handle_link(args: dict, **kw) -> str:
     _check(parent_id and child_id, "both parent_id and child_id are required")
     with _board(args.get("board")) as (kb, conn):
         kb.link_tasks(conn, parent_id=parent_id, child_id=child_id)
+        # ⤷ 出口 return：返回 _ok(parent_id=parent_id, child_id=child_id)
         return _ok(parent_id=parent_id, child_id=child_id)
 
 

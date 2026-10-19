@@ -3,6 +3,29 @@ runtime restore, prompt-cache policy, client construction, model switching, tool
 Each function takes the parent ``AIAgent`` as ``agent`` except the stateless message helpers.
 ``_ra()`` resolves ``run_agent`` lazily so tests patching ``run_agent.X`` keep intercepting.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/agent_runtime_helpers.py（约 3270 行）
+# 地位：AIAgent 的杂项运行时工具箱。
+#
+# 内容比较杂，可以分成几类：
+#   1. 消息修复（message repair）：repair_message_sequence / sanitize_api_messages /
+#      _prune_unanswered_tool_calls / _pair_tool_calls_positionally ...
+#      为什么要修复？因为多轮对话后消息列表可能出现「有 tool_call 但没有对应结果」这类非法结构，
+#      而大模型 API 对此非常敏感，会直接报错。所以发出去之前必须「消毒」。
+#      这一组是理解 Agent 工程难点的最佳材料。
+#   2. 凭证恢复：recover_with_credential_pool / _recover_auth_failure / _recover_rate_limit
+#      （key 失效了、被限流了，自动换下一个凭证）
+#   3. 主运行时重建：restore_primary_runtime / try_recover_primary_transport
+#   4. 模型热切换：switch_model()（对话中途换模型，要重建客户端、重算上下文长度...）
+#   5. 提示词缓存策略：anthropic_prompt_cache_policy / plan_cache_sections_for_destination
+#      （把不变的部分缓存起来，省钱省时间）
+#   6. 轨迹导出：convert_to_trajectory_format（把对话导出成训练数据格式）
+#
+# 新手最值得读：repair_message_sequence 与 sanitize_api_messages 这一组。
+# ==========================================================================
+#
 
 from __future__ import annotations
 import contextlib
@@ -71,9 +94,15 @@ _UNTERMINATED_TOOL_CALL_PATTERN = re.compile(
 )
 
 
+# ┌── 函数 def _ra()
+# │  作用：Lazy ``run_agent`` reference for test-patch routing.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _ra():
     """Lazy ``run_agent`` reference for test-patch routing."""
     import run_agent
+    # ⤷ 出口 return：返回 run_agent
     return run_agent
 
 
@@ -98,18 +127,36 @@ _TRAJECTORY_SYSTEM_PROMPT = (
 )
 
 
+# ┌── 函数 def _trajectory_gpt_prefix()
+# │  作用：Leading ``<think>`` block from native reasoning tokens, if any.
+# │  参数：msg: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _trajectory_gpt_prefix(msg: Dict[str, Any]) -> str:
     """Leading ``<think>`` block from native reasoning tokens, if any."""
     if msg.get("reasoning") and msg["reasoning"].strip():
+        # ⤷ 出口 return：返回 f"<think>\n{msg['reasoning']}\n</think>\n"
         return f"<think>\n{msg['reasoning']}\n</think>\n"
+    # ⤷ 出口 return：返回 ''
     return ""
 
 
+# ┌── 函数 def _with_think_block()
+# │  作用：Every gpt turn gets a <think> block (empty if none) for a consistent training format.
+# │  参数：content: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _with_think_block(content: str) -> str:
     """Every gpt turn gets a <think> block (empty if none) for a consistent training format."""
+    # ⤷ 出口 return：返回 content if '<think>' in content else '<think>\n</think>\n' +…
     return content if "<think>" in content else "<think>\n</think>\n" + content
 
 
+# ┌── 函数 def _trajectory_tool_call_turn()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：msg: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _trajectory_tool_call_turn(msg: Dict[str, Any]) -> str:
     content = _trajectory_gpt_prefix(msg)
     if msg.get("content") and msg["content"].strip():
@@ -120,6 +167,7 @@ def _trajectory_tool_call_turn(msg: Dict[str, Any]) -> str:
             continue
         raw_args = tool_call["function"]["arguments"]
         # Arguments were validated during conversation; degrade to {} rather than abort.
+        # ⤷ 关键分支 try/except：捕获 json.JSONDecodeError，出错走兜底而不是崩溃。
         try:
             arguments = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
         except json.JSONDecodeError:
@@ -127,9 +175,15 @@ def _trajectory_tool_call_turn(msg: Dict[str, Any]) -> str:
             arguments = {}
         tool_call_json = {"name": tool_call["function"]["name"], "arguments": arguments}
         content += f"<tool_call>\n{json.dumps(tool_call_json, ensure_ascii=False)}\n</tool_call>\n"
+    # ⤷ 出口 return：返回 _with_think_block(content).rstrip()
     return _with_think_block(content).rstrip()
 
 
+# ┌── 函数 def _trajectory_tool_responses()
+# │  作用：Collect the ``<tool_response>`` blocks for the tool run starting at ``start``; returns ``(blocks, next_index)``.
+# │  参数：msg: Dict[str, Any], messages: List[Dict[str, Any]], start: int
+# │  返回：Tuple[List[str], int]
+# └──────────────────────────────────────────────────────────────
 def _trajectory_tool_responses(msg: Dict[str, Any], messages: List[Dict[str, Any]], start: int) -> Tuple[List[str], int]:
     """Collect the ``<tool_response>`` blocks for the tool run starting at ``start``; returns ``(blocks, next_index)``."""
     tool_responses = []
@@ -137,6 +191,7 @@ def _trajectory_tool_responses(msg: Dict[str, Any], messages: List[Dict[str, Any
     while j < len(messages) and messages[j]["role"] == "tool":
         tool_msg = messages[j]
         tool_content = tool_msg["content"]
+        # ⤷ 关键分支 try/except：捕获 (json.JSONDecodeError, AttributeError)，出错走兜底而不是崩溃。
         try:  # pretty-print tool content if it looks like JSON
             if tool_content.strip().startswith(("{", "[")):
                 tool_content = json.loads(tool_content)
@@ -154,9 +209,15 @@ def _trajectory_tool_responses(msg: Dict[str, Any], messages: List[Dict[str, Any
         )
         tool_responses.append(f"<tool_response>\n{payload}\n</tool_response>")
         j += 1
+    # ⤷ 出口 return：返回 (tool_responses, j)
     return tool_responses, j
 
 
+# ┌── 函数 def convert_to_trajectory_format()
+# │  作用：Convert internal message history to trajectory format for saving.
+# │  参数：agent, messages: List[Dict[str, Any]], user_query: str, completed: bool
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def convert_to_trajectory_format(agent, messages: List[Dict[str, Any]], user_query: str, completed: bool) -> List[Dict[str, Any]]:
     """Convert internal message history to trajectory format for saving."""
     # Trajectories are text-only: swap image-bearing tool messages for their text_summary so ~1MB
@@ -183,14 +244,21 @@ def convert_to_trajectory_format(agent, messages: List[Dict[str, Any]], user_que
         elif msg["role"] == "user":
             trajectory.append({"from": "human", "value": msg["content"]})
         i += 1
+    # ⤷ 出口 return：返回 trajectory
     return trajectory
 
 
+# ┌── 函数 def _prepend_corruption_marker()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：tool_msg: dict, marker: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _prepend_corruption_marker(tool_msg: dict, marker: str) -> None:
     existing = tool_msg.get("content")
     if isinstance(existing, str) and existing.startswith(marker):
         return
     if not isinstance(existing, (str, type(None))):
+        # ⤷ 关键分支 try/except：捕获 TypeError，出错走兜底而不是崩溃。
         try:
             existing = json.dumps(existing)
         except TypeError:
@@ -198,16 +266,29 @@ def _prepend_corruption_marker(tool_msg: dict, marker: str) -> None:
     tool_msg["content"] = f"{marker}\n{existing}" if existing else marker
 
 
+# ┌── 函数 def _find_tool_result()
+# │  作用：The tool result answering ``tool_call`` in the run starting at ``start``, if any.
+# │  参数：messages: list, start: int, tool_call: dict
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _find_tool_result(messages: list, start: int, tool_call: dict) -> Optional[dict]:
     """The tool result answering ``tool_call`` in the run starting at ``start``, if any."""
     for candidate in messages[start:]:
         if not isinstance(candidate, dict) or candidate.get("role") != "tool":
+            # ⤷ 出口 return：返回 None
             return None
         if tool_result_id_variants(candidate.get("tool_call_id")) & tool_call_id_variants(tool_call):
+            # ⤷ 出口 return：返回 candidate
             return candidate
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _cursor_skip_prefix()
+# │  作用：Length of the ``is``-identical prefix already validated on the previous call.
+# │  参数：messages: list, cursor: Optional[dict]
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _cursor_skip_prefix(messages: list, cursor: Optional[dict]) -> int:
     """Length of the ``is``-identical prefix already validated on the previous call."""
     prev_prefix = cursor.get("prefix") if cursor is not None else None
@@ -215,9 +296,15 @@ def _cursor_skip_prefix(messages: list, cursor: Optional[dict]) -> int:
     if isinstance(prev_prefix, list):
         while start < min(len(prev_prefix), len(messages)) and messages[start] is prev_prefix[start]:
             start += 1
+    # ⤷ 出口 return：返回 start
     return start
 
 
+# ┌── 函数 def sanitize_tool_call_arguments()
+# │  作用：Repair corrupted assistant tool-call argument JSON in-place.
+# │  参数：messages: list, logger = ..., session_id: str = ..., cursor: Optional[dict] = ...
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def sanitize_tool_call_arguments(
     messages: list, *, logger=None, session_id: str = None, cursor: Optional[dict] = None
 ) -> int:
@@ -236,6 +323,7 @@ def sanitize_tool_call_arguments(
     """
     log = logger or logging.getLogger(__name__)
     if not isinstance(messages, list):
+        # ⤷ 出口 return：返回 0
         return 0
     repaired = 0
     marker = _ra().AIAgent._TOOL_CALL_ARGUMENTS_CORRUPTION_MARKER
@@ -290,6 +378,7 @@ def sanitize_tool_call_arguments(
         # Strong refs to the objects validated this call; any divergence (compression, undo, repair,
         # steer) forces a re-scan from that index.
         cursor["prefix"] = messages[:]
+    # ⤷ 出口 return：返回 repaired
     return repaired
 
 
@@ -300,6 +389,11 @@ _INFLIGHT_TURNS_BY_SESSION: Dict[str, Tuple[str, float]] = {}
 _INFLIGHT_TURNS_LOCK = threading.Lock()
 
 
+# ┌── 函数 def note_turn_start()
+# │  作用：Tripwire: warn when a turn starts while a previous turn of the same agent or session
+# │  参数：agent, turn_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def note_turn_start(agent, turn_id: str):
     """Tripwire: warn when a turn starts while a previous turn of the same agent or session
     (on another agent object) has not finished its persist. Does not prevent the overlap; it
@@ -339,9 +433,15 @@ def note_turn_start(agent, turn_id: str):
                 now - entry[1] if entry[1] else -1.0, session_id,
             )
             overlap = overlap or entry[0]
+    # ⤷ 出口 return：返回 overlap
     return overlap
 
 
+# ┌── 函数 def note_turn_persisted()
+# │  作用：Clear the in-flight marker at turn-end persist (see note_turn_start). Unconditional by
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def note_turn_persisted(agent):
     """Clear the in-flight marker at turn-end persist (see note_turn_start). Unconditional by
     design: on a real overlap the first persist clears the second slot, so the tripwire
@@ -357,8 +457,14 @@ def note_turn_persisted(agent):
     agent._inflight_turn_session_id = None
 
 
+# ┌── 函数 def _is_codex_interim()
+# │  作用：Codex Responses interim turn: carries its own continuation state, replayed verbatim.
+# │  参数：m: Dict
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_codex_interim(m: Dict) -> bool:
     """Codex Responses interim turn: carries its own continuation state, replayed verbatim."""
+    # ⤷ 出口 return：返回 bool(m.get('codex_reasoning_items') or m.get('codex_message_…
     return bool(
         m.get("codex_reasoning_items")
         or m.get("codex_message_items")
@@ -366,6 +472,11 @@ def _is_codex_interim(m: Dict) -> bool:
     )
 
 
+# ┌── 函数 def _merge_assistant_into()
+# │  作用：Fold a consecutive assistant ``msg`` into ``prev`` (union tool_calls, concat text).
+# │  参数：prev: Dict, msg: Dict
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _merge_assistant_into(prev: Dict, msg: Dict) -> None:
     """Fold a consecutive assistant ``msg`` into ``prev`` (union tool_calls, concat text)."""
     prev_calls = list(prev.get("tool_calls") or [])
@@ -423,6 +534,11 @@ def _merge_assistant_into(prev: Dict, msg: Dict) -> None:
         drop_stale_api_content(prev)
 
 
+# ┌── 函数 def _merge_consecutive_assistants()
+# │  作用：Pass 0: merge consecutive assistant turns (codex interims exempt).
+# │  参数：messages: List[Dict]
+# │  返回：Tuple[List[Dict], int]
+# └──────────────────────────────────────────────────────────────
 def _merge_consecutive_assistants(messages: List[Dict]) -> Tuple[List[Dict], int]:
     """Pass 0: merge consecutive assistant turns (codex interims exempt)."""
     repairs = 0
@@ -442,9 +558,15 @@ def _merge_consecutive_assistants(messages: List[Dict]) -> Tuple[List[Dict], int
             repairs += 1
             continue
         collapsed.append(msg)
+    # ⤷ 出口 return：返回 (collapsed, repairs)
     return collapsed, repairs
 
 
+# ┌── 函数 def _drop_stray_tool_results()
+# │  作用：Pass 1: drop tool results not following a known assistant tool call. Consumes the whole
+# │  参数：messages: List[Dict]
+# │  返回：Tuple[List[Dict], int]
+# └──────────────────────────────────────────────────────────────
 def _drop_stray_tool_results(messages: List[Dict]) -> Tuple[List[Dict], int]:
     """Pass 1: drop tool results not following a known assistant tool call. Consumes the whole
     alias group (call_id/id/response_item_id/composite) so a duplicate keyed on a sibling
@@ -484,9 +606,15 @@ def _drop_stray_tool_results(messages: List[Dict]) -> Tuple[List[Dict], int]:
             if candidate_groups:
                 matched_tool_groups.add(min(candidate_groups))
         filtered.append(msg)
+    # ⤷ 出口 return：返回 (filtered, repairs)
     return filtered, repairs
 
 
+# ┌── 函数 def _prune_unanswered_tool_calls()
+# │  作用：Pass 2: prune tool_calls not answered in the IMMEDIATELY following tool run (a displaced
+# │  参数：messages: List[Dict]
+# │  返回：Tuple[List[Dict], int]
+# └──────────────────────────────────────────────────────────────
 def _prune_unanswered_tool_calls(messages: List[Dict]) -> Tuple[List[Dict], int]:
     """Pass 2: prune tool_calls not answered in the IMMEDIATELY following tool run (a displaced
     result masks the per-call stub pass and strict providers 400). Payload-empty turns are
@@ -518,9 +646,15 @@ def _prune_unanswered_tool_calls(messages: List[Dict]) -> Tuple[List[Dict], int]
             else:
                 msg.pop("tool_calls", None)
         pruned.append(msg)
+    # ⤷ 出口 return：返回 (pruned, repairs)
     return pruned, repairs
 
 
+# ┌── 函数 def _merge_consecutive_users()
+# │  作用：Pass 3: merge consecutive plain-text user messages (no user input lost).
+# │  参数：messages: List[Dict]
+# │  返回：Tuple[List[Dict], int]
+# └──────────────────────────────────────────────────────────────
 def _merge_consecutive_users(messages: List[Dict]) -> Tuple[List[Dict], int]:
     """Pass 3: merge consecutive plain-text user messages (no user input lost)."""
     from agent.context_compressor import split_user_originated_turn
@@ -550,6 +684,7 @@ def _merge_consecutive_users(messages: List[Dict]) -> Tuple[List[Dict], int]:
             repairs += 1
             continue
         merged.append(msg)
+    # ⤷ 出口 return：返回 (merged, repairs)
     return merged, repairs
 
 
@@ -559,6 +694,11 @@ _SEQUENCE_REPAIR_PASSES = (
 )
 
 
+# ┌── 函数 def repair_message_sequence()
+# │  作用：Collapse malformed role-alternation left in the live history; returns repair count.
+# │  参数：agent, messages: List[Dict]
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def repair_message_sequence(agent, messages: List[Dict]) -> int:
     """Collapse malformed role-alternation left in the live history; returns repair count.
     Providers require strict alternation after the system message (violations: silent empty
@@ -568,6 +708,7 @@ def repair_message_sequence(agent, messages: List[Dict]) -> int:
     consecutive user turns. A user turn directly after an assistant turn is valid and left alone.
     """
     if not messages:
+        # ⤷ 出口 return：返回 0
         return 0
     repairs = 0
     current = messages
@@ -577,9 +718,15 @@ def repair_message_sequence(agent, messages: List[Dict]) -> int:
     if repairs > 0:
         # Rewrite in place so persistence/return value/DB flush see the repaired sequence.
         messages[:] = current
+    # ⤷ 出口 return：返回 repairs
     return repairs
 
 
+# ┌── 函数 def repair_message_sequence_with_cursor()
+# │  作用：Run :func:`repair_message_sequence` and keep ``_last_flushed_db_idx`` consistent. Repair
+# │  参数：agent, messages: List[Dict]
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def repair_message_sequence_with_cursor(agent, messages: List[Dict]) -> int:
     """Run :func:`repair_message_sequence` and keep ``_last_flushed_db_idx`` consistent. Repair
     shrinks the list in place; counting identity-preserved survivors of the flushed prefix gives
@@ -592,16 +739,24 @@ def repair_message_sequence_with_cursor(agent, messages: List[Dict]) -> int:
             agent._last_flushed_db_idx = sum(1 for m in messages if id(m) in flushed_ids)
         else:
             agent._last_flushed_db_idx = min(agent._last_flushed_db_idx, len(messages))
+    # ⤷ 出口 return：返回 repairs
     return repairs
 
 
+# ┌── 函数 def _flatten_content_text()
+# │  作用：Flatten list/dict content (e.g. Anthropic-via-OpenRouter block lists) to text: a raw list
+# │  参数：content: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _flatten_content_text(content: Any) -> str:
     """Flatten list/dict content (e.g. Anthropic-via-OpenRouter block lists) to text: a raw list
     hitting ``re.sub`` raises TypeError and the loop retries forever. Thinking/reasoning blocks
     are dropped outright; their text key varies per provider."""
     if isinstance(content, str):
+        # ⤷ 出口 return：返回 content
         return content
     if isinstance(content, list):
+        # ⤷ 出口 return：返回 ''.join((part if isinstance(part, str) else part.get('text')…
         return "".join(
             part if isinstance(part, str) else part.get("text")
             for part in content
@@ -612,7 +767,9 @@ def _flatten_content_text(content: Any) -> str:
             )
         )
     if isinstance(content, dict):
+        # ⤷ 出口 return：返回 str(content.get('text') or content.get('content') or '')
         return str(content.get("text") or content.get("content") or "")
+    # ⤷ 出口 return：返回 str(content)
     return str(content)
 
 
@@ -628,6 +785,11 @@ _THINK_STRIP_PATTERNS = (
 )
 
 
+# ┌── 函数 def strip_think_blocks()
+# │  作用：Remove reasoning/thinking blocks from content, returning only visible text: closed tag
+# │  参数：agent, content: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def strip_think_blocks(agent, content: str) -> str:
     """Remove reasoning/thinking blocks from content, returning only visible text: closed tag
     pairs, unterminated open tags at a block boundary (mirrors ``gateway/stream_consumer.py``),
@@ -636,14 +798,21 @@ def strip_think_blocks(agent, content: str) -> str:
     content = _flatten_content_text(content) if content else ""
     for pattern in _THINK_STRIP_PATTERNS if content else ():
         content = pattern.sub('', content)
+    # ⤷ 出口 return：返回 content
     return content
 
 
+# ┌── 函数 def sync_credential_pool_entry_id()
+# │  作用：Rebind ``agent._credential_pool_entry_id`` from the current pool + key. OAuth refreshes
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def sync_credential_pool_entry_id(agent) -> None:
     """Rebind ``agent._credential_pool_entry_id`` from the current pool + key. OAuth refreshes
     can replace the token before recovery runs, so the key alone cannot attribute a failure;
     the stable entry ID can. Cleared when no pool is bound."""
     pool = getattr(agent, "_credential_pool", None)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         agent._credential_pool_entry_id = (
             pool.entry_id_for_api_key(getattr(agent, "api_key", None)) if pool is not None else None
@@ -660,6 +829,11 @@ _USAGE_LIMIT_REASON_TOKENS = ("usage_limit_reached", "gousagelimit")
 _USAGE_LIMIT_MESSAGE_TOKENS = ("usage limit reached", "usage limit has been reached")
 
 
+# ┌── 函数 def _failed_credential_identity()
+# │  作用：``(api_key_hint, credential_id)`` of the key actually dispatched, not ``pool.current()``:
+# │  参数：agent, pool
+# │  返回：Tuple[Optional[str], Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _failed_credential_identity(agent, pool) -> Tuple[Optional[str], Optional[str]]:
     """``(api_key_hint, credential_id)`` of the key actually dispatched, not ``pool.current()``:
     the shared pointer often points at a different healthy entry, and marking it exhausted
@@ -675,16 +849,24 @@ def _failed_credential_identity(agent, pool) -> Tuple[Optional[str], Optional[st
                 current_id = getattr(cur, "id", None)
                 if isinstance(current_id, str) and current_id:
                     credential_id = current_id
+    # ⤷ 出口 return：返回 (api_key_hint, credential_id)
     return api_key_hint, credential_id
 
 
+# ┌── 函数 def _is_entitlement_403()
+# │  作用：Entitlement 403s look like auth failures but refresh cannot fix them. Any xai-oauth 403
+# │  参数：agent, status_code, error_context
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_entitlement_403(agent, status_code, error_context) -> bool:
     """Entitlement 403s look like auth failures but refresh cannot fix them. Any xai-oauth 403
     is entitlement EXCEPT xAI's stale-token signals (``[WKE=unauthenticated:...]``,
     "could not be validated"), which must stay refreshable."""
     if agent._is_entitlement_failure(error_context, status_code):
+        # ⤷ 出口 return：返回 True
         return True
     if status_code != 403:
+        # ⤷ 出口 return：返回 False
         return False
     haystack = " ".join(
         # Subscription/entitlement 403s look like auth failures on the wire but refresh cannot fix them —
@@ -704,18 +886,27 @@ def _is_entitlement_403(agent, status_code, error_context) -> bool:
         if isinstance(error_context, dict)
     )
     if "oauth authentication is currently not allowed for this organization" in haystack:
+        # ⤷ 出口 return：返回 True
         return True
     provider = agent.provider or ""
     if provider == "anthropic" and getattr(agent, "api_mode", "") == "anthropic_messages":
+        # ⤷ 出口 return：返回 True
         return True
     if provider == "xai-oauth":
+        # ⤷ 出口 return：返回 not ('[wke=unauthenticated:' in haystack or 'oauth2 access t…
         return not (
             "[wke=unauthenticated:" in haystack
             or "oauth2 access token could not be validated" in haystack
         )
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _recover_auth_failure()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, pool, status_code, has_retried_429, error_context, api_key_hint, credential_id, rotate_and_swap
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _recover_auth_failure(agent, pool, *, status_code, has_retried_429, error_context, api_key_hint, credential_id, rotate_and_swap):
     if _is_entitlement_403(agent, status_code, error_context):
         _ra().logger.info(
@@ -724,6 +915,7 @@ def _recover_auth_failure(agent, pool, *, status_code, has_retried_429, error_co
             "not a transient auth failure).", status_code if status_code is not None else "auth",
             agent.provider or "provider",
         )
+        # ⤷ 出口 return：返回 (False, has_retried_429)
         return False, has_retried_429
     # Refresh the entry that supplied the failing key, not current(): refreshing a healthy entry
     # burns its single-use refresh token for a failure it never had.
@@ -733,6 +925,7 @@ def _recover_auth_failure(agent, pool, *, status_code, has_retried_429, error_co
     refreshed = pool.try_refresh_matching(**refresh_kwargs)
     if refreshed is None:
         # Refresh failed; rotate (the failed entry is already marked exhausted).
+        # ⤷ 出口 return：返回 (True, False) if rotate_and_swap(401, 'auth refresh failed')…
         return (True, False) if rotate_and_swap(401, "auth refresh failed") else (False, has_retried_429)
     # try_refresh_matching() reports success even when upstream keeps rejecting; cap same-entry
     # refreshes so a single-entry pool falls through to fallback.
@@ -749,13 +942,21 @@ def _recover_auth_failure(agent, pool, *, status_code, has_retried_429, error_co
                 "pool entry %s — treating as unrecoverable and allowing "
                 "fallback to activate.", refresh_counts[refresh_key] - 1, refreshed_id,
             )
+            # ⤷ 出口 return：返回 (False, has_retried_429)
             return False, has_retried_429
     _ra().logger.info("Credential auth failure — refreshed pool entry %s", getattr(refreshed, 'id', '?'))
     if agent._swap_credential(refreshed) is False:
+        # ⤷ 出口 return：返回 (False, has_retried_429)
         return False, has_retried_429
+    # ⤷ 出口 return：返回 (True, has_retried_429)
     return True, has_retried_429
 
 
+# ┌── 函数 def _recover_rate_limit()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：pool, has_retried_429, error_context, api_key_hint, credential_id, rotate_and_swap
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _recover_rate_limit(pool, *, has_retried_429, error_context, api_key_hint, credential_id, rotate_and_swap):
     # Already-exhausted credential: rotate immediately. Avoids the "cancel-between-429s" trap where
     # the local has_retried_429 resets per prompt and retries forever.
@@ -774,6 +975,7 @@ def _recover_rate_limit(pool, *, has_retried_429, error_context, api_key_hint, c
             "Credential already exhausted (last_status=%s) — rotating immediately instead of retrying",
             current_last_status,
         )
+        # ⤷ 出口 return：返回 (True, False) if rotate_and_swap(429, 'rate limit, pre-exhau…
         return (True, False) if rotate_and_swap(429, "rate limit, pre-exhausted") else (False, True)
     usage_limit_reached = False
     if error_context:
@@ -783,10 +985,17 @@ def _recover_rate_limit(pool, *, has_retried_429, error_context, api_key_hint, c
             t in context_message for t in _USAGE_LIMIT_MESSAGE_TOKENS
         )
     if not has_retried_429 and not usage_limit_reached:
+        # ⤷ 出口 return：返回 (False, True)
         return False, True
+    # ⤷ 出口 return：返回 (True, False) if rotate_and_swap(429, 'rate limit') else (Fa…
     return (True, False) if rotate_and_swap(429, "rate limit") else (False, True)
 
 
+# ┌── 函数 def recover_with_credential_pool()
+# │  作用：Attempt credential recovery via pool rotation; returns (recovered, has_retried_429).
+# │  参数：agent, status_code: Optional[int], has_retried_429: bool, classified_reason: Optional[FailoverReason] = ..., error_context: Optional[Dict[str, Any]] = ..., billing_unverified: bool = ...
+# │  返回：tuple[bool, bool]
+# └──────────────────────────────────────────────────────────────
 def recover_with_credential_pool(
     agent, *, status_code: Optional[int], has_retried_429: bool,
     classified_reason: Optional[FailoverReason] = None,
@@ -798,6 +1007,7 @@ def recover_with_credential_pool(
     usage"); ``billing_unverified`` gives the entry a short cooldown, not the one-hour bench."""
     pool = agent._credential_pool
     if pool is None:
+        # ⤷ 出口 return：返回 (False, has_retried_429)
         return False, has_retried_429
     # The pool belongs to the PRIMARY provider: acting on fallback errors would corrupt its state
     # and reset base_url to the primary endpoint. Empty pool provider means unscoped; empty agent
@@ -818,6 +1028,7 @@ def recover_with_credential_pool(
             "skipping pool mutation to avoid cross-provider contamination",
             pool_provider, current_provider,
         )
+        # ⤷ 出口 return：返回 (False, has_retried_429)
         return False, has_retried_429
     api_key_hint, credential_id = _failed_credential_identity(agent, pool)
     effective_reason = classified_reason
@@ -850,6 +1061,7 @@ def recover_with_credential_pool(
             "Credential %s (%s) — rotated to pool entry %s",
             rotate_status, label, getattr(next_entry, "id", "?"),
         )
+        # ⤷ 出口 return：返回 agent._swap_credential(next_entry) is not False
         return agent._swap_credential(next_entry) is not False
     if effective_reason == FailoverReason.upstream_rate_limit:
         # Upstream (e.g. DeepSeek behind OpenRouter) is throttling the aggregator; the credential is
@@ -865,10 +1077,12 @@ def recover_with_credential_pool(
                 "Upstream aggregator 429 (provider unknown) — skipping "
                 "credential rotation, deferring to fallback chain"
             )
+        # ⤷ 出口 return：返回 (False, has_retried_429)
         return False, has_retried_429
     if effective_reason == FailoverReason.billing:
         # A separate pool instance may have resolved runtime credentials, leaving no ``current_id``;
         # match the key that failed, not a different account.
+        # ⤷ 出口 return：返回 (True, False) if _rotate_and_swap(402, 'billing') else (Fals…
         return (True, False) if _rotate_and_swap(402, "billing") else (False, has_retried_429)
     if effective_reason == FailoverReason.rate_limit:
         return _recover_rate_limit(
@@ -881,9 +1095,15 @@ def recover_with_credential_pool(
             error_context=error_context, api_key_hint=api_key_hint, credential_id=credential_id,
             rotate_and_swap=_rotate_and_swap,
         )
+    # ⤷ 出口 return：返回 (False, has_retried_429)
     return False, has_retried_429
 
 
+# ┌── 函数 def _apply_primary_runtime_fields()
+# │  作用：Copy the identity/transport fields of a ``_primary_runtime`` snapshot onto ``agent``
+# │  参数：agent, rt: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _apply_primary_runtime_fields(agent, rt: Dict[str, Any]) -> None:
     """Copy the identity/transport fields of a ``_primary_runtime`` snapshot onto ``agent``
     (shared by transport recovery and turn-start restore; the caller rebuilds the client)."""
@@ -901,6 +1121,11 @@ def _apply_primary_runtime_fields(agent, rt: Dict[str, Any]) -> None:
     agent._client_kwargs = dict(rt["client_kwargs"])
 
 
+# ┌── 函数 def _build_anthropic_client_from_runtime()
+# │  作用：Rebuild the native Anthropic client from a ``_primary_runtime`` snapshot.
+# │  参数：agent, rt: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _build_anthropic_client_from_runtime(agent, rt: Dict[str, Any]) -> None:
     """Rebuild the native Anthropic client from a ``_primary_runtime`` snapshot."""
     from agent.anthropic_adapter import build_anthropic_client
@@ -914,6 +1139,11 @@ def _build_anthropic_client_from_runtime(agent, rt: Dict[str, Any]) -> None:
     agent.client = None
 
 
+# ┌── 函数 def _rebuild_primary_client()
+# │  作用：Rebuild the primary client from a ``_primary_runtime`` snapshot (MoA facade / native Anthropic / OpenAI wire).
+# │  参数：agent, rt: Dict[str, Any], reason: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _rebuild_primary_client(agent, rt: Dict[str, Any], *, reason: str) -> None:
     """Rebuild the primary client from a ``_primary_runtime`` snapshot (MoA facade / native Anthropic / OpenAI wire)."""
     if (agent.provider or "").strip().lower() == "moa":
@@ -935,6 +1165,11 @@ def _rebuild_primary_client(agent, rt: Dict[str, Any], *, reason: str) -> None:
         agent.client = agent._create_openai_client(dict(rt["client_kwargs"]), reason=reason, shared=True)
 
 
+# ┌── 函数 def try_recover_primary_transport()
+# │  作用：Rebuild the primary client once and retry after ``max_retries`` exhaust on a transient
+# │  参数：agent, api_error: Exception, retry_count: int, max_retries: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def try_recover_primary_transport(
     agent, api_error: Exception, *, retry_count: int, max_retries: int,
 ) -> bool:
@@ -942,6 +1177,7 @@ def try_recover_primary_transport(
     transport error. Skipped for aggregators (OpenRouter, Nous) that manage retries server-side."""
     error_type = type(api_error).__name__
     if agent._fallback_activated or error_type not in _TRANSIENT_TRANSPORT_ERRORS or agent._is_openrouter_url():
+        # ⤷ 出口 return：返回 False
         return False
     # Portal OpenAI-wire traffic rides aggregator retry infra (skip), but Portal Claude on native
     # Messages holds a local Anthropic client that needs the rebuild.
@@ -949,7 +1185,9 @@ def try_recover_primary_transport(
         (agent.provider or "").strip().lower() in {"nous", "nous-portal", "nousresearch"}
         and getattr(agent, "api_mode", None) != "anthropic_messages"
     ):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Never hard-close the shared client here: stale streaming workers may still be unwinding on
         # the old pool; _retire_shared_openai_client defers FD release to GC.
@@ -970,29 +1208,46 @@ def try_recover_primary_transport(
             f"rebuilt client, waiting {wait_time}s before one last primary attempt.", force=True,
         )
         time.sleep(wait_time)
+        # ⤷ 出口 return：返回 True
         return True
     except Exception as e:
         logger.warning("Primary transport recovery failed: %s", e)
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _merge_user_content()
+# │  作用：Merged content for two adjacent user messages (``_UNMERGEABLE`` for unknown shapes):
+# │  参数：prev_content: Any, cur_content: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _merge_user_content(prev_content: Any, cur_content: Any) -> Any:
     """Merged content for two adjacent user messages (``_UNMERGEABLE`` for unknown shapes):
     string+string joins with a blank line; list sides append as separate blocks."""
     if isinstance(prev_content, str) and isinstance(cur_content, str):
+        # ⤷ 出口 return：返回 prev_content + ('\n\n' if prev_content and cur_content else …
         return prev_content + ("\n\n" if prev_content and cur_content else "") + cur_content
     if isinstance(prev_content, list) and isinstance(cur_content, list):
+        # ⤷ 出口 return：返回 list(prev_content) + list(cur_content)
         return list(prev_content) + list(cur_content)
     if isinstance(prev_content, list) and isinstance(cur_content, str):
+        # ⤷ 出口 return：返回 list(prev_content) + ([{'type': 'text', 'text': cur_content}…
         return list(prev_content) + ([{"type": "text", "text": cur_content}] if cur_content else [])
     if isinstance(prev_content, str) and isinstance(cur_content, list):
+        # ⤷ 出口 return：返回 ([{'type': 'text', 'text': prev_content}] if prev_content el…
         return ([{"type": "text", "text": prev_content}] if prev_content else []) + list(cur_content)
+    # ⤷ 出口 return：返回 _UNMERGEABLE
     return _UNMERGEABLE
 
 
 _UNMERGEABLE = object()
 
 
+# ┌── 函数 def drop_thinking_only_and_merge_users()
+# │  作用：Drop thinking-only assistant turns and merge adjacent user messages left behind, on the
+# │  参数：messages: List[Dict[str, Any]], drop_codex_reasoning_items: bool = ...
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def drop_thinking_only_and_merge_users(
     messages: List[Dict[str, Any]], *, drop_codex_reasoning_items: bool = True
 ) -> List[Dict[str, Any]]:
@@ -1000,6 +1255,7 @@ def drop_thinking_only_and_merge_users(
     per-call ``api_messages`` copy only (``agent.messages`` is never mutated). Drop-and-merge
     (not stub text) keeps history honest and preserves role alternation."""
     if not messages:
+        # ⤷ 出口 return：返回 messages
         return messages
     kept = [
         m for m in messages
@@ -1021,19 +1277,27 @@ def drop_thinking_only_and_merge_users(
             merged[-1] = {**prev, "content": content}  # copy so caller dicts are never mutated
             merges += 1
     if dropped == 0 and merges == 0:
+        # ⤷ 出口 return：返回 messages
         return messages
     _ra().logger.debug(
         "Pre-call sanitizer: dropped %d thinking-only assistant turn(s), "
         "merged %d adjacent user message(s)", dropped, merges,
     )
+    # ⤷ 出口 return：返回 merged
     return merged
 
 
+# ┌── 函数 def _primary_reset_gate_blocks()
+# │  作用：Reset-aware gate: skip a guaranteed-to-fail restore while the primary pool reports a
+# │  参数：agent, rt, primary_provider, primary_runtime_base_url, matches_primary, load_primary_pool
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _primary_reset_gate_blocks(agent, rt, primary_provider, primary_runtime_base_url, matches_primary, load_primary_pool):
     """Reset-aware gate: skip a guaranteed-to-fail restore while the primary pool reports a
     future reset; fails open on any error/None. Returns ``(blocked, prefetched_pool, prefetched)``
     so the rebind step reuses the loaded pool (one auth.json read at most)."""
     prefetched_pool, prefetched = None, False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         pool = getattr(agent, "_credential_pool", None)
         if not matches_primary(pool):
@@ -1049,12 +1313,19 @@ def _primary_reset_gate_blocks(agent, rt, primary_provider, primary_runtime_base
                     datetime.fromtimestamp(next_at).isoformat(timespec="seconds"), agent.provider,
                     agent.model,
                 )
+            # ⤷ 出口 return：返回 (True, prefetched_pool, prefetched)
             return True, prefetched_pool, prefetched
     except Exception:
         logger.debug("Reset-aware restore gate failed; falling back to per-turn retry", exc_info=True)
+    # ⤷ 出口 return：返回 (False, prefetched_pool, prefetched)
     return False, prefetched_pool, prefetched
 
 
+# ┌── 函数 def _restore_runtime_capabilities()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, rt: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _restore_runtime_capabilities(agent, rt: Dict[str, Any]) -> None:
     # ``capabilities`` is the legacy key from the initial capability propagation patch.
     raw = rt["runtime_capabilities"] if "runtime_capabilities" in rt else rt.get("capabilities")
@@ -1064,6 +1335,11 @@ def _restore_runtime_capabilities(agent, rt: Dict[str, Any]) -> None:
         logger.warning("Ignoring malformed runtime capabilities snapshot")
 
 
+# ┌── 函数 def _rebind_primary_credential_pool()
+# │  作用：Rebind and re-select the primary credential pool after a fallback turn. A cross-provider
+# │  参数：agent, primary_provider, matches_primary, load_primary_pool, prefetched_pool, prefetched
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _rebind_primary_credential_pool(agent, primary_provider, matches_primary, load_primary_pool, prefetched_pool, prefetched) -> None:
     """Rebind and re-select the primary credential pool after a fallback turn. A cross-provider
     fallback attaches its own pool, which would trip the provider-mismatch guard on the next
@@ -1074,6 +1350,7 @@ def _rebind_primary_credential_pool(agent, primary_provider, matches_primary, lo
     if pool is not None and pool_provider and not matches_primary(pool):
         agent._credential_pool = None
         agent._credential_pool_entry_id = None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             # Reuse the pool the reset-aware gate already loaded (avoids a second auth.json read).
             agent._credential_pool = prefetched_pool if prefetched else load_primary_pool()
@@ -1104,6 +1381,11 @@ def _rebind_primary_credential_pool(agent, primary_provider, matches_primary, lo
         )
 
 
+# ┌── 函数 def restore_primary_runtime()
+# │  作用：Restore the primary runtime at the start of a new turn so fallback stays turn-scoped
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def restore_primary_runtime(agent) -> bool:
     """Restore the primary runtime at the start of a new turn so fallback stays turn-scoped
     (long-lived CLI agents and the gateway's cached agents)."""
@@ -1111,6 +1393,7 @@ def restore_primary_runtime(agent) -> bool:
         # Reset the index even without activation: a failed _try_activate_fallback() can strand
         # _fallback_index past the chain end and silently block future fallbacks.
         agent._fallback_index = 0
+        # ⤷ 出口 return：返回 False
         return False
     # Reset the chain index even when no fallback was activated this turn. Without this, a turn where
     # _try_activate_fallback() was called but returned False (chain exhausted or provider not configured)
@@ -1118,6 +1401,7 @@ def restore_primary_runtime(agent) -> bool:
     # skips this block entirely, stranding the index and silently blocking all future fallback attempts for
     # the session. Fixes #20465.
     if getattr(agent, "_rate_limited_until", 0) > time.monotonic():
+        # ⤷ 出口 return：返回 False
         return False  # primary still in rate-limit cooldown, stay on fallback
     rt = agent._primary_runtime
     primary_provider = str((rt or {}).get("provider") or "").strip().lower()
@@ -1127,10 +1411,12 @@ def restore_primary_runtime(agent) -> bool:
         # The primary slug was rejected as unentitled for this account (#106475): restoring
         # here would announce a recovery that was never verified and re-fail every turn.
         # Stay on the fallback; the user sees the terminal entitlement error instead.
+        # ⤷ 出口 return：返回 False
         return False
     primary_runtime_base_url = str((rt or {}).get("base_url") or "")
 
     def _matches_primary(candidate) -> bool:
+        # ⤷ 出口 return：返回 credential_pool_matches_provider(candidate, primary_provider…
         return credential_pool_matches_provider(candidate, primary_provider, base_url=primary_runtime_base_url)
 
     def _load_primary_pool():
@@ -1138,6 +1424,7 @@ def restore_primary_runtime(agent) -> bool:
         from agent.credential_pool import load_pool
         key = resolve_runtime_pool_key(primary_provider, primary_runtime_base_url)
         loaded = load_pool(key) if key else None
+        # ⤷ 出口 return：返回 loaded if loaded is not None and _matches_primary(loaded) el…
         return loaded if loaded is not None and _matches_primary(loaded) else None
     blocked, prefetched_pool, prefetched = _primary_reset_gate_blocks(
         agent, rt, primary_provider, primary_runtime_base_url, _matches_primary, _load_primary_pool
@@ -1150,6 +1437,7 @@ def restore_primary_runtime(agent) -> bool:
         fallback_route = (getattr(agent, "model", ""), getattr(agent, "provider", ""))
     previous_model, previous_provider = (str(v or "unknown") for v in fallback_route)
     provider_fallback_active = bool(getattr(agent, "_provider_fallback_active", False))
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _apply_primary_runtime_fields(agent, rt)
         _restore_runtime_capabilities(agent, rt)
@@ -1212,6 +1500,11 @@ _INLINE_REASONING_PATTERNS = tuple(
 )
 
 
+# ┌── 函数 def extract_reasoning()
+# │  作用：Reasoning text from ``reasoning`` / ``reasoning_content`` / ``reasoning_details``
+# │  参数：agent, assistant_message
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def extract_reasoning(agent, assistant_message) -> Optional[str]:
     """Reasoning text from ``reasoning`` / ``reasoning_content`` / ``reasoning_details``
     (OpenRouter unified), else inline thinking blocks in the content; None when absent."""
@@ -1242,9 +1535,15 @@ def extract_reasoning(agent, assistant_message) -> Optional[str]:
         for pattern in _INLINE_REASONING_PATTERNS:
             for block in pattern.findall(content):
                 _add(block.strip())
+    # ⤷ 出口 return：返回 '\n\n'.join(parts) if parts else None
     return "\n\n".join(parts) if parts else None
 
 
+# ┌── 函数 def _api_error_debug_info()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：error: Exception
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _api_error_debug_info(error: Exception) -> Dict[str, Any]:
     info: Dict[str, Any] = {"type": type(error).__name__, "message": str(error)}
     info.update({
@@ -1253,21 +1552,30 @@ def _api_error_debug_info(error: Exception) -> Dict[str, Any]:
     })
     response_obj = getattr(error, "response", None)
     if response_obj is not None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             info["response_status"] = getattr(response_obj, "status_code", None)
             info["response_text"] = response_obj.text
         except Exception as e:
             _ra().logger.debug("Could not extract error response details: %s", e)
+    # ⤷ 出口 return：返回 info
     return info
 
 
+# ┌── 函数 def dump_api_request_debug()
+# │  作用：Dump the request body from api_kwargs (minus transport keys) for debugging provider 4xx failures.
+# │  参数：agent, api_kwargs: Dict[str, Any], reason: str, error: Optional[Exception] = ...
+# │  返回：Optional[Path]
+# └──────────────────────────────────────────────────────────────
 def dump_api_request_debug(
     agent, api_kwargs: Dict[str, Any], *, reason: str, error: Optional[Exception] = None
 ) -> Optional[Path]:
     """Dump the request body from api_kwargs (minus transport keys) for debugging provider 4xx failures."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         body = {k: v for k, v in copy.deepcopy(api_kwargs).items() if v is not None and k != "timeout"}
         api_key = None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             api_key = getattr(agent.client, "api_key", None)
         except Exception as e:
@@ -1300,13 +1608,20 @@ def dump_api_request_debug(
         agent._vprint(f"{agent.log_prefix}🧾 Request debug dump written to: {dump_file}")
         if env_var_enabled("HERMES_DUMP_REQUEST_STDOUT"):
             print(json.dumps(_redacted_payload, ensure_ascii=False, indent=2, default=str))
+        # ⤷ 出口 return：返回 dump_file
         return dump_file
     except Exception as dump_error:
         if agent.verbose_logging:
             logger.warning("Failed to dump API request debug payload: %s", dump_error)
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _direct_native_anthropic_tool_cache_capability()
+# │  作用：Return whether this resolved destination accepts native tool markers.
+# │  参数：agent, provider: Optional[str] = ..., base_url: Optional[str] = ..., api_mode: Optional[str] = ..., model: Optional[str] = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _direct_native_anthropic_tool_cache_capability(
     agent, *, provider: Optional[str] = None, base_url: Optional[str] = None,
     api_mode: Optional[str] = None, model: Optional[str] = None,
@@ -1314,6 +1629,7 @@ def _direct_native_anthropic_tool_cache_capability(
     """Return whether this resolved destination accepts native tool markers."""
     eff_base_url = base_url if base_url is not None else (agent.base_url or "")
     eff_api_mode = api_mode if api_mode is not None else (agent.api_mode or "")
+    # ⤷ 出口 return：返回 eff_api_mode == 'anthropic_messages' and base_url_hostname(e…
     return eff_api_mode == "anthropic_messages" and base_url_hostname(eff_base_url) == "api.anthropic.com"
 
 
@@ -1321,23 +1637,43 @@ def _direct_native_anthropic_tool_cache_capability(
 VALID_CACHE_TTLS = ("5m", "1h")
 
 
+# ┌── 函数 def cache_ttl_means_disabled()
+# │  作用：True when a ``prompt_caching.cache_ttl`` value means caching off (single predicate shared
+# │  参数：ttl: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def cache_ttl_means_disabled(ttl: Any) -> bool:
     """True when a ``prompt_caching.cache_ttl`` value means caching off (single predicate shared
     by ``agent_init`` and the stub policy paths). Unknown values (``"2h"``, ints) are NOT a disable."""
     if ttl in VALID_CACHE_TTLS:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 ttl is False or ttl is None or str(ttl).lower() in ('off', '…
     return ttl is False or ttl is None or str(ttl).lower() in ("off", "false", "disabled", "no", "none")
 
 
+# ┌── 函数 def _raw_cache_ttl_from_config()
+# │  作用：Raw ``prompt_caching.cache_ttl`` config value, or ``default`` when config cannot be read.
+# │  参数：default: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _raw_cache_ttl_from_config(default: Any) -> Any:
     """Raw ``prompt_caching.cache_ttl`` config value, or ``default`` when config cannot be read."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config_readonly
+        # ⤷ 出口 return：返回 (load_config_readonly().get('prompt_caching', {}) or {}).get…
         return (load_config_readonly().get("prompt_caching", {}) or {}).get("cache_ttl", "5m")
     except Exception:
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def prompt_caching_disabled_from_config()
+# │  作用：True when ``prompt_caching.cache_ttl`` is configured as off (same detection as ``agent_init``).
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def prompt_caching_disabled_from_config() -> bool:
     """True when ``prompt_caching.cache_ttl`` is configured as off (same detection as ``agent_init``).
 
@@ -1345,25 +1681,43 @@ def prompt_caching_disabled_from_config() -> bool:
     (MoA slot decoration, auxiliary fallback replan) honor the same config contract without holding a live
     ``AIAgent`` (#76085 / #33555).
     """
+    # ⤷ 出口 return：返回 cache_ttl_means_disabled(_raw_cache_ttl_from_config('5m'))
     return cache_ttl_means_disabled(_raw_cache_ttl_from_config("5m"))
 
 
+# ┌── 函数 def configured_cache_ttl()
+# │  作用：Configured ``prompt_caching.cache_ttl`` tier (``5m``/``1h``), else None; mirrors
+# │  参数：无
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def configured_cache_ttl() -> Optional[str]:
     """Configured ``prompt_caching.cache_ttl`` tier (``5m``/``1h``), else None; mirrors
     ``agent_init`` so stub paths don't regress a configured ``1h`` to 5m."""
     ttl = _raw_cache_ttl_from_config(None)
+    # ⤷ 出口 return：返回 ttl if ttl in VALID_CACHE_TTLS else None
     return ttl if ttl in VALID_CACHE_TTLS else None
 
 
+# ┌── 函数 def blank_cache_policy_stub()
+# │  作用：Destination-identity-blank stub for ``anthropic_prompt_cache_policy``; the sole sanctioned
+# │  参数：cache_disabled: Optional[bool] = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def blank_cache_policy_stub(cache_disabled: Optional[bool] = None):
     """Destination-identity-blank stub for ``anthropic_prompt_cache_policy``; the sole sanctioned
     constructor so ``_cache_disabled`` is never omitted (None consults the global config)."""
     from types import SimpleNamespace
     if cache_disabled is None:
         cache_disabled = prompt_caching_disabled_from_config()
+    # ⤷ 出口 return：返回 SimpleNamespace(provider='', base_url='', api_mode='', model…
     return SimpleNamespace(provider="", base_url="", api_mode="", model="", _cache_disabled=bool(cache_disabled))
 
 
+# ┌── 函数 def plan_cache_sections_for_destination()
+# │  作用：Plan request-local cache sections for one resolved destination (MoA / auxiliary senders):
+# │  参数：messages: list, tools: Optional[list], provider: str, base_url: str, api_mode: str, model: str, cache_disabled: Optional[bool] = ..., cache_ttl: Optional[str] = ...  …共 9 个
+# │  返回：Tuple[list, list]
+# └──────────────────────────────────────────────────────────────
 def plan_cache_sections_for_destination(
     messages: list, tools: Optional[list], *, provider: str, base_url: str, api_mode: str,
     model: str, cache_disabled: Optional[bool] = None, cache_ttl: Optional[str] = None,
@@ -1390,6 +1744,7 @@ def plan_cache_sections_for_destination(
     if not should_cache:
         canonical_messages = copy.deepcopy(messages or [])
         strip_anthropic_cache_control(canonical_messages)
+        # ⤷ 出口 return：返回 (canonical_messages, strip_anthropic_tool_cache_control(tool…
         return canonical_messages, strip_anthropic_tool_cache_control(tools)
     plan = build_prompt_cache_plan(
         messages, tools,
@@ -1402,25 +1757,45 @@ def plan_cache_sections_for_destination(
         # non-retryable 400.
         tool_part_markers=envelope_tool_part_cache_markers_supported(provider, base_url),
     )
+    # ⤷ 出口 return：返回 (plan.messages, plan.tools)
     return plan.messages, plan.tools
 
 
+# ┌── 函数 def _is_litellm_route()
+# │  作用：True when a route is a LiteLLM proxy: ``litellm`` as a whole delimited token (not
+# │  参数：provider_lower: str, base_url: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_litellm_route(provider_lower: str, base_url: str) -> bool:
     """True when a route is a LiteLLM proxy: ``litellm`` as a whole delimited token (not
     substring) in the provider id or host; a path segment never qualifies."""
+    # ⤷ 出口 return：返回 _has_litellm_token(provider_lower, ':-_/') or _has_litellm_t…
     return _has_litellm_token(provider_lower, ":-_/") or _has_litellm_token(base_url_hostname(base_url), ".-")
 
 
+# ┌── 函数 def _has_litellm_token()
+# │  作用：True when ``value`` contains ``litellm`` as a whole delimited token.
+# │  参数：value: str, delimiters: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_litellm_token(value: str, delimiters: str) -> bool:
     """True when ``value`` contains ``litellm`` as a whole delimited token."""
     if not value:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 'litellm' in value.translate(str.maketrans(delimiters, ' ' *…
     return "litellm" in value.translate(str.maketrans(delimiters, " " * len(delimiters))).split()
 
 
+# ┌── 函数 def _moa_aggregator_cache_policy()
+# │  作用：MoA virtual provider: resolve the policy from the preset's real aggregator slot (the
+# │  参数：agent, eff_model: str
+# │  返回：tuple[bool, bool]
+# └──────────────────────────────────────────────────────────────
 def _moa_aggregator_cache_policy(agent, eff_model: str) -> tuple[bool, bool]:
     """MoA virtual provider: resolve the policy from the preset's real aggregator slot (the
     virtual provider matches no caching branch and would silently lose caching)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import load_config as _load_moa_cfg
         from hermes_cli.moa_config import resolve_moa_preset
@@ -1434,14 +1809,21 @@ def _moa_aggregator_cache_policy(agent, eff_model: str) -> tuple[bool, bool]:
                 rt = resolve_runtime_provider(requested=agg_provider, target_model=agg_model)
                 agg_base_url = rt.get("base_url") or ""
                 agg_api_mode = rt.get("api_mode") or ""
+            # ⤷ 出口 return：返回 anthropic_prompt_cache_policy(agent, provider=agg_provider, …
             return anthropic_prompt_cache_policy(
                 agent, provider=agg_provider, base_url=agg_base_url, api_mode=agg_api_mode, model=agg_model
             )
     except Exception as _moa_exc:  # pragma: no cover - defensive
         logger.debug("MoA aggregator cache-policy resolution failed: %s", _moa_exc)
+    # ⤷ 出口 return：返回 (False, False)
     return False, False
 
 
+# ┌── 函数 def _route_may_be_custom()
+# │  作用：Cheap identity gate deciding whether a custom-provider capability lookup is worth running.
+# │  参数：agent, eff_provider: str, provider_lower: str, eff_base_url: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _route_may_be_custom(agent, eff_provider: str, provider_lower: str, eff_base_url: str) -> bool:
     """Cheap identity gate deciding whether a custom-provider capability lookup is worth running."""
     custom_providers = getattr(agent, "_custom_providers", None)
@@ -1452,29 +1834,39 @@ def _route_may_be_custom(agent, eff_provider: str, provider_lower: str, eff_base
         from hermes_cli.route_identity import normalize_route_base_url
         provider_ids = {provider_lower, provider_lower.removeprefix("custom:")}
         eff_url_normalized = normalize_route_base_url(eff_base_url)
+        # ⤷ 出口 return：返回 any((provider_ids & custom_provider_aliases(str(entry.get('n…
         return any(
             provider_ids & custom_provider_aliases(str(entry.get("name") or ""), str(entry.get("provider_key") or ""))
             or (eff_url_normalized and normalize_route_base_url(entry.get("base_url")) == eff_url_normalized)
             for entry in custom_providers if isinstance(entry, dict)
         )
     if custom_providers is not None:
+        # ⤷ 出口 return：返回 False
         return False  # attached empty list never matches
     # None = list not attached yet (early init or blank stub). Avoid rebuilding the list for
     # ordinary built-in routes.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.providers import get_provider
         # allow_network=False: never trigger a registry fetch from the send path; a catalog miss
         # degrades to the conservative capability lookup.
         provider_def = get_provider(eff_provider, allow_network=False)
+        # ⤷ 出口 return：返回 provider_def is None or (bool(provider_def.base_url) and bas…
         return provider_def is None or (
             bool(provider_def.base_url)
             and base_url_hostname(provider_def.base_url) != base_url_hostname(eff_base_url)
         )
     except Exception as _pd_exc:
         logger.debug("provider lookup failed during cache-policy pre-gate: %s", _pd_exc)
+        # ⤷ 出口 return：返回 provider_lower.startswith('custom:')
         return provider_lower.startswith("custom:")
 
 
+# ┌── 函数 def anthropic_prompt_cache_policy()
+# │  作用：Decide whether to apply Anthropic prompt caching; returns ``(should_cache, use_native_layout)``.
+# │  参数：agent, provider: Optional[str] = ..., base_url: Optional[str] = ..., api_mode: Optional[str] = ..., model: Optional[str] = ...
+# │  返回：tuple[bool, bool]
+# └──────────────────────────────────────────────────────────────
 def anthropic_prompt_cache_policy(
     agent, *, provider: Optional[str] = None, base_url: Optional[str] = None,
     api_mode: Optional[str] = None, model: Optional[str] = None,
@@ -1491,12 +1883,14 @@ def anthropic_prompt_cache_policy(
     re-billing the full prompt on every turn.
     """
     if getattr(agent, "_cache_disabled", False):
+        # ⤷ 出口 return：返回 (False, False)
         return (False, False)
     eff_provider = (provider if provider is not None else agent.provider) or ""
     eff_base_url = base_url if base_url is not None else (agent.base_url or "")
     eff_api_mode = api_mode if api_mode is not None else (agent.api_mode or "")
     eff_model = (model if model is not None else agent.model) or ""
     if eff_provider.strip().lower() == "moa":
+        # ⤷ 出口 return：返回 _moa_aggregator_cache_policy(agent, eff_model)
         return _moa_aggregator_cache_policy(agent, eff_model)
     if isinstance(eff_model, dict):
         eff_model = eff_model.get('model') or eff_model.get('default') or ''
@@ -1530,6 +1924,7 @@ def anthropic_prompt_cache_policy(
         or litellm_openai_wire
         or _route_may_be_custom(agent, eff_provider, provider_lower, eff_base_url)
     ):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import get_custom_provider_model_capability
             custom_prompt_caching = get_custom_provider_model_capability(
@@ -1554,10 +1949,12 @@ def anthropic_prompt_cache_policy(
         if _model_name_suggests_minimax_m3(eff_model):
             return False, False
     if is_native_anthropic:
+        # ⤷ 出口 return：返回 (True, True)
         return True, True
     # Envelope layout is OpenAI-wire only; Portal Claude on native Messages must fall through to the
     # anthropic_messages branch (inner-block markers) or it serves 0% cache hits.
     if (is_openrouter or is_nous_portal) and (is_claude or is_kimi) and not is_anthropic_wire:
+        # ⤷ 出口 return：返回 (True, False)
         return True, False
     # Nous Portal Qwen takes the envelope path too; the alibaba-family check below only matches
     # provider=opencode/alibaba and would leave Portal traffic uncached.
@@ -1586,21 +1983,30 @@ def anthropic_prompt_cache_policy(
     from agent.prompt_caching import ALIBABA_FAMILY_PROVIDERS, is_qwen_model
     if provider_lower in ALIBABA_FAMILY_PROVIDERS and is_qwen_model(model_lower):
         return True, False
+    # ⤷ 出口 return：返回 (False, False)
     return False, False
 
 
+# ┌── 函数 def _provider_supplied_client()
+# │  作用：Ask the registered ProviderProfile for a custom client, if any. Resolves by provider name,
+# │  参数：agent, client_kwargs: dict
+# │  返回：Any | None
+# └──────────────────────────────────────────────────────────────
 def _provider_supplied_client(agent, client_kwargs: dict) -> Any | None:
     """Ask the registered ProviderProfile for a custom client, if any. Resolves by provider name,
     then by ``base_url`` prefix so a URL-only runtime (``acp://…``) still reaches its profile.
     A profile that raises is logged and skipped: a third-party plugin must not be able to take
     the turn down, it can only fail to provide a client."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from providers import get_provider_profile
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
     profile = None
     provider_name = (getattr(agent, "provider", "") or "").strip()
     if provider_name:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             profile = get_provider_profile(provider_name)
         except Exception:
@@ -1610,8 +2016,11 @@ def _provider_supplied_client(agent, client_kwargs: dict) -> Any | None:
         if base_url:
             profile = _profile_for_base_url(base_url)
     if profile is None:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 profile.create_client(**client_kwargs)
         return profile.create_client(**client_kwargs)
     except Exception:
         _ra().logger.warning(
@@ -1621,27 +2030,42 @@ def _provider_supplied_client(agent, client_kwargs: dict) -> Any | None:
         return None
 
 
+# ┌── 函数 def _profile_for_base_url()
+# │  作用：Registered profile whose own base_url is a prefix of ``base_url`` (provider name did not
+# │  参数：base_url: str
+# │  返回：Any | None
+# └──────────────────────────────────────────────────────────────
 def _profile_for_base_url(base_url: str) -> Any | None:
     """Registered profile whose own base_url is a prefix of ``base_url`` (provider name did not
     resolve). Prefix, not equality: the replaced copilot-acp branch keyed on
     ``startswith("acp://copilot")``, so a path or user override under the same root must resolve."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from providers import list_providers
         candidates = list_providers()
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
     target = base_url.rstrip("/").lower()
     for candidate in candidates or []:
         own = str(getattr(candidate, "base_url", "") or "").rstrip("/").lower()
         if own and (target == own or target.startswith(own + "/")):
+            # ⤷ 出口 return：返回 candidate
             return candidate
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _ensure_copilot_headers()
+# │  作用：Defense-in-depth: recovery/restore rebuild from a snapshot without re-running header
+# │  参数：client_kwargs: dict
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _ensure_copilot_headers(client_kwargs: dict) -> None:
     """Defense-in-depth: recovery/restore rebuild from a snapshot without re-running header
     wiring; a missing Copilot-Integration-Id causes model_not_available_for_integrator 400s.
     Only ADD missing keys, never override."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         if base_url_host_matches(str(client_kwargs.get("base_url", "")), "githubcopilot.com"):
             from hermes_cli.models import copilot_default_headers
@@ -1655,11 +2079,17 @@ def _ensure_copilot_headers(client_kwargs: dict) -> None:
         _ra().logger.debug("Copilot default-header guard skipped", exc_info=True)
 
 
+# ┌── 函数 def _gemini_native_client()
+# │  作用：Native Gemini client when the base_url is the Gemini API, else None.
+# │  参数：agent, client_kwargs: dict, httpx_verify, reason: str, shared: bool
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _gemini_native_client(agent, client_kwargs: dict, httpx_verify, *, reason: str, shared: bool):
     """Native Gemini client when the base_url is the Gemini API, else None."""
     from agent.gemini_native_adapter import GeminiNativeClient, is_native_gemini_base_url
     base_url = str(client_kwargs.get("base_url", "") or "")
     if not is_native_gemini_base_url(base_url):
+        # ⤷ 出口 return：返回 None
         return None
     safe_kwargs = {
         k: v for k, v in client_kwargs.items()
@@ -1673,9 +2103,15 @@ def _gemini_native_client(agent, client_kwargs: dict, httpx_verify, *, reason: s
     _ra().logger.info(
         "Gemini native client created (%s, shared=%s) %s", reason, shared, agent._client_log_context()
     )
+    # ⤷ 出口 return：返回 client
     return client
 
 
+# ┌── 函数 def create_openai_client()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：agent, client_kwargs: dict, reason: str, shared: bool
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: bool) -> Any:
     from agent.auxiliary_client import _validate_base_url, _validate_proxy_env_urls
     from agent.ssl_verify import resolve_httpx_verify
@@ -1688,6 +2124,7 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
     # that specific path; this copy locks the contract so future transport/keepalive work can't reintroduce
     # the same class of bug.
     client_kwargs = dict(client_kwargs)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from providers import get_provider_profile
 
@@ -1708,6 +2145,7 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
     # re-wires the reference relay, see #53802).
     if (getattr(agent, "provider", "") or "").strip().lower() == "moa":
         from agent.moa_loop import build_moa_facade
+        # ⤷ 出口 return：返回 build_moa_facade(agent, getattr(agent, 'model', None) or 'de…
         return build_moa_facade(agent, getattr(agent, "model", None) or "default")
     ssl_ca_cert = client_kwargs.pop("ssl_ca_cert", None)
     ssl_verify_cfg = client_kwargs.pop("ssl_verify", None)
@@ -1728,11 +2166,13 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
             "%s client created from provider profile (%s, shared=%s) %s",
             agent.provider, reason, shared, agent._client_log_context(),
         )
+        # ⤷ 出口 return：返回 provider_client
         return provider_client
     from agent.auxiliary_client import _GEMINI_NATIVE_PROVIDER_NAMES
     if agent.provider in _GEMINI_NATIVE_PROVIDER_NAMES:
         client = _gemini_native_client(agent, client_kwargs, httpx_verify, reason=reason, shared=shared)
         if client is not None:
+            # ⤷ 出口 return：返回 client
             return client
     # TCP keepalives so dead provider connections are detected (~60s) instead of hanging in
     # CLOSE-WAIT. Injected into the local copy only, so each client gets its own httpx.Client;
@@ -1789,9 +2229,15 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
     from agent import process_bootstrap
     client = process_bootstrap.OpenAI(**client_kwargs)
     _ra().logger.info("OpenAI client created (%s, shared=%s) %s", reason, shared, agent._client_log_context())
+    # ⤷ 出口 return：返回 client
     return client
 
 
+# ┌── 函数 def _apply_switched_provider_request_overrides()
+# │  作用：Re-derive the switched-to provider's ``request_overrides`` (custom_providers ``extra_body``).
+# │  参数：agent, new_provider
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _apply_switched_provider_request_overrides(agent, new_provider):
     """Re-derive the switched-to provider's ``request_overrides`` (custom_providers ``extra_body``).
     Matches by provider key, base_url AND model (same rule as
@@ -1801,6 +2247,7 @@ def _apply_switched_provider_request_overrides(agent, new_provider):
     # Prefer the init-time cache (agent._custom_providers); reload only if absent.
     custom_providers = getattr(agent, "_custom_providers", None)
     if custom_providers is None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import load_config, get_compatible_custom_providers
             custom_providers = get_compatible_custom_providers(load_config())
@@ -1827,6 +2274,11 @@ _SWITCH_SNAPSHOT_FIELDS = (
 _MISSING = object()
 
 
+# ┌── 函数 def _snapshot_switch_state()
+# │  作用：Snapshot every field the swap+rebuild mutates so a failed rebuild rolls back atomically
+# │  参数：agent
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _snapshot_switch_state(agent) -> Dict[str, Any]:
     """Snapshot every field the swap+rebuild mutates so a failed rebuild rolls back atomically
     (else a new model name + OLD client 400s next turn). The sentinel distinguishes unset from
@@ -1834,9 +2286,15 @@ def _snapshot_switch_state(agent) -> Dict[str, Any]:
     snapshot = {name: getattr(agent, name, _MISSING) for name in _SWITCH_SNAPSHOT_FIELDS}
     # Shallow-copy the dict so mutating the live one doesn't poison the rollback target.
     snapshot["_client_kwargs"] = dict(getattr(agent, "_client_kwargs", {}) or {})
+    # ⤷ 出口 return：返回 snapshot
     return snapshot
 
 
+# ┌── 函数 def _restore_switch_snapshot()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, snapshot: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _restore_switch_snapshot(agent, snapshot: Dict[str, Any]) -> None:
     for name, value in snapshot.items():
         if value is _MISSING:
@@ -1845,6 +2303,11 @@ def _restore_switch_snapshot(agent, snapshot: Dict[str, Any]) -> None:
             setattr(agent, name, value)
 
 
+# ┌── 函数 def _resolve_switch_destination()
+# │  作用：Resolve ``(api_mode, base_url, destination_capabilities)`` for the switch target.
+# │  参数：agent, new_model, new_provider, base_url, api_mode, capabilities, old_norm, new_norm
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _resolve_switch_destination(agent, new_model, new_provider, base_url, api_mode, capabilities, old_norm, new_norm):
     """Resolve ``(api_mode, base_url, destination_capabilities)`` for the switch target."""
     from hermes_cli.providers import determine_api_mode, is_actual_route
@@ -1883,9 +2346,15 @@ def _resolve_switch_destination(agent, new_model, new_provider, base_url, api_mo
         and base_url
     ):
         base_url = re.sub(r"/v1/?$", "", base_url)
+    # ⤷ 出口 return：返回 (api_mode, base_url, destination_capabilities)
     return api_mode, base_url, destination_capabilities
 
 
+# ┌── 函数 def _build_switched_client()
+# │  作用：Build the client for the switched-to destination (MoA facade / native Anthropic / OpenAI wire).
+# │  参数：agent, new_provider, api_key, base_url, api_mode, new_norm
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _build_switched_client(agent, new_provider, api_key, base_url, api_mode, new_norm) -> None:
     """Build the client for the switched-to destination (MoA facade / native Anthropic / OpenAI wire)."""
     if new_norm == "moa":
@@ -1915,6 +2384,7 @@ def _build_switched_client(agent, new_provider, api_key, base_url, api_mode, new
         # MiniMax OAuth: per-request callable token provider survives 15-min expiry (rationale in
         # agent_init.py).
         if new_provider == "minimax-oauth" and isinstance(effective_key, str) and effective_key:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.auth import build_minimax_oauth_token_provider
                 effective_key = build_minimax_oauth_token_provider()
@@ -1935,6 +2405,7 @@ def _build_switched_client(agent, new_provider, api_key, base_url, api_mode, new
         return
     effective_base = base_url or agent.base_url
     agent._client_kwargs = {"api_key": api_key or agent.api_key, "base_url": effective_base}
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import (
             apply_custom_provider_tls_to_client_kwargs, get_compatible_custom_providers,
@@ -1960,6 +2431,11 @@ def _build_switched_client(agent, new_provider, api_key, base_url, api_mode, new
     agent.client = agent._create_openai_client(dict(agent._client_kwargs), reason="switch_model", shared=True)
 
 
+# ┌── 函数 def _swap_switch_runtime()
+# │  作用：Swap identity/transport fields, reload the pool, rebuild the client (rolled back by the caller on error).
+# │  参数：agent, new_model, new_provider, api_key, base_url, api_mode, old_provider, old_norm  …共 9 个
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _swap_switch_runtime(agent, new_model, new_provider, api_key, base_url, api_mode, old_provider, old_norm, new_norm) -> None:
     """Swap identity/transport fields, reload the pool, rebuild the client (rolled back by the caller on error)."""
     # Clear the per-config override so the new model's context window is re-resolved.
@@ -1974,6 +2450,7 @@ def _swap_switch_runtime(agent, new_model, new_provider, api_key, base_url, api_
     if base_url:
         agent.base_url = base_url
     elif old_norm != new_norm:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise ValueError(
             f"switch_model: no base_url resolved for provider "
             f"'{new_provider}' (switching from '{old_provider}'); "
@@ -1991,6 +2468,7 @@ def _swap_switch_runtime(agent, new_model, new_provider, api_key, base_url, api_
         # A pool bound to the old provider is worse than none: the recovery guard rejects it.
         agent._credential_pool = None
         agent._credential_pool_entry_id = None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.credential_pool import load_pool
             agent._credential_pool = load_pool(new_provider)
@@ -2003,9 +2481,15 @@ def _swap_switch_runtime(agent, new_model, new_provider, api_key, base_url, api_
     sync_credential_pool_entry_id(agent)
 
 
+# ┌── 函数 def _resolve_switch_context_length()
+# │  作用：Resolve the destination context length (LM Studio preload first); returns ``(custom_providers, effective_len)``.
+# │  参数：agent, snapshot
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _resolve_switch_context_length(agent, snapshot):
     """Resolve the destination context length (LM Studio preload first); returns ``(custom_providers, effective_len)``."""
     custom_providers = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import (
             get_compatible_custom_providers, get_custom_provider_context_length, load_config
@@ -2019,10 +2503,12 @@ def _resolve_switch_context_length(agent, snapshot):
     agent._config_context_length = intent
     runtime_len = None
     if hasattr(agent, "_ensure_lmstudio_runtime_loaded"):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             runtime_len = agent._ensure_lmstudio_runtime_loaded(intent)
         except Exception:
             _restore_switch_snapshot(agent, snapshot)
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
     if hasattr(agent, "_lmstudio_load_was_unverified") and agent._lmstudio_load_was_unverified(runtime_len):
         logger.warning(
@@ -2033,13 +2519,20 @@ def _resolve_switch_context_length(agent, snapshot):
     effective = intent
     if hasattr(agent, "_effective_lmstudio_context_length"):
         effective = agent._effective_lmstudio_context_length(intent, runtime_len)
+    # ⤷ 出口 return：返回 (custom_providers, effective)
     return custom_providers, effective
 
 
+# ┌── 函数 def _update_switch_compressor()
+# │  作用：Point the context compressor at the new model (rolls back the switch on failure).
+# │  参数：agent, custom_providers, effective_context_length, snapshot
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _update_switch_compressor(agent, custom_providers, effective_context_length, snapshot) -> None:
     """Point the context compressor at the new model (rolls back the switch on failure)."""
     from agent.model_metadata import get_model_context_length
     if custom_providers is None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import get_compatible_custom_providers, load_config
             custom_providers = get_compatible_custom_providers(load_config())
@@ -2048,6 +2541,7 @@ def _update_switch_compressor(agent, custom_providers, effective_context_length,
     # agent.api_key may be a callable (Azure Foundry Entra ID); get_model_context_length expects a
     # string for live probes, so coerce defensively.
     ctx_api_key = agent.api_key if isinstance(agent.api_key, str) else ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         new_context_length = get_model_context_length(
             agent.model, base_url=agent.base_url, api_key=ctx_api_key, provider=agent.provider,
@@ -2063,9 +2557,15 @@ def _update_switch_compressor(agent, custom_providers, effective_context_length,
         )
     except Exception:
         _restore_switch_snapshot(agent, snapshot)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
 
 
+# ┌── 函数 def _build_primary_runtime_snapshot()
+# │  作用：The ``_primary_runtime`` record that persists a switch across turns.
+# │  参数：agent, api_mode
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _build_primary_runtime_snapshot(agent, api_mode) -> Dict[str, Any]:
     """The ``_primary_runtime`` record that persists a switch across turns."""
     cc = getattr(agent, "context_compressor", None) or None
@@ -2100,9 +2600,15 @@ def _build_primary_runtime_snapshot(agent, api_mode) -> Dict[str, Any]:
             "anthropic_base_url": agent._anthropic_base_url,
             "is_anthropic_oauth": agent._is_anthropic_oauth,
         })
+    # ⤷ 出口 return：返回 rt
     return rt
 
 
+# ┌── 函数 def _finish_switch()
+# │  作用：Post-switch bookkeeping: fallback reset/prune, request_overrides, billing route.
+# │  参数：agent, new_provider, old_norm, new_norm
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _finish_switch(agent, new_provider, old_norm, new_norm) -> None:
     """Post-switch bookkeeping: fallback reset/prune, request_overrides, billing route."""
     agent._fallback_activated = False
@@ -2120,12 +2626,18 @@ def _finish_switch(agent, new_provider, old_norm, new_norm) -> None:
     agent._fallback_chain = fallback_chain
     agent._fallback_model = fallback_chain[0] if fallback_chain else None
     # Apply the switched-to provider's request_overrides (custom_providers extra_body).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _apply_switched_provider_request_overrides(agent, new_provider)
     except Exception:
         logger.debug("switch_model: request_overrides re-derivation failed", exc_info=True)
 
 
+# ┌── 函数 def _persist_switch_billing_route()
+# │  作用：Persist the billing route so dashboard Model cards show the post-switch provider.
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _persist_switch_billing_route(agent) -> None:
     """Persist the billing route so dashboard Model cards show the post-switch provider."""
     # _session_db / session_id may be unset (tests, bare agents).
@@ -2133,6 +2645,7 @@ def _persist_switch_billing_route(agent) -> None:
     session_id = getattr(agent, "session_id", None)
     if session_db is None or not session_id:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         session_db.update_session_billing_route(
             session_id, provider=agent.provider, base_url=agent.base_url,
@@ -2142,6 +2655,11 @@ def _persist_switch_billing_route(agent) -> None:
         logger.warning("Failed to persist billing route after model switch", exc_info=True)
 
 
+# ┌── 函数 def switch_model()
+# │  作用：Switch the model/provider in-place for a live agent (rebuild clients, caching flags,
+# │  参数：agent, new_model, new_provider, api_key = '', base_url = '', api_mode = '', capabilities = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def switch_model(
     agent, new_model, new_provider, api_key='', base_url='', api_mode='', capabilities=None
 ):
@@ -2163,12 +2681,14 @@ def switch_model(
         agent, new_model, new_provider, base_url, api_mode, capabilities, old_norm, new_norm
     )
     snapshot = _snapshot_switch_state(agent)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _swap_switch_runtime(
             agent, new_model, new_provider, api_key, base_url, api_mode, old_provider, old_norm, new_norm
         )
     except Exception:
         _restore_switch_snapshot(agent, snapshot)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
     custom_providers, effective_context_length = _resolve_switch_context_length(agent, snapshot)
     # Refresh the custom-provider snapshot from the config just loaded so the prompt_caching lookup
@@ -2182,6 +2702,7 @@ def switch_model(
         _update_switch_compressor(agent, custom_providers, effective_context_length, snapshot)
     # Re-read the per-model reasoning_effort override so it applies immediately (per-model > global;
     # YAML False = disabled).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_constants import resolve_reasoning_config
         from hermes_cli.config import load_config as _sm_load_config
@@ -2209,8 +2730,14 @@ def switch_model(
     _persist_switch_billing_route(agent)
 
 
+# ┌── 函数 def _pre_tool_block_message()
+# │  作用：Plugin pre-tool-call hook verdict: ``(block_message, function_args)``; failures never block.
+# │  参数：agent, function_name, function_args, effective_task_id, tool_call_id, middleware_trace
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _pre_tool_block_message(agent, function_name, function_args, effective_task_id, tool_call_id, middleware_trace):
     """Plugin pre-tool-call hook verdict: ``(block_message, function_args)``; failures never block."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import _dispatch_pre_tool_call_hooks
         block_message, modified_args = _dispatch_pre_tool_call_hooks(
@@ -2220,11 +2747,18 @@ def _pre_tool_block_message(agent, function_name, function_args, effective_task_
             api_request_id=getattr(agent, "_current_api_request_id", "") or "",
             middleware_trace=list(middleware_trace),
         )
+        # ⤷ 出口 return：返回 (block_message, modified_args if modified_args is not None e…
         return block_message, (modified_args if modified_args is not None else function_args)
     except Exception:
+        # ⤷ 出口 return：返回 (None, function_args)
         return None, function_args
 
 
+# ┌── 函数 def invoke_tool()
+# │  作用：Invoke a single tool (agent-level or registry-dispatched) and return the result string;
+# │  参数：agent, function_name: str, function_args: dict, effective_task_id: str, tool_call_id: Optional[str] = None, messages: list = None, pre_tool_block_checked: bool = False, skip_tool_request_middleware: bool = False  …共 10 个
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def invoke_tool(agent, function_name: str, function_args: dict, effective_task_id: str,
                  tool_call_id: Optional[str] = None, messages: list = None,
                  pre_tool_block_checked: bool = False,
@@ -2241,6 +2775,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
         function_args = {}
     hook_ids = tool_hook_ids(agent, effective_task_id, tool_call_id)
     _tool_middleware_trace = list(tool_request_middleware_trace or [])
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.middleware import apply_tool_request_middleware
         if not skip_tool_request_middleware:
@@ -2262,6 +2797,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             error_type="plugin_block", error_message=block_message,
             middleware_trace=_tool_middleware_trace,
         )
+        # ⤷ 出口 return：返回 result
         return result
     tool_start_time = time.monotonic()
     inline_executor = resolve_invoke_tool_executor(agent, function_name)
@@ -2279,6 +2815,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 duration_ms=int((time.monotonic() - tool_start_time) * 1000),
                 middleware_trace=_tool_middleware_trace,
             )
+            # ⤷ 出口 return：返回 result
             return result
     else:
         def _execute(next_args: dict) -> Any:
@@ -2295,10 +2832,13 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             if skip_tool_execution_middleware:
                 dispatch_kwargs["skip_tool_execution_middleware"] = True
             import model_tools
+            # ⤷ 出口 return：返回 model_tools.handle_function_call(function_name, next_args, e…
             return model_tools.handle_function_call(function_name, next_args, effective_task_id, **dispatch_kwargs)
     if skip_tool_execution_middleware:
+        # ⤷ 出口 return：返回 _execute(function_args)
         return _execute(function_args)
     from hermes_cli.middleware import run_tool_execution_middleware
+    # ⤷ 出口 return：返回 run_tool_execution_middleware(function_name, function_args, …
     return run_tool_execution_middleware(
         function_name, function_args,
         lambda next_args: _execute(next_args if isinstance(next_args, dict) else function_args),
@@ -2306,12 +2846,18 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
     )
 
 
+# ┌── 函数 def repair_tool_call()
+# │  作用：Repair a mismatched tool name (case, separators, CamelCase, ``_tool`` suffixes twice so
+# │  参数：agent, tool_name: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def repair_tool_call(agent, tool_name: str) -> str | None:
     """Repair a mismatched tool name (case, separators, CamelCase, ``_tool`` suffixes twice so
     ``TodoTool_tool`` reduces fully, then fuzzy match) before aborting. Returns the repaired
     name if in valid_tool_names, else None."""
     from difflib import get_close_matches
     if not tool_name:
+        # ⤷ 出口 return：返回 None
         return None
     # VolcEngine api/plan leaks XML attribute fragments into tool_use.name (`terminal"
     # parameter="command" ...`); trim at the first quote/angle bracket. Do NOT split on whitespace:
@@ -2327,19 +2873,23 @@ def repair_tool_call(agent, tool_name: str) -> str | None:
         if _idx > 0:
             tool_name = tool_name[:_idx]
     if not tool_name:
+        # ⤷ 出口 return：返回 None
         return None
     _norm = lambda s: s.lower().replace("-", "_").replace(" ", "_")  # noqa: E731
     _camel_snake = lambda s: re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()  # noqa: E731
 
     def _strip_tool_suffix(s: str) -> str | None:
         lc = s.lower()
+        # ⤷ 出口 return：返回 next((s[:-len(sfx)].rstrip('_-') for sfx in ('_tool', '-tool…
         return next((s[: -len(sfx)].rstrip("_-") for sfx in ("_tool", "-tool", "tool") if lc.endswith(sfx)), None)
     # Cheap fast-paths first.
     lowered = tool_name.lower()
     if lowered in agent.valid_tool_names:
+        # ⤷ 出口 return：返回 lowered
         return lowered
     normalized = _norm(tool_name)
     if normalized in agent.valid_tool_names:
+        # ⤷ 出口 return：返回 normalized
         return normalized
     cands: set[str] = {tool_name, lowered, normalized, _camel_snake(tool_name)}
     for _ in range(2):  # strip trailing tool-suffix up to twice (TodoTool_tool needs it)
@@ -2353,6 +2903,7 @@ def repair_tool_call(agent, tool_name: str) -> str | None:
         if c and c in agent.valid_tool_names:
             return c
     matches = get_close_matches(lowered, agent.valid_tool_names, n=1, cutoff=0.7)
+    # ⤷ 出口 return：返回 matches[0] if matches else None
     return matches[0] if matches else None
 
 
@@ -2381,12 +2932,20 @@ _empty_heal_user_notified: set = set()
 _empty_heal_pending_notice: Dict[str, str] = {}
 
 
+# ┌── 函数 def _content_has_payload()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：content: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _content_has_payload(content: Any) -> bool:
     if isinstance(content, str):
+        # ⤷ 出口 return：返回 bool(content.strip())
         return bool(content.strip())
     if not isinstance(content, list):
+        # ⤷ 出口 return：返回 content not in (None, '')
         return content not in (None, "")
     # Any typed block counts, as long as a text block is not itself blank.
+    # ⤷ 出口 return：返回 any((block.get('type') != 'text' or (isinstance(block.get('t…
     return any(
         (block.get("type") != "text" or (isinstance(block.get("text"), str) and block["text"].strip()))
         if isinstance(block, dict) else bool(block)
@@ -2394,11 +2953,17 @@ def _content_has_payload(content: Any) -> bool:
     )
 
 
+# ┌── 函数 def _msg_has_payload()
+# │  作用：True if ``msg`` carries anything the API treats as non-empty content (text, multimodal
+# │  参数：msg: Dict[str, Any]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _msg_has_payload(msg: Dict[str, Any]) -> bool:
     """True if ``msg`` carries anything the API treats as non-empty content (text, multimodal
     blocks, tool_calls, reasoning). Role-agnostic counterpart of ``AIAgent._is_thinking_only_assistant``.
     Codex Responses item carriers persist with content:"" by design (text lives in codex_*_items
     and is replayed); treating them as payload keeps the repair from rewriting a designed-empty turn."""
+    # ⤷ 出口 return：返回 _content_has_payload(msg.get('content')) or bool(msg.get('to…
     return _content_has_payload(msg.get("content")) or bool(
         msg.get("tool_calls")
         or (isinstance(msg.get("reasoning_content"), str) and msg["reasoning_content"].strip())
@@ -2409,46 +2974,81 @@ def _msg_has_payload(msg: Dict[str, Any]) -> bool:
     )
 
 
+# ┌── 函数 def fill_empty_non_final_wire_payload()
+# │  作用：Write the interrupted placeholder onto an empty non-final wire copy; True when filled.
+# │  参数：msg: Dict[str, Any], is_final: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def fill_empty_non_final_wire_payload(msg: Dict[str, Any], *, is_final: bool) -> bool:
     """Write the interrupted placeholder onto an empty non-final wire copy; True when filled.
     Pass the per-call copy only; durable history must not be mutated."""
     if is_final or not isinstance(msg, dict) or msg.get("role") not in ("user", "assistant"):
+        # ⤷ 出口 return：返回 False
         return False
     if _msg_has_payload(msg):
+        # ⤷ 出口 return：返回 False
         return False
     msg["content"] = _INTERRUPTED_PLACEHOLDER
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _session_id_for_heal_log()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _session_id_for_heal_log() -> str:
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_logging import _session_context
+        # ⤷ 出口 return：返回 str(getattr(_session_context, 'session_id', None) or '')
         return str(getattr(_session_context, "session_id", None) or "")
     except Exception:
+        # ⤷ 出口 return：返回 ''
         return ""
 
 
+# ┌── 函数 def _heal_escalation_threshold()
+# │  作用：Escalation threshold from ``agent.sanitizer_heal_escalation_threshold``, else the module default (fail-safe on any read error).
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _heal_escalation_threshold() -> int:
     """Escalation threshold from ``agent.sanitizer_heal_escalation_threshold``, else the module default (fail-safe on any read error)."""
     with contextlib.suppress(Exception):
         from hermes_cli.config import load_config_readonly
         raw = (load_config_readonly().get("agent", {}) or {}).get("sanitizer_heal_escalation_threshold")
         if raw is not None:
+            # ⤷ 出口 return：返回 int(raw)
             return int(raw)
+    # ⤷ 出口 return：返回 _EMPTY_HEAL_ESCALATE_AFTER
     return _EMPTY_HEAL_ESCALATE_AFTER
 
 
+# ┌── 函数 def consume_pending_sanitizer_heal_notice()
+# │  作用：Drain the one-time user notice for the current session (at most one per session lifetime).
+# │  参数：无
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def consume_pending_sanitizer_heal_notice() -> Optional[str]:
     """Drain the one-time user notice for the current session (at most one per session lifetime).
     Delivered through the status/warning callback, NEVER appended to the conversation context."""
     key = _session_id_for_heal_log() or "-"
     with _empty_heal_log_lock:
+        # ⤷ 出口 return：返回 _empty_heal_pending_notice.pop(key, None)
         return _empty_heal_pending_notice.pop(key, None)
 
 
+# ┌── 函数 def get_sanitizer_heal_stats()
+# │  作用：Read-only per-session sanitiser heal counters (``heal_events``, ``messages_healed``, ``escalated``) for diagnostics.
+# │  参数：无
+# │  返回：Dict[str, Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def get_sanitizer_heal_stats() -> Dict[str, Dict[str, Any]]:
     """Read-only per-session sanitiser heal counters (``heal_events``, ``messages_healed``, ``escalated``) for diagnostics."""
     with _empty_heal_log_lock:
+        # ⤷ 出口 return：返回 {k: {'heal_events': v.get('total_events', v.get('count', 0))…
         return {
             k: {
                 "heal_events": v.get("total_events", v.get("count", 0)),
@@ -2459,6 +3059,11 @@ def get_sanitizer_heal_stats() -> Dict[str, Dict[str, Any]]:
         }
 
 
+# ┌── 函数 def _log_empty_non_final_heal()
+# │  作用：WARNING on the first heals in a window, one ERROR at the threshold, then silent. The
+# │  参数：healed: int
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _log_empty_non_final_heal(healed: int) -> None:
     """WARNING on the first heals in a window, one ERROR at the threshold, then silent. The
     threshold also queues a ONE-TIME out-of-band user notice (drained by
@@ -2511,12 +3116,18 @@ def _log_empty_non_final_heal(healed: int) -> None:
     )
 
 
+# ┌── 函数 def repair_empty_non_final_messages()
+# │  作用：Substitute a placeholder for empty-content non-final messages on the per-call copy.
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def repair_empty_non_final_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Substitute a placeholder for empty-content non-final messages on the per-call copy.
     Anthropic/litellm/Bedrock 400 on any empty non-final message and a persisted stub poisons
     every later turn; repairing the wire copy heals the session in memory. Substitution (not
     deletion) keeps role alternation and tool-call pairing intact. The final message is untouched."""
     if not messages or len(messages) < 2:
+        # ⤷ 出口 return：返回 messages
         return messages
     repaired: List[Dict[str, Any]] = []
     healed = 0
@@ -2531,10 +3142,17 @@ def repair_empty_non_final_messages(messages: List[Dict[str, Any]]) -> List[Dict
             repaired.append(msg)
     if healed:
         _log_empty_non_final_heal(healed)
+        # ⤷ 出口 return：返回 repaired
         return repaired
+    # ⤷ 出口 return：返回 messages
     return messages
 
 
+# ┌── 函数 def _classify_tool_call_orphans()
+# │  作用：Classify orphaned tool-call / tool-result pairs; single source of truth for GLOBAL orphan
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _classify_tool_call_orphans(messages: List[Dict[str, Any]]):
     """Classify orphaned tool-call / tool-result pairs; single source of truth for GLOBAL orphan
     detection. Returns ``(surviving_call_ids, result_call_ids, orphaned_results, missing_tool_calls)``;
@@ -2558,18 +3176,30 @@ def _classify_tool_call_orphans(messages: List[Dict[str, Any]]):
     missing_tool_calls = [
         tc for tc, v in assistant_call_variants if not any(v & rv for rv in surviving_result_variants)
     ]
+    # ⤷ 出口 return：返回 (surviving_call_ids, result_call_ids, orphaned_results, miss…
     return surviving_call_ids, result_call_ids, orphaned_results, missing_tool_calls
 
 
+# ┌── 函数 def _drop_invalid_roles()
+# │  作用：Drop messages whose role the API won't accept.
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _drop_invalid_roles(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Drop messages whose role the API won't accept."""
     valid = _ra().AIAgent._VALID_API_ROLES
     for msg in messages:
         if msg.get("role") not in valid:
             _ra().logger.debug("Pre-call sanitizer: dropping message with invalid role %r", msg.get("role"))
+    # ⤷ 出口 return：返回 [m for m in messages if m.get('role') in valid]
     return [m for m in messages if m.get("role") in valid]
 
 
+# ┌── 函数 def _drop_empty_tool_calls_arrays()
+# │  作用：Strict providers 400 on ``tool_calls: []``; normalize on shallow copies so history stays byte-stable.
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _drop_empty_tool_calls_arrays(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Strict providers 400 on ``tool_calls: []``; normalize on shallow copies so history stays byte-stable."""
     # --- Drop empty / malformed tool_calls arrays on assistant messages --- An assistant message carrying
@@ -2604,13 +3234,20 @@ def _drop_empty_tool_calls_arrays(messages: List[Dict[str, Any]]) -> List[Dict[s
             dropped += 1
         normalized.append(msg)
     if not dropped:
+        # ⤷ 出口 return：返回 messages
         return messages
     _ra().logger.debug(
         "Pre-call sanitizer: dropped empty/invalid tool_calls on %d assistant message(s)", dropped
     )
+    # ⤷ 出口 return：返回 normalized
     return normalized
 
 
+# ┌── 函数 def _repair_nameless_tool_calls()
+# │  作用：Rename empty/missing ``function.name`` to a sentinel (in place): dropping would unpair the
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _repair_nameless_tool_calls(messages: List[Dict[str, Any]]) -> None:
     """Rename empty/missing ``function.name`` to a sentinel (in place): dropping would unpair the
     anti-priming result the dispatch loop keeps for empty-name calls, and Responses adapters
@@ -2641,6 +3278,11 @@ def _repair_nameless_tool_calls(messages: List[Dict[str, Any]]) -> None:
                 tc["function"] = {"name": sentinel, "arguments": "{}"}
 
 
+# ┌── 函数 def _drop_results_without_ids()
+# │  作用：Drop tool results with a missing/empty tool_call_id. Kept explicit (not left to the
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _drop_results_without_ids(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Drop tool results with a missing/empty tool_call_id. Kept explicit (not left to the
     positional walk) for its own log line and so the final-chokepoint guarantee holds for
@@ -2654,9 +3296,15 @@ def _drop_results_without_ids(messages: List[Dict[str, Any]]) -> List[Dict[str, 
             "Pre-call sanitizer: dropped %d tool result(s) with missing/empty tool_call_id",
             len(messages) - len(kept),
         )
+    # ⤷ 出口 return：返回 kept
     return kept
 
 
+# ┌── 函数 def _pair_tool_calls_positionally()
+# │  作用：Positional tool_call <-> tool_result pairing: strict providers (DeepSeek v4, Kimi) require
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _pair_tool_calls_positionally(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Positional tool_call <-> tool_result pairing: strict providers (DeepSeek v4, Kimi) require
     results IMMEDIATELY after their call. Drops positional orphans, stubs unanswered declared
@@ -2683,6 +3331,7 @@ def _pair_tool_calls_positionally(messages: List[Dict[str, Any]]) -> List[Dict[s
     stubs = 0
 
     def _flush_unanswered_stubs() -> None:
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal stubs
         for key in sorted(declared_calls):
             tc, _variants = declared_calls[key]
@@ -2728,9 +3377,15 @@ def _pair_tool_calls_positionally(messages: List[Dict[str, Any]]) -> List[Dict[s
             "Pre-call sanitizer: added %d stub tool result(s) for "
             "positionally unanswered tool call(s)", stubs,
         )
+    # ⤷ 出口 return：返回 paired if dropped or stubs else messages
     return paired if (dropped or stubs) else messages
 
 
+# ┌── 函数 def _dedupe_tool_call_ids()
+# │  作用：Deduplicate tool_call_ids (strict providers 400 on duplicates): collapse duplicates within
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _dedupe_tool_call_ids(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Deduplicate tool_call_ids (strict providers 400 on duplicates): collapse duplicates within
     an assistant message, drop results answering no OUTSTANDING call. Tracks outstanding calls
@@ -2796,13 +3451,20 @@ def _dedupe_tool_call_ids(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
                         del outstanding[variant]
         deduped.append(msg)
     if not removed:
+        # ⤷ 出口 return：返回 messages
         return messages
     _ra().logger.debug(
         "Pre-call sanitizer: removed %d duplicate tool_call_id reference(s)", removed
     )
+    # ⤷ 出口 return：返回 deduped
     return deduped
 
 
+# ┌── 函数 def _realign_tool_result_names()
+# │  作用：Align each tool result's wire ``name`` with its call's function name (per-call copy only):
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _realign_tool_result_names(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Align each tool result's wire ``name`` with its call's function name (per-call copy only):
     Google 400s on a mismatch, routine when tool_search bridges via ``tool_call``."""
@@ -2843,15 +3505,22 @@ def _realign_tool_result_names(messages: List[Dict[str, Any]]) -> List[Dict[str,
                 realigned.append((current, expected))
         aligned.append(msg)
     if not realigned:
+        # ⤷ 出口 return：返回 messages
         return messages
     _ra().logger.debug(
         "Pre-call sanitizer: realigned %d tool result name(s) with their "
         "tool_call function name (%s)", len(realigned),
         ", ".join(f"{was} -> {now}" for was, now in realigned),
     )
+    # ⤷ 出口 return：返回 aligned
     return aligned
 
 
+# ┌── 函数 def sanitize_api_messages()
+# │  作用：Fix orphaned tool_call / tool_result pairs before every LLM call; runs unconditionally (not
+# │  参数：messages: List[Dict[str, Any]]
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def sanitize_api_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Fix orphaned tool_call / tool_result pairs before every LLM call; runs unconditionally (not
     gated on the compressor). Order matters: empty non-final messages are healed first so the
@@ -2863,6 +3532,7 @@ def sanitize_api_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]
     messages = _drop_results_without_ids(messages)
     messages = _pair_tool_calls_positionally(messages)
     messages = _dedupe_tool_call_ids(messages)
+    # ⤷ 出口 return：返回 _realign_tool_result_names(messages)
     return _realign_tool_result_names(messages)
 
 
@@ -2877,6 +3547,11 @@ _ACK_WORKSPACE_MARKERS = (
 )
 
 
+# ┌── 函数 def looks_like_codex_intermediate_ack()
+# │  作用：Detect a planning/ack message that should continue instead of ending the turn.
+# │  参数：agent, user_message: Any, assistant_content: str, messages: List[Dict[str, Any]], require_workspace: bool = True
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def looks_like_codex_intermediate_ack(
     agent, user_message: Any, assistant_content: str, messages: List[Dict[str, Any]],
     require_workspace: bool = True,
@@ -2885,21 +3560,27 @@ def looks_like_codex_intermediate_ack(
     ``require_workspace=False`` (opt-in for all api_modes) drops the filesystem/repo reference
     requirement; future-ack + short-content + no-prior-tools + action-verb checks always apply."""
     if any(isinstance(msg, dict) and msg.get("role") == "tool" for msg in messages):
+        # ⤷ 出口 return：返回 False
         return False
     assistant_text = agent._strip_think_blocks(assistant_content or "").strip().lower()
     if not assistant_text or len(assistant_text) > 1200:
+        # ⤷ 出口 return：返回 False
         return False
     if not _ACK_FUTURE_RE.search(assistant_text):
+        # ⤷ 出口 return：返回 False
         return False
     if not any(marker in assistant_text for marker in _ACK_ACTION_MARKERS):
+        # ⤷ 出口 return：返回 False
         return False
     # Opted-in (all-api_mode) path: future-ack + action verb + no prior tool call suffices.
     if not require_workspace:
+        # ⤷ 出口 return：返回 True
         return True
     # ``user_message`` may be a multi-part content list (vision via the OpenAI-compat server); a
     # list survives ``or ""`` and ``.strip()`` raises, so flatten first.
     from agent.codex_responses_adapter import _summarize_user_message_for_log
     user_text = _summarize_user_message_for_log(user_message).strip().lower()
+    # ⤷ 出口 return：返回 any((marker in user_text for marker in _ACK_WORKSPACE_MARKER…
     return (
         any(marker in user_text for marker in _ACK_WORKSPACE_MARKERS)
         or "~/" in user_text
@@ -2920,11 +3601,18 @@ _TRAILING_CONTINUE_INTENT_RE = re.compile(
 _TRAILING_CONTINUE_INTENT_MAX_CHARS = 400
 
 
+# ┌── 函数 def trailing_continue_intent()
+# │  作用：Whether ``text`` is a short reply ENDING on an announced next action (stall-guard re-prompt trigger).
+# │  参数：text: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def trailing_continue_intent(text: str) -> bool:
     """Whether ``text`` is a short reply ENDING on an announced next action (stall-guard re-prompt trigger)."""
     t = (text or "").strip()
     if not t or len(t) > _TRAILING_CONTINUE_INTENT_MAX_CHARS:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 bool(_TRAILING_CONTINUE_INTENT_RE.search(t[-160:]))
     return bool(_TRAILING_CONTINUE_INTENT_RE.search(t[-160:]))
 
 
@@ -2932,28 +3620,47 @@ _INTENT_ACK_ON = {"true", "always", "yes", "on"}
 _INTENT_ACK_OFF = {"false", "never", "no", "off"}
 
 
+# ┌── 函数 def intent_ack_continuation_mode()
+# │  作用：Intent-ack continuation mode: ``"off"``, ``"codex_only"`` (workspace acks on codex_responses)
+# │  参数：agent
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def intent_ack_continuation_mode(agent) -> str:
     """Intent-ack continuation mode: ``"off"``, ``"codex_only"`` (workspace acks on codex_responses)
     or ``"all"``. Mirrors ``agent.tool_use_enforcement``: ``"auto"`` -> codex_only; true-ish -> all;
     false-ish -> off; ``list`` -> all when a substring matches the active model name, else off."""
     mode = getattr(agent, "_intent_ack_continuation", "auto")
     if mode is True or (isinstance(mode, str) and mode.lower() in _INTENT_ACK_ON):
+        # ⤷ 出口 return：返回 'all'
         return "all"
     if mode is False or (isinstance(mode, str) and mode.lower() in _INTENT_ACK_OFF):
+        # ⤷ 出口 return：返回 'off'
         return "off"
     if isinstance(mode, list):
         model_lower = (agent.model or "").lower()
+        # ⤷ 出口 return：返回 'all' if any((p.lower() in model_lower for p in mode if isin…
         return "all" if any(p.lower() in model_lower for p in mode if isinstance(p, str)) else "off"
     # "auto" or any unrecognised value: historical codex-only behavior.
+    # ⤷ 出口 return：返回 'codex_only' if agent.api_mode == 'codex_responses' else 'of…
     return "codex_only" if agent.api_mode == "codex_responses" else "off"
 
 
+# ┌── 函数 def copy_reasoning_content_for_api()
+# │  作用：Forward reasoning fields onto an API replay message; policy lives in ``agent.message_sanitization.apply_reasoning_content_policy``.
+# │  参数：agent, source_msg: dict, api_msg: dict
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def copy_reasoning_content_for_api(agent, source_msg: dict, api_msg: dict) -> None:
     """Forward reasoning fields onto an API replay message; policy lives in ``agent.message_sanitization.apply_reasoning_content_policy``."""
     from agent.message_sanitization import apply_reasoning_content_policy
     apply_reasoning_content_policy(source_msg, api_msg, agent._needs_thinking_reasoning_pad())
 
 
+# ┌── 函数 def reapply_reasoning_echo_for_provider()
+# │  作用：Re-pad or strip assistant turns' reasoning_content for the CURRENT provider after a
+# │  参数：agent, api_messages: list
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def reapply_reasoning_echo_for_provider(agent, api_messages: list) -> int:
     """Re-pad or strip assistant turns' reasoning_content for the CURRENT provider after a
     fallback switch: ``api_messages`` is shaped for the primary; require-side providers
@@ -2967,9 +3674,15 @@ def reapply_reasoning_echo_for_provider(agent, api_messages: list) -> int:
     request falls back to Mistral, and Mistral 422s on the stale pad.
     """
     from agent.message_sanitization import reapply_reasoning_echo
+    # ⤷ 出口 return：返回 reapply_reasoning_echo(api_messages, agent._needs_thinking_r…
     return reapply_reasoning_echo(api_messages, agent._needs_thinking_reasoning_pad())
 
 
+# ┌── 函数 def _iter_httpx_pools_with_owner()
+# │  作用：Yield ``(pool, owner)`` pairs reachable from an httpx client, including mounted transports:
+# │  参数：http_client: Any
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _iter_httpx_pools_with_owner(http_client: Any):
     """Yield ``(pool, owner)`` pairs reachable from an httpx client, including mounted transports:
     keepalive and proxy configs put live connections on ``client._mounts``, which a
@@ -2984,6 +3697,7 @@ def _iter_httpx_pools_with_owner(http_client: Any):
     mid-recv — the interrupt logs success and the provider keeps burning the slot (#72975).
     """
     seen_pools: set[int] = set()
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         transports = [getattr(http_client, "_transport", None)]
         transports += list((getattr(http_client, "_mounts", None) or {}).values())
@@ -2998,26 +3712,44 @@ def _iter_httpx_pools_with_owner(http_client: Any):
             if pool is not None and id(pool) not in seen_pools:
                 seen_pools.add(id(pool))
                 owner = id(transport) if type(transport).__name__ == "_SharedTransport" else None
+                # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
                 yield pool, owner
     except Exception:
         return
 
 
+# ┌── 函数 def _iter_httpx_pool_objects()
+# │  作用：Yield httpcore pool objects reachable from an httpx client.
+# │  参数：http_client: Any
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _iter_httpx_pool_objects(http_client: Any):
     """Yield httpcore pool objects reachable from an httpx client."""
     for pool, _owner in _iter_httpx_pools_with_owner(http_client):
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield pool
 
 
+# ┌── 函数 def _connection_candidates()
+# │  作用：Walk nested ``_connection`` wrappers (proxy tunnel → HTTP11/2).
+# │  参数：conn: Any
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _connection_candidates(conn: Any):
     """Walk nested ``_connection`` wrappers (proxy tunnel → HTTP11/2)."""
     seen: set[int] = set()
     while conn is not None and id(conn) not in seen:
         seen.add(id(conn))
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield conn
         conn = getattr(conn, "_connection", None)
 
 
+# ┌── 函数 def _socket_from_stream()
+# │  作用：Raw socket behind an httpcore network stream (several backends), or None.
+# │  参数：stream: Any
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _socket_from_stream(stream: Any):
     """Raw socket behind an httpcore network stream (several backends), or None."""
     sock = getattr(stream, "_sock", None)
@@ -3031,14 +3763,21 @@ def _socket_from_stream(stream: Any):
         with contextlib.suppress(Exception):
             from anyio.abc import SocketAttribute
             sock = stream._stream.extra(SocketAttribute.raw_socket)
+    # ⤷ 出口 return：返回 sock
     return sock
 
 
+# ┌── 函数 def _iter_pool_sockets()
+# │  作用：Yield raw sockets reachable from an OpenAI/httpx client pool. Defensive over private
+# │  参数：client: Any
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _iter_pool_sockets(client: Any):
     """Yield raw sockets reachable from an OpenAI/httpx client pool. Defensive over private
     httpcore internals (``conn._connection``, proxy tunnel wrappers) that vary by release; also
     walks mount transports and in-flight ``PoolRequest.connection`` objects (``_connections``
     is empty during checkout)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Some SDK wrappers *are* the httpx client; fall through so mount-aware discovery runs.
         http_client = getattr(client, "_client", None)
@@ -3072,40 +3811,64 @@ def _iter_pool_sockets(client: Any):
                 sock = _socket_from_stream(stream) if stream is not None else None
                 if sock is not None and id(sock) not in seen:
                     seen.add(id(sock))
+                    # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
                     yield sock
 
 
+# ┌── 函数 def _socket_is_dead()
+# │  作用：Probe socket health with a non-blocking recv peek.
+# │  参数：sock
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _socket_is_dead(sock) -> bool:
     """Probe socket health with a non-blocking recv peek."""
     import socket as _socket
+    # ⤷ 关键分支 try/except：捕获 BlockingIOError、OSError，出错走兜底而不是崩溃。
     try:
         sock.setblocking(False)
+        # ⤷ 出口 return：返回 sock.recv(1, _socket.MSG_PEEK | _socket.MSG_DONTWAIT) == b''
         return sock.recv(1, _socket.MSG_PEEK | _socket.MSG_DONTWAIT) == b""
     except BlockingIOError:
+        # ⤷ 出口 return：返回 False
         return False  # no data available: socket is healthy
     except OSError:
+        # ⤷ 出口 return：返回 True
         return True
     finally:
         with contextlib.suppress(OSError):
             sock.setblocking(True)
 
 
+# ┌── 函数 def cleanup_dead_connections()
+# │  作用：Force-close and rebuild the primary client if its pool has dead sockets (CLOSE-WAIT, errors); returns True if cleaned.
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def cleanup_dead_connections(agent) -> bool:
     """Force-close and rebuild the primary client if its pool has dead sockets (CLOSE-WAIT, errors); returns True if cleaned."""
     client = getattr(agent, "client", None)
     if client is None:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         dead_count = sum(1 for sock in _iter_pool_sockets(client) if _socket_is_dead(sock))
         if dead_count > 0:
             _ra().logger.warning("Found %d dead connection(s) in client pool — rebuilding client", dead_count)
             agent._replace_primary_openai_client(reason="dead_connection_cleanup")
+            # ⤷ 出口 return：返回 True
             return True
     except Exception as exc:
         _ra().logger.debug("Dead connection check error: %s", exc)
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _set_reset_from_retry_after()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：context: Dict[str, Any], retry_after: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _set_reset_from_retry_after(context: Dict[str, Any], retry_after: Any) -> None:
     if "reset_at" in context:
         return
@@ -3114,6 +3877,11 @@ def _set_reset_from_retry_after(context: Dict[str, Any], retry_after: Any) -> No
         context["reset_at"] = time.time() + seconds
 
 
+# ┌── 函数 def extract_api_error_context()
+# │  作用：Extract structured rate-limit details from provider errors.
+# │  参数：error: Exception
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def extract_api_error_context(error: Exception) -> Dict[str, Any]:
     """Extract structured rate-limit details from provider errors."""
     context: Dict[str, Any] = {}
@@ -3145,9 +3913,15 @@ def extract_api_error_context(error: Exception) -> Dict[str, Any]:
         delay = reset_delay_from_message(context.get("message") or "")
         if delay is not None:
             context["reset_at"] = time.time() + delay
+    # ⤷ 出口 return：返回 context
     return context
 
 
+# ┌── 函数 def _requeue_pending_steer()
+# │  作用：Put drained steer text back so the caller's fallback delivers it as a next-turn user message.
+# │  参数：agent, steer_text: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _requeue_pending_steer(agent, steer_text: str) -> None:
     """Put drained steer text back so the caller's fallback delivers it as a next-turn user message."""
     # Under the lock the slot is read directly: an initialized agent always has both attributes, so a
@@ -3165,6 +3939,11 @@ def _requeue_pending_steer(agent, steer_text: str) -> None:
         agent._pending_steer = (existing + "\n" + steer_text) if existing else steer_text
 
 
+# ┌── 函数 def apply_pending_steer_to_tool_results()
+# │  作用：Persist any pending /steer text as a standalone user message.
+# │  参数：agent, messages: list, num_tool_msgs: int
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: int) -> None:
     """Persist any pending /steer text as a standalone user message.
 
@@ -3206,6 +3985,11 @@ def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: in
     )
 
 
+# ┌── 函数 def force_close_tcp_sockets()
+# │  作用：Abort in-flight TCP I/O via ``shutdown(SHUT_RDWR)`` WITHOUT closing FDs. ``close()`` from
+# │  参数：client: Any
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def force_close_tcp_sockets(client: Any) -> int:
     """Abort in-flight TCP I/O via ``shutdown(SHUT_RDWR)`` WITHOUT closing FDs. ``close()`` from
     a non-owner thread is unsafe: the SSL BIO caches the raw FD, the kernel recycles it, and a
@@ -3213,8 +3997,10 @@ def force_close_tcp_sockets(client: Any) -> int:
     is FD-safe from any thread. Returns the count (logged as ``tcp_force_closed=N``)."""
     import socket as _socket
     shutdown_count = 0
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         for sock in _iter_pool_sockets(client):
+            # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
             try:
                 # Clear a blocking timeout so a hung SSL_read notices the shutdown. Still no close().
                 settimeout = getattr(sock, "settimeout", None)
@@ -3227,6 +4013,7 @@ def force_close_tcp_sockets(client: Any) -> int:
             shutdown_count += 1
     except Exception as exc:
         _ra().logger.debug("Force-close TCP sockets sweep error: %s", exc)
+    # ⤷ 出口 return：返回 shutdown_count
     return shutdown_count
 
 
@@ -3248,15 +4035,28 @@ __all__ = [
 # Internal code MUST NOT use these (scripts/check_compat_pointers.py fails CI if it does).
 # The whole block is removed by reverting the commit that added it.
 
+# ┌── 函数 def agent_runtime_owns_post_tool_hook()
+# │  作用：Return True when an agent-level tool path emits its own post hook.
+# │  参数：agent: Any, function_name: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def agent_runtime_owns_post_tool_hook(agent: Any, function_name: str) -> bool:
     """Return True when an agent-level tool path emits its own post hook."""
     if function_name in AGENT_RUNTIME_POST_HOOK_TOOL_NAMES:
+        # ⤷ 出口 return：返回 True
         return True
     if getattr(agent, "_context_engine_tool_names", None) and function_name in agent._context_engine_tool_names:
+        # ⤷ 出口 return：返回 True
         return True
     memory_manager = getattr(agent, "_memory_manager", None)
+    # ⤷ 出口 return：返回 bool(memory_manager and memory_manager.has_tool(function_nam…
     return bool(memory_manager and memory_manager.has_tool(function_name))
 
+# ┌── 函数 def intent_ack_continuation_enabled()
+# │  作用：Whether intent-ack continuation should fire at all for this turn.
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def intent_ack_continuation_enabled(agent) -> bool:
     """Whether intent-ack continuation should fire at all for this turn.
 
@@ -3266,5 +4066,6 @@ def intent_ack_continuation_enabled(agent) -> bool:
     the workspace requirement applies should use ``intent_ack_continuation_mode``
     directly (``"codex_only"`` ⇒ require_workspace=True, ``"all"`` ⇒ False).
     """
+    # ⤷ 出口 return：返回 intent_ack_continuation_mode(agent) != 'off'
     return intent_ack_continuation_mode(agent) != "off"
 # ---- END PLUGIN-COMPAT ----

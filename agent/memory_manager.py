@@ -3,6 +3,27 @@
 The builtin provider is always allowed; only ONE external plugin provider may be
 registered at a time (tool-schema bloat, conflicting backends).
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/memory_manager.py（约 836 行）
+# 地位：记忆系统——让 Agent 跨会话记住事情。
+#
+# 设计：MemoryManager 把记忆相关的钩子「扇出」给注册的 provider（记忆提供者）。
+#   内置 provider 总是可用；外部插件 provider 同一时刻只允许注册一个（避免工具 schema 膨胀、后端冲突）。
+#
+# 关键能力：
+#   build_system_prompt()   在提示词里注入「你怎么用记忆」的说明
+#   prefetch_all()          在模型调用前预先取好相关记忆（因为取记忆可能慢，提前并行做）
+#   queue_prefetch_all()    异步预取版本
+#   inject_memory_provider_tools()  把记忆工具注入工具集
+#
+# 有意思的实现：class StreamingContextScrubber
+#   流式输出时，记忆内容可能被模型原样吐出来。这个类一边接收流式文本一边做「边界感知」的清洗，
+#   处理跨 chunk 的标签边界（_max_partial_suffix / _ends_at_block_boundary）。
+#   这类「流式文本清洗」是 Agent 工程里很典型的一个坑。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -34,18 +55,37 @@ _EXTERNAL_PREFETCH_TIMEOUT_S = 8.0
 
 # -- Signature introspection (providers are duck-typed; call shapes vary) -----
 
+# ┌── 函数 def _signature_params()
+# │  作用：``fn``'s parameter mapping, or None when uninspectable (C callables, exotic proxies).
+# │  参数：fn: Callable[..., Any]
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _signature_params(fn: Callable[..., Any]):
     """``fn``'s parameter mapping, or None when uninspectable (C callables, exotic proxies)."""
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 inspect.signature(fn).parameters
         return inspect.signature(fn).parameters
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _has_var_kwargs()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：params
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_var_kwargs(params) -> bool:
+    # ⤷ 出口 return：返回 any((p.kind is inspect.Parameter.VAR_KEYWORD for p in params…
     return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
+# ┌── 函数 def _accepts_require_checkpoint()
+# │  作用：True if ``fn`` can receive the ``require_checkpoint`` keyword (unreadable signatures -> False).
+# │  参数：fn: Callable[..., Any]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _accepts_require_checkpoint(fn: Callable[..., Any]) -> bool:
     """True if ``fn`` can receive the ``require_checkpoint`` keyword (unreadable signatures -> False).
 
@@ -54,13 +94,20 @@ def _accepts_require_checkpoint(fn: Callable[..., Any]) -> bool:
     """
     params = _signature_params(fn)
     if params is None:
+        # ⤷ 出口 return：返回 False
         return False
     kind = getattr(params.get("require_checkpoint"), "kind", None)
+    # ⤷ 出口 return：返回 _has_var_kwargs(params) or kind in (inspect.Parameter.KEYWOR…
     return _has_var_kwargs(params) or kind in (inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
 
 
 # -- Tool-schema plumbing -----------------------------------------------------
 
+# ┌── 函数 def normalize_tool_schema()
+# │  作用：Return a bare function-tool dict with a resolvable top-level ``name``, else None.
+# │  参数：schema: Any
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def normalize_tool_schema(schema: Any) -> Optional[Dict[str, Any]]:
     """Return a bare function-tool dict with a resolvable top-level ``name``, else None.
 
@@ -69,37 +116,61 @@ def normalize_tool_schema(schema: Any) -> Optional[Dict[str, Any]]:
     providers (DeepSeek) reject the ENTIRE request, so both shapes are normalized here.
     """
     if not isinstance(schema, dict):
+        # ⤷ 出口 return：返回 None
         return None
     if schema.get("type") == "function" and isinstance(schema.get("function"), dict):
         schema = schema["function"]
     name = schema.get("name", "")
+    # ⤷ 出口 return：返回 schema if name and isinstance(name, str) else None
     return schema if name and isinstance(name, str) else None
 
 
+# ┌── 函数 def memory_provider_tools_enabled()
+# │  作用：Return whether external memory-provider tools should be exposed.
+# │  参数：enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]] = None, memory_tool_present: bool = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def memory_provider_tools_enabled(enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]] = None,
                                   *, memory_tool_present: bool = False) -> bool:
     """Return whether external memory-provider tools should be exposed."""
     if disabled_toolsets and "memory" in disabled_toolsets:
+        # ⤷ 出口 return：返回 False
         return False
     if memory_tool_present or enabled_toolsets is None:
+        # ⤷ 出口 return：返回 True
         return True
     if not enabled_toolsets:
+        # ⤷ 出口 return：返回 False
         return False
     if "memory" in enabled_toolsets:
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from toolsets import resolve_toolset
 
+        # ⤷ 出口 return：返回 any(('memory' in resolve_toolset(name) for name in enabled_t…
         return any("memory" in resolve_toolset(name) for name in enabled_toolsets)
     except Exception:
         logger.debug("Failed to resolve enabled toolsets for memory-provider tools", exc_info=True)
         return False
 
 
+# ┌── 函数 def _tool_name()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：tool: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _tool_name(tool: Any) -> Any:
+    # ⤷ 出口 return：返回 tool.get('function', {}).get('name') if isinstance(tool, dic…
     return tool.get("function", {}).get("name") if isinstance(tool, dict) else None
 
 
+# ┌── 函数 def memory_provider_tools_exposed()
+# │  作用：Whether external memory-provider tools are exposed on ``agent``.
+# │  参数：agent: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def memory_provider_tools_exposed(agent: Any) -> bool:
     """Whether external memory-provider tools are exposed on ``agent``.
 
@@ -109,14 +180,21 @@ def memory_provider_tools_exposed(agent: Any) -> bool:
     tools = getattr(agent, "tools", None)
     present = isinstance(tools, (list, tuple)) and any(_tool_name(t) == "memory" for t in tools)
     enabled, disabled = getattr(agent, "enabled_toolsets", None), getattr(agent, "disabled_toolsets", None)
+    # ⤷ 出口 return：返回 memory_provider_tools_enabled(enabled, disabled, memory_tool…
     return memory_provider_tools_enabled(enabled, disabled, memory_tool_present=present)
 
 
+# ┌── 函数 def inject_memory_provider_tools()
+# │  作用：Append external memory-provider tool schemas to an agent tool surface; return count added.
+# │  参数：agent: Any
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def inject_memory_provider_tools(agent: Any) -> int:
     """Append external memory-provider tool schemas to an agent tool surface; return count added."""
     memory_manager = getattr(agent, "_memory_manager", None)
     tools = getattr(agent, "tools", None)
     if not memory_manager or tools is None:
+        # ⤷ 出口 return：返回 0
         return 0
 
     if not memory_provider_tools_exposed(agent):
@@ -133,10 +211,12 @@ def inject_memory_provider_tools(agent: Any) -> int:
                 "block are both withheld.",
                 [getattr(p, "name", type(p).__name__) for p in _providers],
             )
+        # ⤷ 出口 return：返回 0
         return 0
 
     get_schemas = getattr(memory_manager, "get_all_tool_schemas", None)
     if not callable(get_schemas):
+        # ⤷ 出口 return：返回 0
         return 0
 
     if getattr(agent, "valid_tool_names", None) is None:
@@ -155,6 +235,7 @@ def inject_memory_provider_tools(agent: Any) -> int:
             agent.valid_tool_names.add(schema["name"])
             existing_tool_names.add(schema["name"])
             added += 1
+    # ⤷ 出口 return：返回 added
     return added
 
 
@@ -168,13 +249,23 @@ _INTERNAL_NOTE_RE = re.compile(
 )
 
 
+# ┌── 函数 def sanitize_context()
+# │  作用：Strip fence tags, injected context blocks, and system notes from provider output.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def sanitize_context(text: str) -> str:
     """Strip fence tags, injected context blocks, and system notes from provider output."""
     for pattern in (_INTERNAL_CONTEXT_RE, _INTERNAL_NOTE_RE, _FENCE_TAG_RE):
         text = pattern.sub('', text)
+    # ⤷ 出口 return：返回 text
     return text
 
 
+# ┌── 类 class StreamingContextScrubber
+# │  说明：Stateful scrubber for streaming text whose memory-context spans may straddle deltas.
+# │  成员：共 8 个方法；对外可用 3 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class StreamingContextScrubber:
     """Stateful scrubber for streaming text whose memory-context spans may straddle deltas.
 
@@ -186,17 +277,33 @@ class StreamingContextScrubber:
     _OPEN_TAG = "<memory-context>"
     _CLOSE_TAG = "</memory-context>"
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self) -> None:
         self.reset()
 
+    # ┌── 函数 def reset()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def reset(self) -> None:
         self._in_span: bool = False
         self._buf: str = ""
         self._at_block_boundary: bool = True
 
+    # ┌── 函数 def feed()
+    # │  作用：Return the visible portion of ``text``; a possible partial tag tail is held for the next call.
+    # │  参数：self, text: str
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def feed(self, text: str) -> str:
         """Return the visible portion of ``text``; a possible partial tag tail is held for the next call."""
         if not text:
+            # ⤷ 出口 return：返回 ''
             return ""
         buf = self._buf + text
         self._buf = ""
@@ -223,23 +330,42 @@ class StreamingContextScrubber:
                 self._append_visible(out, buf[:idx])
             buf = buf[idx + len(tag):]
             self._in_span = not self._in_span
+        # ⤷ 出口 return：返回 ''.join(out)
         return "".join(out)
 
+    # ┌── 函数 def flush()
+    # │  作用：Emit the held-back tail at end-of-stream; inside an unterminated span it is discarded
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def flush(self) -> str:
         """Emit the held-back tail at end-of-stream; inside an unterminated span it is discarded
         (leaking partial memory context is worse than a truncated answer)."""
         tail = "" if self._in_span else self._buf
         self._buf = ""
         self._in_span = False
+        # ⤷ 出口 return：返回 tail
         return tail
 
+    # ┌── 函数 def _max_partial_suffix()
+    # │  作用：Length of the longest buf-suffix that is a (case-insensitive) prefix of ``tag``, else 0.
+    # │  参数：buf: str, tag: str
+    # │  返回：int
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _max_partial_suffix(buf: str, tag: str) -> int:
         """Length of the longest buf-suffix that is a (case-insensitive) prefix of ``tag``, else 0."""
         tag_lower, buf_lower = tag.lower(), buf.lower()
         span = range(min(len(buf_lower), len(tag_lower) - 1), 0, -1)
+        # ⤷ 出口 return：返回 next((i for i in span if tag_lower.startswith(buf_lower[-i:]…
         return next((i for i in span if tag_lower.startswith(buf_lower[-i:])), 0)
 
+    # ┌── 函数 def _find_boundary_open_tag()
+    # │  作用：Find an opening fence only when it starts a block-like span (own line, newline after).
+    # │  参数：self, buf: str
+    # │  返回：int
+    # └──────────────────────────────────────────────────────────────
     def _find_boundary_open_tag(self, buf: str) -> int:
         """Find an opening fence only when it starts a block-like span (own line, newline after)."""
         buf_lower, tag_len = buf.lower(), len(self._OPEN_TAG)
@@ -247,29 +373,49 @@ class StreamingContextScrubber:
         while idx != -1:
             after_idx = idx + tag_len
             if self._ends_at_block_boundary(buf[:idx]) and after_idx < len(buf) and buf[after_idx] in "\r\n":
+                # ⤷ 出口 return：返回 idx
                 return idx
             idx = buf_lower.find(self._OPEN_TAG, idx + 1)
+        # ⤷ 出口 return：返回 -1
         return -1
 
+    # ┌── 函数 def _ends_at_block_boundary()
+    # │  作用：Whether emitting ``text`` leaves the stream at a line start (blank tail after the last newline;
+    # │  参数：self, text: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _ends_at_block_boundary(self, text: str) -> bool:
         """Whether emitting ``text`` leaves the stream at a line start (blank tail after the last newline;
         no newline at all -> only whitespace and already at a boundary)."""
         head, sep, tail = text.rpartition("\n")
+        # ⤷ 出口 return：返回 tail.strip() == '' and (bool(sep) or self._at_block_boundary…
         return tail.strip() == "" and (bool(sep) or self._at_block_boundary)
 
+    # ┌── 函数 def _append_visible()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, out: list[str], text: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _append_visible(self, out: list[str], text: str) -> None:
         if text:
             out.append(text)
             self._at_block_boundary = self._ends_at_block_boundary(text)
 
 
+# ┌── 函数 def build_memory_context_block()
+# │  作用：Wrap prefetched memory in a fenced block with system note.
+# │  参数：raw_context: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def build_memory_context_block(raw_context: str) -> str:
     """Wrap prefetched memory in a fenced block with system note."""
     if not raw_context or not raw_context.strip():
+        # ⤷ 出口 return：返回 ''
         return ""
     clean = sanitize_context(raw_context)
     if clean != raw_context:
         logger.warning("memory provider returned pre-wrapped context; stripped")
+    # ⤷ 出口 return：返回 f"<memory-context>\n[System note: The following is recalled …
     return (
         "<memory-context>\n"
         "[System note: The following is recalled memory context, "
@@ -280,6 +426,10 @@ def build_memory_context_block(raw_context: str) -> str:
     )
 
 
+# ┌── 类 class MemoryManager
+# │  说明：Builtin provider (always first) plus at most one external provider.
+# │  成员：共 35 个方法；对外可用 25 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class MemoryManager:
     """Builtin provider (always first) plus at most one external provider.
 
@@ -287,6 +437,11 @@ class MemoryManager:
     swallows per-provider exceptions.
     """
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, external_prefetch_timeout: Optional[float] = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, *, external_prefetch_timeout: Optional[float] = None) -> None:
         self._providers: List[MemoryProvider] = []
         self._tool_to_provider: Dict[str, MemoryProvider] = {}
@@ -295,6 +450,7 @@ class MemoryManager:
         timeout = external_prefetch_timeout
         timeout = _EXTERNAL_PREFETCH_TIMEOUT_S if timeout is None else float(timeout)
         if timeout <= 0:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ValueError("external_prefetch_timeout must be positive")
         self._external_prefetch_timeout = timeout
         self._external_prefetch_threads: Dict[str, threading.Thread] = {}
@@ -311,18 +467,30 @@ class MemoryManager:
             "status": "not_started", "abandoned_writes": 0, "abandoned_prefetches": 0, "active_tasks": 0,
         }
 
+    # ┌── 函数 def _each_provider()
+    # │  作用：Call ``call(provider)`` per provider, logging+swallowing failures; returns successes in order.
+    # │  参数：self, label: str, call: Callable[[MemoryProvider], Any], level: int = ..., providers: Optional[List[MemoryProvider]] = ..., exc_info: bool = ...
+    # │  返回：List[Any]
+    # └──────────────────────────────────────────────────────────────
     def _each_provider(self, label: str, call: Callable[[MemoryProvider], Any], *, level: int = logging.DEBUG,
                        providers: Optional[List[MemoryProvider]] = None, exc_info: bool = False) -> List[Any]:
         """Call ``call(provider)`` per provider, logging+swallowing failures; returns successes in order.
         ``label`` completes the log line ``Memory provider '<name>' <label>: <exc>``."""
         results: List[Any] = []
         for provider in self._providers if providers is None else providers:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 results.append(call(provider))
             except Exception as e:
                 logger.log(level, "Memory provider '%s' %s: %s", provider.name, label, e, exc_info=exc_info)
+        # ⤷ 出口 return：返回 results
         return results
 
+    # ┌── 函数 def add_provider()
+    # │  作用：Register a provider; builtin always accepted, only ONE external allowed.
+    # │  参数：self, provider: MemoryProvider
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def add_provider(self, provider: MemoryProvider) -> None:
         """Register a provider; builtin always accepted, only ONE external allowed."""
         if provider.name != "builtin" and self._has_external:
@@ -374,42 +542,75 @@ class MemoryManager:
 
         logger.info("Memory provider '%s' registered (%d tools)", provider.name, len(schemas))
 
+    # ┌── 函数 def providers()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：List[MemoryProvider]
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def providers(self) -> List[MemoryProvider]:
+        # ⤷ 出口 return：返回 list(self._providers)
         return list(self._providers)
 
+    # ┌── 函数 def get_provider()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, name: str
+    # │  返回：Optional[MemoryProvider]
+    # └──────────────────────────────────────────────────────────────
     def get_provider(self, name: str) -> Optional[MemoryProvider]:
+        # ⤷ 出口 return：返回 next((p for p in self._providers if p.name == name), None)
         return next((p for p in self._providers if p.name == name), None)
 
+    # ┌── 函数 def build_system_prompt()
+    # │  作用：Join every provider's non-empty ``system_prompt_block()`` with blank lines.
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def build_system_prompt(self) -> str:
         """Join every provider's non-empty ``system_prompt_block()`` with blank lines."""
         blocks = self._each_provider("system_prompt_block() failed", lambda p: p.system_prompt_block(),
                                       level=logging.WARNING)
+        # ⤷ 出口 return：返回 '\n\n'.join((b for b in blocks if b and b.strip()))
         return "\n\n".join(b for b in blocks if b and b.strip())
 
     # A /skill or /bundle turn embeds the whole skill body in the model-facing message;
     # providers get just the user's instruction (None for a bare invocation).
     _strip_skill_scaffolding = staticmethod(extract_user_instruction_from_skill_message)
 
+    # ┌── 函数 def prefetch_all()
+    # │  作用：Merge non-empty prefetch context from all providers (failures are non-fatal).
+    # │  参数：self, query: str, session_id: str = ...
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def prefetch_all(self, query: str, *, session_id: str = "") -> str:
         """Merge non-empty prefetch context from all providers (failures are non-fatal)."""
         clean_query = self._strip_skill_scaffolding(query)
         if not clean_query:
+            # ⤷ 出口 return：返回 ''
             return ""
         parts = self._each_provider(
             "prefetch failed (non-fatal)", lambda p: self._prefetch_provider(p, clean_query, session_id=session_id),
         )
+        # ⤷ 出口 return：返回 '\n\n'.join((p for p in parts if p and p.strip()))
         return "\n\n".join(p for p in parts if p and p.strip())
 
+    # ┌── 函数 def _prefetch_provider()
+    # │  作用：Run one provider's prefetch; external providers are bounded by a timeout. A stuck external
+    # │  参数：self, provider: MemoryProvider, query: str, session_id: str = ...
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _prefetch_provider(self, provider: MemoryProvider, query: str, *, session_id: str = "") -> str:
         """Run one provider's prefetch; external providers are bounded by a timeout. A stuck external
         call keeps running on its daemon thread and the provider is skipped on later turns until it returns."""
         if provider.name == "builtin":
+            # ⤷ 出口 return：返回 provider.prefetch(query, session_id=session_id)
             return provider.prefetch(query, session_id=session_id)
 
         result_box: Dict[str, Any] = {}
 
         def _run() -> None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 result_box["value"] = provider.prefetch(query, session_id=session_id) or ""
             except Exception as exc:  # pragma: no cover - re-raised by caller
@@ -420,6 +621,7 @@ class MemoryManager:
             existing = self._external_prefetch_threads.get(provider.name)
             if existing is not None and existing.is_alive():
                 logger.debug("Memory provider '%s' prefetch is still running; skipping this turn", provider.name)
+                # ⤷ 出口 return：返回 ''
                 return ""
             self._external_prefetch_threads[provider.name] = thread
             thread.start()
@@ -430,12 +632,14 @@ class MemoryManager:
                 "Memory provider '%s' prefetch timed out after %.1fs; skipping it until "
                 "the stuck call returns", provider.name, self._external_prefetch_timeout,
             )
+            # ⤷ 出口 return：返回 ''
             return ""
 
         with self._external_prefetch_lock:
             if self._external_prefetch_threads.get(provider.name) is thread:
                 self._external_prefetch_threads.pop(provider.name, None)
         if "error" in result_box:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise result_box["error"]
         result = result_box.get("value", "")
         if result and result.strip():
@@ -445,8 +649,14 @@ class MemoryManager:
                 result, session_id=session_id, source=f"{provider.name} memory prefetch",
                 config=self._external_prefetch_spill_config,
             )
+        # ⤷ 出口 return：返回 result
         return result
 
+    # ┌── 函数 def describe_recall()
+    # │  作用：Deterministic recall indicator line (e.g. ``"🧠 Provider — recalled 3 memories"``); ``""`` if none.
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def describe_recall(self) -> str:
         """Deterministic recall indicator line (e.g. ``"🧠 Provider — recalled 3 memories"``); ``""`` if none.
         Call right after :meth:`prefetch_all` so the user SEES memory was used even if the model is silent."""
@@ -458,8 +668,14 @@ class MemoryManager:
             detail = ("recalled 1 memory" if status.count == 1 else f"recalled {status.count} memories"
                       if status.count > 1 else "recalled relevant memory")
             segments.append(f"{status.glyph} {status.provider_label} — {detail}")
+        # ⤷ 出口 return：返回 '  '.join(segments)
         return "  ".join(segments)
 
+    # ┌── 函数 def queue_prefetch_all()
+    # │  作用：Queue background prefetch on all providers for the next turn (see ``sync_all``).
+    # │  参数：self, query: str, session_id: str = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def queue_prefetch_all(self, query: str, *, session_id: str = "") -> None:
         """Queue background prefetch on all providers for the next turn (see ``sync_all``)."""
         providers = list(self._providers)
@@ -471,12 +687,24 @@ class MemoryManager:
             providers=providers,
         ), kind="prefetch")
 
+    # ┌── 函数 def _provider_sync_accepts()
+    # │  作用：Whether ``sync_turn`` accepts ``keyword`` (uninspectable → assume yes).
+    # │  参数：provider: MemoryProvider, keyword: str
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _provider_sync_accepts(provider: MemoryProvider, keyword: str) -> bool:
         """Whether ``sync_turn`` accepts ``keyword`` (uninspectable → assume yes)."""
         params = _signature_params(provider.sync_turn)
+        # ⤷ 出口 return：返回 params is None or _has_var_kwargs(params) or keyword in para…
         return params is None or _has_var_kwargs(params) or keyword in params
 
+    # ┌── 函数 def sync_all()
+    # │  作用：Sync a completed turn to all providers on the background worker.
+    # │  参数：self, user_content: str, assistant_content: str, session_id: str = ..., messages: Optional[List[Dict[str, Any]]] = ..., turn_author: Optional[Dict[str, Any]] = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def sync_all(self, user_content: str, assistant_content: str, *, session_id: str = "",
                  messages: Optional[List[Dict[str, Any]]] = None,
                  turn_author: Optional[Dict[str, Any]] = None) -> None:
@@ -503,6 +731,11 @@ class MemoryManager:
             lambda: self._each_provider("sync_turn failed", _sync, level=logging.WARNING, providers=providers)
         )
 
+    # ┌── 函数 def _submit_background()
+    # │  作用：Queue ``fn`` on the serialized worker (created lazily; None once shutting down) and track its
+    # │  参数：self, fn, kind: str = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _submit_background(self, fn, *, kind: str = "write") -> None:
         """Queue ``fn`` on the serialized worker (created lazily; None once shutting down) and track its
         durability class. Runs under the caller's contextvars (``ctx_bound``). If the executor is
@@ -512,6 +745,7 @@ class MemoryManager:
         if executor is None and not self._shutting_down:
             with self._sync_executor_lock:
                 if self._sync_executor is None and not self._shutting_down:
+                    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                     try:
                         # Daemon workers: a wedged provider must never block interpreter exit.
                         from tools.daemon_pool import DaemonThreadPoolExecutor
@@ -520,6 +754,7 @@ class MemoryManager:
                         logger.warning("Failed to create memory sync executor: %s", e)
                 executor = self._sync_executor
         future = None
+        # ⤷ 关键分支 try/except：捕获 RuntimeError，出错走兜底而不是崩溃。
         try:
             # Submit+track atomically with the shutdown snapshot. The callback is attached
             # outside the lock: an already-completed future invokes callbacks synchronously.
@@ -537,27 +772,47 @@ class MemoryManager:
         if future is not None:
             future.add_done_callback(self._forget_background_future)
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             fn()
         except Exception as e:  # pragma: no cover - fn guards internally
             logger.debug("Inline memory background task failed: %s", e)
 
+    # ┌── 函数 def _forget_background_future()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, future: Future
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _forget_background_future(self, future: Future) -> None:
         with self._sync_executor_lock:
             self._background_futures.pop(future, None)
 
+    # ┌── 函数 def flush_pending()
+    # │  作用：Block until queued sync/prefetch work has drained (False on timeout).
+    # │  参数：self, timeout: Optional[float] = None
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def flush_pending(self, timeout: Optional[float] = None) -> bool:
         """Block until queued sync/prefetch work has drained (False on timeout).
         With a single worker, a sentinel task completing proves every earlier task ran."""
         executor = self._sync_executor
         if executor is None:
+            # ⤷ 出口 return：返回 True
             return True
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             executor.submit(lambda: None).result(timeout=timeout)
         except Exception as e:
+            # ⤷ 出口 return：返回 isinstance(e, RuntimeError)
             return isinstance(e, RuntimeError)  # executor already shut down — nothing pending
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def get_all_tool_schemas()
+    # │  作用：Collect deduplicated tool schemas from all providers; reserved core tool names are
+    # │  参数：self
+    # │  返回：List[Dict[str, Any]]
+    # └──────────────────────────────────────────────────────────────
     def get_all_tool_schemas(self) -> List[Dict[str, Any]]:
         """Collect deduplicated tool schemas from all providers; reserved core tool names are
         skipped because :meth:`add_provider` refuses to route them."""
@@ -579,25 +834,52 @@ class MemoryManager:
                     seen.add(schema["name"])
 
         self._each_provider("get_tool_schemas() failed", _collect, level=logging.WARNING)
+        # ⤷ 出口 return：返回 schemas
         return schemas
 
+    # ┌── 函数 def get_all_tool_names()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：set
+    # └──────────────────────────────────────────────────────────────
     def get_all_tool_names(self) -> set:
+        # ⤷ 出口 return：返回 set(self._tool_to_provider)
         return set(self._tool_to_provider)
 
+    # ┌── 函数 def has_tool()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, tool_name: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def has_tool(self, tool_name: str) -> bool:
+        # ⤷ 出口 return：返回 tool_name in self._tool_to_provider
         return tool_name in self._tool_to_provider
 
+    # ┌── 函数 def handle_tool_call()
+    # │  作用：Route a tool call to its provider; returns a JSON string (tool_error on failure).
+    # │  参数：self, tool_name: str, args: Dict[str, Any], **kwargs
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def handle_tool_call(self, tool_name: str, args: Dict[str, Any], **kwargs) -> str:
         """Route a tool call to its provider; returns a JSON string (tool_error on failure)."""
         provider = self._tool_to_provider.get(tool_name)
         if provider is None:
+            # ⤷ 出口 return：返回 tool_error(f"No memory provider handles tool '{tool_name}'")
             return tool_error(f"No memory provider handles tool '{tool_name}'")
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 provider.handle_tool_call(tool_name, args, **kwargs)
             return provider.handle_tool_call(tool_name, args, **kwargs)
         except Exception as e:
             logger.error("Memory provider '%s' handle_tool_call(%s) failed: %s", provider.name, tool_name, e)
+            # ⤷ 出口 return：返回 tool_error(f"Memory tool '{tool_name}' failed: {e}")
             return tool_error(f"Memory tool '{tool_name}' failed: {e}")
 
+    # ┌── 函数 def on_turn_start()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, turn_number: int, message: str, **kwargs
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def on_turn_start(self, turn_number: int, message: str, **kwargs) -> None:
         def _tick(p: MemoryProvider) -> None:
             # A provider written before the author kwargs declares (turn_number, message) only; it still gets its tick.
@@ -607,10 +889,20 @@ class MemoryManager:
 
         self._each_provider("on_turn_start failed", _tick)
 
+    # ┌── 函数 def on_session_end()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, messages: List[Dict[str, Any]]
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def on_session_end(self, messages: List[Dict[str, Any]]) -> None:
         self._each_provider("on_session_end failed", lambda p: p.on_session_end(messages), level=logging.WARNING,
                             exc_info=True)
 
+    # ┌── 函数 def commit_session_boundary_async()
+    # │  作用：Queue old-session extraction + provider rebinding as ONE serialized task.
+    # │  参数：self, messages: List[Dict[str, Any]], new_session_id: str, parent_session_id: str = ..., reason: str = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def commit_session_boundary_async(self, messages: List[Dict[str, Any]], *, new_session_id: str,
                                       parent_session_id: str = "", reason: str = "new_session") -> None:
         """Queue old-session extraction + provider rebinding as ONE serialized task.
@@ -633,10 +925,12 @@ class MemoryManager:
         snapshot = list(messages or [])
 
         def _run() -> None:  # both hooks already guard per-provider
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 self.on_session_end(snapshot)
             except Exception as e:  # pragma: no cover
                 logger.warning("Session-boundary extraction failed: %s", e)
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 self.on_session_switch(new_session_id, parent_session_id=parent_session_id, reset=True, reason=reason)
             except Exception as e:  # pragma: no cover
@@ -644,6 +938,11 @@ class MemoryManager:
 
         self._submit_background(_run)
 
+    # ┌── 函数 def on_session_switch()
+    # │  作用：Notify providers that ``AIAgent.session_id`` rotated without teardown
+    # │  参数：self, new_session_id: str, parent_session_id: str = ..., reset: bool = ..., rewound: bool = ..., **kwargs
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def on_session_switch(self, new_session_id: str, *, parent_session_id: str = "", reset: bool = False,
                           rewound: bool = False, **kwargs) -> None:
         """Notify providers that ``AIAgent.session_id`` rotated without teardown
@@ -658,19 +957,39 @@ class MemoryManager:
             lambda p: p.on_session_switch(new_session_id, parent_session_id=parent_session_id, reset=reset, **kwargs),
         )
 
+    # ┌── 函数 def _checkpoint_api_version()
+    # │  作用：Provider's advertised pre-compress checkpoint API version; None if unparseable.
+    # │  参数：provider: MemoryProvider
+    # │  返回：Optional[int]
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _checkpoint_api_version(provider: MemoryProvider) -> Optional[int]:
         """Provider's advertised pre-compress checkpoint API version; None if unparseable."""
+        # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 int(getattr(provider, 'pre_compress_checkpoint_api_version',…
             return int(getattr(provider, "pre_compress_checkpoint_api_version", _LEGACY_PRE_COMPRESS_API_VERSION))
         except (TypeError, ValueError):
+            # ⤷ 出口 return：返回 None
             return None
 
+    # ┌── 函数 def supports_pre_compress_checkpoint()
+    # │  作用：Return whether an active provider guarantees checkpoint API support.
+    # │  参数：self, api_version: int = PRE_COMPRESS_CHECKPOINT_API_VERSION
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def supports_pre_compress_checkpoint(self, api_version: int = PRE_COMPRESS_CHECKPOINT_API_VERSION) -> bool:
         """Return whether an active provider guarantees checkpoint API support."""
         versions = (self._checkpoint_api_version(p) for p in self._providers)
+        # ⤷ 出口 return：返回 any((v is not None and v >= api_version for v in versions))
         return any(v is not None and v >= api_version for v in versions)
 
+    # ┌── 函数 def on_pre_compress()
+    # │  作用：Notify providers before compression; return their combined summary-prompt text.
+    # │  参数：self, messages: List[Dict[str, Any]], evidence_messages: Optional[List[Dict[str, Any]]] = ..., require_checkpoint: bool = ..., checkpoint_api_version: int = ...
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def on_pre_compress(self, messages: List[Dict[str, Any]], *,
                         evidence_messages: Optional[List[Dict[str, Any]]] = None, require_checkpoint: bool = False,
                         checkpoint_api_version: int = PRE_COMPRESS_CHECKPOINT_API_VERSION) -> str:
@@ -693,6 +1012,7 @@ class MemoryManager:
             # v1 providers and bare-shape v2 providers never see the signal.
             if is_checkpoint_provider and _accepts_require_checkpoint(provider.on_pre_compress):
                 kwargs["require_checkpoint"] = require_checkpoint
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 result = provider.on_pre_compress(provider_messages, **kwargs)
                 if result and result.strip():
@@ -701,22 +1021,38 @@ class MemoryManager:
             except Exception as e:
                 logger.debug("Memory provider '%s' on_pre_compress failed: %s", provider.name, e)
                 if require_checkpoint and is_checkpoint_provider:
+                    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                     raise
         if require_checkpoint and not checkpoint_succeeded:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise RuntimeError(
                 f"No active memory provider completed pre-compress checkpoint API v{checkpoint_api_version}"
             )
+        # ⤷ 出口 return：返回 '\n\n'.join(parts)
         return "\n\n".join(parts)
 
+    # ┌── 函数 def _provider_memory_write_metadata_mode()
+    # │  作用：How to pass metadata to ``on_memory_write``: "keyword", "positional", or "legacy" (none).
+    # │  参数：provider: MemoryProvider
+    # │  返回：str
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _provider_memory_write_metadata_mode(provider: MemoryProvider) -> str:
         """How to pass metadata to ``on_memory_write``: "keyword", "positional", or "legacy" (none)."""
         params = _signature_params(provider.on_memory_write)
         if params is None or _has_var_kwargs(params) or "metadata" in params:
+            # ⤷ 出口 return：返回 'keyword'
             return "keyword"
         accepted = sum(p.kind is not inspect.Parameter.VAR_POSITIONAL for p in params.values())
+        # ⤷ 出口 return：返回 'positional' if accepted >= 4 else 'legacy'
         return "positional" if accepted >= 4 else "legacy"
 
+    # ┌── 函数 def on_memory_write()
+    # │  作用：Notify external providers when the built-in memory tool writes (skips builtin, the source).
+    # │  参数：self, action: str, target: str, content: str, metadata: Optional[Dict[str, Any]] = None
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def on_memory_write(self, action: str, target: str, content: str,
                         metadata: Optional[Dict[str, Any]] = None) -> None:
         """Notify external providers when the built-in memory tool writes (skips builtin, the source)."""
@@ -737,17 +1073,31 @@ class MemoryManager:
     # filtered by ``notify_memory_tool_write`` first.
     _MIRRORED_MEMORY_ACTIONS = {"add", "replace", "remove"}
 
+    # ┌── 函数 def _memory_tool_result_succeeded()
+    # │  作用：True only when the built-in memory tool actually committed a write. Fails closed (non-JSON,
+    # │  参数：result: Any
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _memory_tool_result_succeeded(result: Any) -> bool:
         """True only when the built-in memory tool actually committed a write. Fails closed (non-JSON,
         non-dict, missing ``success``, staged for approval) so providers never mirror a write that did not land."""
         if isinstance(result, str):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 result = json.loads(result)
             except Exception:
+                # ⤷ 出口 return：返回 False
                 return False
+        # ⤷ 出口 return：返回 isinstance(result, dict) and result.get('success') is True a…
         return isinstance(result, dict) and result.get("success") is True and result.get("staged") is not True
 
+    # ┌── 函数 def notify_memory_tool_write()
+    # │  作用：Mirror a built-in memory tool call to external providers.
+    # │  参数：self, tool_result: Any, tool_args: Dict[str, Any], build_metadata: Optional[Callable[[], Dict[str, Any]]] = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def notify_memory_tool_write(self, tool_result: Any, tool_args: Dict[str, Any], *,
                                  build_metadata: Optional[Callable[[], Dict[str, Any]]] = None) -> None:
         """Mirror a built-in memory tool call to external providers.
@@ -764,6 +1114,7 @@ class MemoryManager:
             action = str(op.get("action") or "") if isinstance(op, dict) else ""
             if action not in self._MIRRORED_MEMORY_ACTIONS:
                 continue
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 metadata = dict(build_metadata() if build_metadata else {})
                 old_text = op.get("old_text")
@@ -773,24 +1124,46 @@ class MemoryManager:
             except Exception as e:
                 logger.debug("notify_memory_tool_write failed for op %s: %s", action, e)
 
+    # ┌── 函数 def on_delegation()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, task: str, result: str, child_session_id: str = ..., **kwargs
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def on_delegation(self, task: str, result: str, *, child_session_id: str = "", **kwargs) -> None:
         self._each_provider(
             "on_delegation failed",
             lambda p: p.on_delegation(task, result, child_session_id=child_session_id, **kwargs),
         )
 
+    # ┌── 函数 def shutdown_all()
+    # │  作用：Drain the background executor (bounded), then shut providers down in reverse order.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def shutdown_all(self) -> None:
         """Drain the background executor (bounded), then shut providers down in reverse order."""
         self._drain_sync_executor()
         self._each_provider("shutdown failed", lambda p: p.shutdown(), level=logging.WARNING,
                             providers=self._providers[::-1])
 
+    # ┌── 函数 def shutdown_drain_state()
+    # │  作用：Snapshot of the most recent bounded shutdown drain outcome.
+    # │  参数：self
+    # │  返回：Dict[str, Any]
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def shutdown_drain_state(self) -> Dict[str, Any]:
         """Snapshot of the most recent bounded shutdown drain outcome."""
         with self._sync_executor_lock:
+            # ⤷ 出口 return：返回 dict(self._shutdown_drain_state)
             return dict(self._shutdown_drain_state)
 
+    # ┌── 函数 def _drain_sync_executor()
+    # │  作用：Give queued FIFO work a bounded chance, then abandon explicitly.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _drain_sync_executor(self) -> None:
         """Give queued FIFO work a bounded chance, then abandon explicitly."""
         with self._sync_executor_lock:
@@ -827,6 +1200,11 @@ class MemoryManager:
             _SYNC_DRAIN_TIMEOUT_S, abandoned_writes, abandoned_prefetches, active_tasks,
         )
 
+    # ┌── 函数 def initialize_all()
+    # │  作用：Initialize all providers, injecting ``hermes_home`` so they resolve profile-scoped paths.
+    # │  参数：self, session_id: str, **kwargs
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def initialize_all(self, session_id: str, **kwargs) -> None:
         """Initialize all providers, injecting ``hermes_home`` so they resolve profile-scoped paths."""
         if "hermes_home" not in kwargs:

@@ -6,6 +6,32 @@ Each function takes the parent ``AIAgent`` as ``agent``; AIAgent keeps thin
 forwarders. Symbols tests patch on ``run_agent`` (``cleanup_vm`` /
 ``cleanup_browser``) are resolved through :func:`_ra` at call time.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/chat_completion_helpers.py（约 3381 行）
+# 地位：真正「发 HTTP 请求给大模型」的地方。
+#
+# 主要职责：
+#   - 构建请求参数：build_api_kwargs()（以及按协议分的 _build_anthropic_kwargs / _build_codex_kwargs /
+#     _build_chat_completions_kwargs / _build_bedrock_kwargs）
+#   - 发请求：direct_api_call()（非流式）、interruptible_api_call()、
+#     interruptible_streaming_api_call()（流式，可被用户打断）
+#   - 把响应转成内部消息：build_assistant_message()
+#   - 备用模型切换：try_activate_fallback()
+#   - 到达最大轮次：handle_max_iterations()
+#   - 清理资源：cleanup_task_resources()
+#
+# 这个文件能学到很多「生产级 API 调用」的实战经验：
+#   - 卡死检测：_derive_stream_stale_timeout —— 流一直不动怎么办？算一个 stale 超时把它掐掉
+#   - 流式工具调用累积：class _ToolCallAccumulator —— 流式返回的工具调用是一块块碎片，
+#     需要拼装（feed）再物化（materialize）成完整的 tool_call
+#   - 流式状态机：class _StreamingCall（39 个方法）—— 处理首个 delta、文本、推理、工具开始...
+#   - 请求级客户端注册表：class _RequestClientRegistry —— 保证一个请求结束后连接被关掉一次且仅一次
+#
+# 提醒：流式（streaming）比非流式复杂一个数量级，初学时可以先只看 direct_api_call()。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -60,12 +86,23 @@ _PROVIDER_STREAM_ERROR_TEXT_LIMIT = 4096
 _FALLBACK_EXHAUSTED_COOLDOWN_S = 5.0
 
 
+# ┌── 函数 def _context_thread_target()
+# │  作用：Bind a no-argument thread target to the caller's ContextVars.
+# │  参数：callback
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _context_thread_target(callback):
     """Bind a no-argument thread target to the caller's ContextVars."""
     context = contextvars.copy_context()
+    # ⤷ 出口 return：返回 lambda: context.run(callback)
     return lambda: context.run(callback)
 
 
+# ┌── 函数 def _join_worker_for_relay_teardown()
+# │  作用：Bounded worker join before raising InterruptedError (#81521).
+# │  参数：worker, label: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _join_worker_for_relay_teardown(worker, *, label: str) -> None:
     """Bounded worker join before raising InterruptedError (#81521).
 
@@ -73,6 +110,7 @@ def _join_worker_for_relay_teardown(worker, *, label: str) -> None:
     corrupt the LIFO stack (CLI EIO / redraw storm). Only joins when Relay managed
     execution is live — otherwise the join would just delay interrupt detection.
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent import relay_runtime
         runtime = relay_runtime.get_runtime(create=False)
@@ -86,15 +124,30 @@ def _join_worker_for_relay_teardown(worker, *, label: str) -> None:
             "timeout); Relay teardown will best-effort drain orphaned scopes (#81521).", label)
 
 
+# ┌── 函数 def _ra()
+# │  作用：Lazy ``run_agent`` reference so ``patch("run_agent.cleanup_vm")`` etc. intercept.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _ra():
     """Lazy ``run_agent`` reference so ``patch("run_agent.cleanup_vm")`` etc. intercept."""
     import run_agent
+    # ⤷ 出口 return：返回 run_agent
     return run_agent
 
 
+# ┌── 类 class ProviderStreamError（继承自：Exception）
+# │  说明：Provider encoded an API error as streaming content instead of an SDK error.
+# │  成员：共 2 个方法；全部是下划线开头的内部方法；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class ProviderStreamError(Exception):
     """Provider encoded an API error as streaming content instead of an SDK error."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, status_code: Optional[int], body: dict, raw_text: str, headers: Any = ...
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, *, status_code: Optional[int], body: dict, raw_text: str, headers: Any = None):
         self.status_code = status_code
         self.body = body
@@ -102,6 +155,11 @@ class ProviderStreamError(Exception):
         self.response = SimpleNamespace(headers=headers or {})
         super().__init__(self._format_message())
 
+    # ┌── 函数 def _format_message()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _format_message(self) -> str:
         error_obj = self.body.get("error", {}) if isinstance(self.body, dict) else {}
         if not isinstance(error_obj, dict):
@@ -114,20 +172,35 @@ class ProviderStreamError(Exception):
         text = " - ".join(parts)
         if error_obj.get("message"):
             text += f": {error_obj['message']}"
+        # ⤷ 出口 return：返回 text
         return text
 
 
+# ┌── 函数 def _status_code_from_value()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value: Any
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _status_code_from_value(value: Any) -> Optional[int]:
     if isinstance(value, int) and 100 <= value < 600:
+        # ⤷ 出口 return：返回 value
         return value
     if not isinstance(value, str):
+        # ⤷ 出口 return：返回 None
         return None
     match = re.search(r"(?:HTTP_STATUS/)?\b([1-5]\d\d)\b", value, re.IGNORECASE)
+    # ⤷ 出口 return：返回 int(match.group(1)) if match else None
     return int(match.group(1)) if match else None
 
 
+# ┌── 函数 def _status_code_from_payload()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：payload: Any
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _status_code_from_payload(payload: Any) -> Optional[int]:
     if not isinstance(payload, dict):
+        # ⤷ 出口 return：返回 None
         return None
 
     candidates = [payload.get(k) for k in ("status_code", "status", "http_status")]
@@ -138,25 +211,40 @@ def _status_code_from_payload(payload: Any) -> Optional[int]:
     for candidate in candidates:
         status_code = _status_code_from_value(candidate)
         if status_code is not None:
+            # ⤷ 出口 return：返回 status_code
             return status_code
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _json_object_from_text()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：text: str
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _json_object_from_text(text: str) -> Optional[dict]:
     stripped = (text or "").strip()
     with contextlib.suppress(json.JSONDecodeError, TypeError):
         if stripped.startswith("{"):
             decoded = json.loads(stripped)
+            # ⤷ 出口 return：返回 decoded if isinstance(decoded, dict) else None
             return decoded if isinstance(decoded, dict) else None
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _parse_provider_sse_events()
+# │  作用：Parse provider text that looks like Server-Sent Events.
+# │  参数：text: str
+# │  返回：list[dict]
+# └──────────────────────────────────────────────────────────────
 def _parse_provider_sse_events(text: str) -> list[dict]:
     """Parse provider text that looks like Server-Sent Events."""
     events: list[dict] = []
     current = {"event": None, "data": [], "comments": [], "fields": {}}
 
     def _flush_current():
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal current
         if any(current.values()):
             status_candidates = list(current["comments"]) + [
@@ -198,14 +286,21 @@ def _parse_provider_sse_events(text: str) -> list[dict]:
             current["fields"][field] = value
 
     _flush_current()
+    # ⤷ 出口 return：返回 events
     return events
 
 
+# ┌── 函数 def _provider_error_body()
+# │  作用：Normalize common provider error payloads to OpenAI-style body.error.
+# │  参数：payload: dict, status_code: Optional[int]
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _provider_error_body(payload: dict, status_code: Optional[int]) -> dict:
     """Normalize common provider error payloads to OpenAI-style body.error."""
     if not isinstance(payload, dict):
         payload = {}
     elif isinstance(payload.get("error"), dict):
+        # ⤷ 出口 return：返回 payload
         return payload
     code = (payload.get("code") or payload.get("error_code") or payload.get("type")
             or (f"HTTP_{status_code}" if status_code else "provider_stream_error"))
@@ -217,9 +312,15 @@ def _provider_error_body(payload: dict, status_code: Optional[int]) -> dict:
     for key in ("request_id", "param", "type"):
         if payload.get(key):
             normalized_error[key] = payload[key]
+    # ⤷ 出口 return：返回 {'error': normalized_error}
     return {"error": normalized_error}
 
 
+# ┌── 函数 def _provider_stream_error_from_json_decode_error()
+# │  作用：Preserve plain-text SSE data rejected inside the OpenAI SDK: on a non-JSON
+# │  参数：error: json.JSONDecodeError, response: Any = ...
+# │  返回：ProviderStreamError
+# └──────────────────────────────────────────────────────────────
 def _provider_stream_error_from_json_decode_error(error: json.JSONDecodeError, *,
     response: Any = None) -> ProviderStreamError:
     """Preserve plain-text SSE data rejected inside the OpenAI SDK: on a non-JSON
@@ -229,6 +330,7 @@ def _provider_stream_error_from_json_decode_error(error: json.JSONDecodeError, *
     raw_text = str(getattr(error, "doc", "") or "").strip()
     safe_text = redact_sensitive_text(_sanitize_surrogates(raw_text), force=True)
     safe_text = safe_text[:_PROVIDER_STREAM_ERROR_TEXT_LIMIT]
+    # ⤷ 出口 return：返回 ProviderStreamError(status_code=None, body=_provider_error_b…
     return ProviderStreamError(
         status_code=None,
         body=_provider_error_body(
@@ -241,30 +343,51 @@ def _provider_stream_error_from_json_decode_error(error: json.JSONDecodeError, *
     )
 
 
+# ┌── 函数 def _iter_provider_stream_chunks()
+# │  作用：Yield SDK chunks while translating SDK-level SSE decode failures.
+# │  参数：stream, response: Any = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _iter_provider_stream_chunks(stream, *, response: Any = None):
     """Yield SDK chunks while translating SDK-level SSE decode failures."""
+    # ⤷ 关键分支 try/except：捕获 json.JSONDecodeError，出错走兜底而不是崩溃。
     try:
         yield from stream
     except json.JSONDecodeError as error:
         stream_response = response() if callable(response) else response
         if stream_response is None:
             stream_response = getattr(stream, "response", None)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise _provider_stream_error_from_json_decode_error(error, response=stream_response) from error
 
 
+# ┌── 函数 def _payload_has_error_shape()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：payload: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _payload_has_error_shape(payload: Any) -> bool:
     if not isinstance(payload, dict):
+        # ⤷ 出口 return：返回 False
         return False
     if isinstance(payload.get("error"), (dict, str)):
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 bool(payload.get('message')) and bool(payload.get('code') or…
     return bool(payload.get("message")) and bool(
         payload.get("code") or payload.get("error_code") or _status_code_from_payload(payload) is not None)
 
 
+# ┌── 函数 def _provider_stream_text_may_be_sse()
+# │  作用：Return True while pending text still looks like an SSE control block.
+# │  参数：text: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _provider_stream_text_may_be_sse(text: str) -> bool:
     """Return True while pending text still looks like an SSE control block."""
     stripped = (text or "").lstrip()
     if not stripped:
+        # ⤷ 出口 return：返回 False
         return False
 
     lines = stripped.splitlines()
@@ -288,24 +411,35 @@ def _provider_stream_text_may_be_sse(text: str) -> bool:
         is_last_incomplete = index == len(lines) - 1 and not trailing_newline
         if is_last_incomplete and any(
             sse_field.startswith(field_name) for sse_field in _PROVIDER_STREAM_SSE_FIELDS):
+            # ⤷ 出口 return：返回 True
             return True
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ⤷ 出口 return：返回 saw_sse_field
     return saw_sse_field
 
 
+# ┌── 函数 def _provider_stream_error_from_text()
+# │  作用：Convert provider-streamed error text into an exception for retry logic.
+# │  参数：text: str, finish_reason: Optional[str], response: Any = ...
+# │  返回：Optional[ProviderStreamError]
+# └──────────────────────────────────────────────────────────────
 def _provider_stream_error_from_text(text: str, finish_reason: Optional[str], *,
     response: Any = None) -> Optional[ProviderStreamError]:
     """Convert provider-streamed error text into an exception for retry logic."""
     if not text:
+        # ⤷ 出口 return：返回 None
         return None
 
     if str(finish_reason or "").lower() not in _PROVIDER_STREAM_ERROR_FINISH_REASONS:
+        # ⤷ 出口 return：返回 None
         return None
 
     headers = getattr(response, "headers", None) if response is not None else None
 
     def _error(payload: dict, status_code: Optional[int]) -> ProviderStreamError:
+        # ⤷ 出口 return：返回 ProviderStreamError(status_code=status_code, body=_provider_…
         return ProviderStreamError(status_code=status_code, body=_provider_error_body(payload, status_code),
             raw_text=text, headers=headers)
 
@@ -320,40 +454,64 @@ def _provider_stream_error_from_text(text: str, finish_reason: Optional[str], *,
 
     payload = _json_object_from_text(text)
     if payload is not None:
+        # ⤷ 出口 return：返回 _error(payload, _status_code_from_payload(payload))
         return _error(payload, _status_code_from_payload(payload))
 
     if text.strip():
+        # ⤷ 出口 return：返回 _error({}, None)
         return _error({}, None)
+    # ⤷ 出口 return：返回 None
     return None
 
 
 _IMAGE_PART_TYPES = frozenset({"image_url", "input_image", "image"})
 
 
+# ┌── 函数 def _image_part_chars()
+# │  作用：Char-equivalent of one image content part: the per-image cost learned from provider usage
+# │  参数：part: Dict[str, Any], image_cost: int
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _image_part_chars(part: Dict[str, Any], image_cost: int) -> int:
     """Char-equivalent of one image content part: the per-image cost learned from provider usage
     (x4 chars/token), never the base64 payload length. A single native screenshot priced as text
     read as ~100K+ tokens and selected the giant-conversation watchdog tiers (#63871, #76411)."""
     text = part.get("text")
+    # ⤷ 出口 return：返回 image_cost * 4 + (len(text) if isinstance(text, str) else 0)
     return image_cost * 4 + (len(text) if isinstance(text, str) else 0)
 
 
+# ┌── 函数 def _payload_chars()
+# │  作用：``len(str(value))`` with image content parts priced at ``image_cost`` tokens each.
+# │  参数：value: Any, image_cost: int
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _payload_chars(value: Any, image_cost: int) -> int:
     """``len(str(value))`` with image content parts priced at ``image_cost`` tokens each."""
     if value is None:
+        # ⤷ 出口 return：返回 0
         return 0
     if isinstance(value, dict):
         part_type = value.get("type")
         # JSON-Schema nodes may hold a sub-schema (``properties.type``) or a multi-type list
         # under the "type" key; only scalar content-part types can ever match (#104793).
         if isinstance(part_type, str) and part_type in _IMAGE_PART_TYPES and any(k in value for k in ("image_url", "image", "source", "file_id")):
+            # ⤷ 出口 return：返回 _image_part_chars(value, image_cost)
             return _image_part_chars(value, image_cost)
+        # ⤷ 出口 return：返回 sum((len(str(k)) + 6 + _payload_chars(v, image_cost) for k, …
         return sum(len(str(k)) + 6 + _payload_chars(v, image_cost) for k, v in value.items())
     if isinstance(value, list):
+        # ⤷ 出口 return：返回 sum((_payload_chars(item, image_cost) for item in value)) + …
         return sum(_payload_chars(item, image_cost) for item in value) + 2 * len(value)
+    # ⤷ 出口 return：返回 len(str(value))
     return len(str(value))
 
 
+# ┌── 函数 def estimate_request_context_tokens()
+# │  作用：Cheap char/4 context estimate for the stale-call detectors. Handles both
+# │  参数：api_payload: Any
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def estimate_request_context_tokens(api_payload: Any) -> int:
     """Cheap char/4 context estimate for the stale-call detectors. Handles both
     wire shapes so Codex turns don't report ~0 tokens: list -> Chat ``messages``;
@@ -365,28 +523,45 @@ def estimate_request_context_tokens(api_payload: Any) -> int:
     image_cost = current_image_token_cost()
 
     def _chars(value: Any) -> int:
+        # ⤷ 出口 return：返回 _payload_chars(value, image_cost)
         return _payload_chars(value, image_cost)
 
     if isinstance(api_payload, list):
+        # ⤷ 出口 return：返回 sum((_chars(item) for item in api_payload)) // 4
         return sum(_chars(item) for item in api_payload) // 4
     if not isinstance(api_payload, dict):
+        # ⤷ 出口 return：返回 _chars(api_payload) // 4
         return _chars(api_payload) // 4
     messages = api_payload.get("messages")
     if isinstance(messages, list):
         total_chars = sum(_chars(item) for item in messages)
         if "tools" in api_payload:
             total_chars += _chars(api_payload.get("tools"))
+        # ⤷ 出口 return：返回 total_chars // 4
         return total_chars // 4
     if "input" in api_payload:
+        # ⤷ 出口 return：返回 sum((_chars(api_payload.get(k)) for k in ('input', 'instruct…
         return sum(_chars(api_payload.get(k)) for k in ("input", "instructions", "tools")) // 4
+    # ⤷ 出口 return：返回 sum((_chars(value) for value in api_payload.values())) // 4
     return sum(_chars(value) for value in api_payload.values()) // 4
 
 
+# ┌── 函数 def _is_openai_codex_backend()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_openai_codex_backend(agent) -> bool:
     from agent.codex_responses_adapter import classify_responses_route
+    # ⤷ 出口 return：返回 classify_responses_route(agent).is_codex_backend
     return classify_responses_route(agent).is_codex_backend
 
 
+# ┌── 函数 def openai_codex_stale_timeout_floor()
+# │  作用：Minimum wall-clock stale timeout for openai-codex by estimated context:
+# │  参数：est_tokens: int
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def openai_codex_stale_timeout_floor(est_tokens: int) -> float:
     """Minimum wall-clock stale timeout for openai-codex by estimated context:
     subscription-backed Codex can spend minutes in admission/prefill on
@@ -394,24 +569,40 @@ def openai_codex_stale_timeout_floor(est_tokens: int) -> float:
     The floor engages above 10k estimated tokens."""
     for threshold, floor in ((100_000, 1200.0), (50_000, 900.0), (10_000, 600.0)):
         if est_tokens > threshold:
+            # ⤷ 出口 return：返回 floor
             return floor
+    # ⤷ 出口 return：返回 0.0
     return 0.0
 
 
+# ┌── 函数 def _validated_openrouter_provider_sort()
+# │  作用：Return a normalized OpenRouter provider.sort value or None.
+# │  参数：raw_sort: Any
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _validated_openrouter_provider_sort(raw_sort: Any) -> Optional[str]:
     """Return a normalized OpenRouter provider.sort value or None."""
     if not isinstance(raw_sort, str):
+        # ⤷ 出口 return：返回 None
         return None
     sort_value = raw_sort.strip().lower()
     if not sort_value:
+        # ⤷ 出口 return：返回 None
         return None
     if sort_value in _OPENROUTER_PROVIDER_SORT_VALUES:
+        # ⤷ 出口 return：返回 sort_value
         return sort_value
     logger.warning("Ignoring invalid OpenRouter provider.sort value %r (allowed: %s)", raw_sort,
         ", ".join(sorted(_OPENROUTER_PROVIDER_SORT_VALUES)))
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _provider_preferences_for_agent()
+# │  作用：Build the validated provider-routing object shared by request paths.
+# │  参数：agent
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _provider_preferences_for_agent(agent) -> Dict[str, Any]:
     """Build the validated provider-routing object shared by request paths.
 
@@ -430,26 +621,42 @@ def _provider_preferences_for_agent(agent) -> Dict[str, Any]:
     merged = {**flat, **{k: v for k, v in per_model.items() if k in flat}}
     merged["sort"] = _validated_openrouter_provider_sort(merged["sort"])
     merged["require_parameters"] = True if merged["require_parameters"] else None
+    # ⤷ 出口 return：返回 {key: value for key, value in merged.items() if value}
     return {key: value for key, value in merged.items() if value}
 
 
+# ┌── 函数 def _prompt_cache_scope_for_agent()
+# │  作用：Rotation-stable logical cache scope for *agent*, or None (transports then
+# │  参数：agent
+# │  返回：'str | None'
+# └──────────────────────────────────────────────────────────────
 def _prompt_cache_scope_for_agent(agent) -> "str | None":
     """Rotation-stable logical cache scope for *agent*, or None (transports then
     fall back to the physical session_id, so a failure never blocks the build)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.prompt_cache_scope import resolve_prompt_cache_scope_safe
+        # ⤷ 出口 return：返回 resolve_prompt_cache_scope_safe(agent)
         return resolve_prompt_cache_scope_safe(agent)
     except Exception:
         logger.debug("prompt-cache scope resolution failed", exc_info=True)
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _merge_nous_portal_messages_extra_body()
+# │  作用：Merge Portal ``tags`` / ``session_id`` onto an Anthropic Messages kwargs dict.
+# │  参数：agent, anthropic_kwargs: dict
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _merge_nous_portal_messages_extra_body(agent, anthropic_kwargs: dict) -> dict:
     """Merge Portal ``tags`` / ``session_id`` onto an Anthropic Messages kwargs dict.
     The Nous profile is only consulted by the OpenAI-wire transport; ``session_id``
     only — never ``provider_preferences`` (an OpenAI-wire routing object)."""
     if getattr(agent, "provider", None) not in {"nous", "nous-portal", "nousresearch"}:
+        # ⤷ 出口 return：返回 anthropic_kwargs
         return anthropic_kwargs
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from providers import get_provider_profile
         nous_profile = get_provider_profile("nous")
@@ -458,9 +665,15 @@ def _merge_nous_portal_messages_extra_body(agent, anthropic_kwargs: dict) -> dic
                 nous_profile.build_extra_body(session_id=getattr(agent, "session_id", None)))
     except Exception as exc:  # noqa: BLE001 — never block a turn on tagging
         logger.debug("Nous Portal extra_body merge failed: %s", exc)
+    # ⤷ 出口 return：返回 anthropic_kwargs
     return anthropic_kwargs
 
 
+# ┌── 函数 def _estimate_chunk_bytes()
+# │  作用：Cheap per-chunk size estimate for the stream diagnostic counters: delta
+# │  参数：chunk: Any
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _estimate_chunk_bytes(chunk: Any) -> int:
     """Cheap per-chunk size estimate for the stream diagnostic counters: delta
     string lengths plus a framing floor (~3x cheaper than ``len(repr(chunk))``
@@ -468,6 +681,7 @@ def _estimate_chunk_bytes(chunk: Any) -> int:
     size = 40  # SSE/JSON framing floor per chunk
 
     def _add(obj, *attrs):
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal size
         for attr in attrs:
             v = getattr(obj, attr, None)
@@ -486,9 +700,15 @@ def _estimate_chunk_bytes(chunk: Any) -> int:
                         _add(fn, "arguments", "name")
         else:
             _add(getattr(chunk, "delta", None), "text", "partial_json")
+    # ⤷ 出口 return：返回 size
     return size
 
 
+# ┌── 函数 def _codex_wait_notice_recovery()
+# │  作用：Describe the earliest enabled Codex watchdog on the call timeline.
+# │  参数：stale_timeout: float, ttfb_enabled: bool, ttfb_timeout: float, last_event_ts: Optional[float], last_progress_ts: Optional[float], retry_started_ts: Optional[float], call_start: float, idle_enabled: bool  …共 11 个
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _codex_wait_notice_recovery(*, stale_timeout: float, ttfb_enabled: bool, ttfb_timeout: float,
     last_event_ts: Optional[float], last_progress_ts: Optional[float],
     retry_started_ts: Optional[float], call_start: float, idle_enabled: bool,
@@ -506,7 +726,9 @@ def _codex_wait_notice_recovery(*, stale_timeout: float, ttfb_enabled: bool, ttf
     elif (not idle_requires_progress or last_progress_ts is not None) and idle_enabled and math.isfinite(idle_timeout):
         deadlines.append(max(0.0, last_event_ts - call_start) + idle_timeout)
     if not deadlines or min(deadlines) <= elapsed:
+        # ⤷ 出口 return：返回 ''
         return ""
+    # ⤷ 出口 return：返回 f'; auto-reconnect at {int(min(deadlines))}s'
     return f"; auto-reconnect at {int(min(deadlines))}s"
 
 
@@ -518,18 +740,36 @@ def _codex_wait_notice_recovery(*, stale_timeout: float, ttfb_enabled: bool, ttf
 # restore_primary_runtime — the streak measured the OLD provider). Past the
 # give-up threshold, calls abort immediately with an actionable error.
 
+# ┌── 函数 def _stale_streak()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _stale_streak(agent) -> int:
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 int(getattr(agent, '_consecutive_stale_streams', 0) or 0)
         return int(getattr(agent, "_consecutive_stale_streams", 0) or 0)
     except Exception:
+        # ⤷ 出口 return：返回 0
         return 0
 
 
+# ┌── 函数 def _bump_stale_streak()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bump_stale_streak(agent) -> None:
     with contextlib.suppress(Exception):
         agent._consecutive_stale_streams = _stale_streak(agent) + 1
 
 
+# ┌── 函数 def _reset_stale_streak()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reset_stale_streak(agent) -> None:
     with contextlib.suppress(Exception):
         agent._consecutive_stale_streams = 0
@@ -538,18 +778,30 @@ def _reset_stale_streak(agent) -> None:
 _INTERRUPTED_WAIT_STALE_SECONDS = 30.0
 
 
+# ┌── 函数 def _record_interrupted_provider_wait()
+# │  作用：Count a user-aborted pre-response stall toward the stale breaker: past the
+# │  参数：agent, elapsed: float, response_started: bool
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _record_interrupted_provider_wait(agent, elapsed: float, *, response_started: bool) -> bool:
     """Count a user-aborted pre-response stall toward the stale breaker: past the
     wait-notice interval an interrupt is evidence of an unresponsive attempt.
     Mid-response and early interrupts stay neutral."""
     if response_started or elapsed < _INTERRUPTED_WAIT_STALE_SECONDS:
+        # ⤷ 出口 return：返回 False
         return False
     _bump_stale_streak(agent)
     logger.warning("Interrupted provider wait counted as stale after %.0fs with no output; "
         "consecutive stale attempts=%d.", elapsed, _stale_streak(agent))
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _report_stale_nonstream_kill()
+# │  作用：Log + status message for a stale non-streaming kill, shared by the worker
+# │  参数：agent, api_kwargs: dict, elapsed: float, stale_timeout: float, inline: bool = ..., hint: Optional[str] = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _report_stale_nonstream_kill(agent, api_kwargs: dict, elapsed: float, stale_timeout: float, *,
     inline: bool = False, hint: Optional[str] = None) -> None:
     """Log + status message for a stale non-streaming kill, shared by the worker
@@ -559,6 +811,7 @@ def _report_stale_nonstream_kill(agent, api_kwargs: dict, elapsed: float, stale_
     logger.warning("%son-streaming API call stale for %.0fs (threshold %.0fs). "
         "model=%s context=~%s tokens. Killing connection.", "Inline n" if inline else "N", elapsed,
         stale_timeout, model, f"{estimate_request_context_tokens(api_kwargs):,}")
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         agent._buffer_status(
             f"⚠️ No response from provider for {int(elapsed)}s (non-streaming, model: {model}). {hint or 'Aborting call.'}")
@@ -566,19 +819,31 @@ def _report_stale_nonstream_kill(agent, api_kwargs: dict, elapsed: float, stale_
         logger.debug("stale status buffering failed", exc_info=True)
 
 
+# ┌── 函数 def _touch_stale_kill_activity()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, elapsed: float
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _touch_stale_kill_activity(agent, elapsed: float) -> None:
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         agent._touch_activity(f"stale non-streaming call killed after {int(elapsed)}s")
     except Exception:
         logger.debug("stale activity touch failed", exc_info=True)
 
 
+# ┌── 函数 def _check_stale_giveup()
+# │  作用：Raise immediately when the consecutive-stale streak is past the
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _check_stale_giveup(agent) -> None:
     """Raise immediately when the consecutive-stale streak is past the
     give-up threshold — no network attempt, no stale-timeout wait."""
     _giveup = env_int("HERMES_STREAM_STALE_GIVEUP", 5)
     _streak = _stale_streak(agent)
     if _giveup > 0 and _streak >= _giveup:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(
             "Provider has been unresponsive (no response received) for "
             f"{_streak} consecutive stale attempts — aborting this call to "
@@ -586,22 +851,41 @@ def _check_stale_giveup(agent) -> None:
         )
 
 
+# ┌── 函数 def _configured_stale_base()
+# │  作用：Per-provider ``stale_timeout_seconds`` config, else HERMES_STREAM_STALE_TIMEOUT (180s).
+# │  参数：agent
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _configured_stale_base(agent) -> float:
     """Per-provider ``stale_timeout_seconds`` config, else HERMES_STREAM_STALE_TIMEOUT (180s)."""
     cfg = get_provider_stale_timeout(agent.provider, agent.model)
+    # ⤷ 出口 return：返回 cfg if cfg is not None else env_float('HERMES_STREAM_STALE_T…
     return cfg if cfg is not None else env_float("HERMES_STREAM_STALE_TIMEOUT", 180.0)
 
 
+# ┌── 函数 def _scale_stale_timeout_for_context()
+# │  作用：Large contexts: slow models think for minutes before the first token;
+# │  参数：base: float, est_tokens: int
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _scale_stale_timeout_for_context(base: float, est_tokens: int) -> float:
     """Large contexts: slow models think for minutes before the first token;
     scale the threshold or the detector kills healthy streams."""
     if est_tokens > 100_000:
+        # ⤷ 出口 return：返回 max(base, 300.0)
         return max(base, 300.0)
     if est_tokens > 50_000:
+        # ⤷ 出口 return：返回 max(base, 240.0)
         return max(base, 240.0)
+    # ⤷ 出口 return：返回 base
     return base
 
 
+# ┌── 函数 def _cloud_stale_timeout()
+# │  作用：Cloud stale-stream patience: ``base`` scaled for context size, then floored for
+# │  参数：base: float, api_kwargs: dict
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _cloud_stale_timeout(base: float, api_kwargs: dict) -> float:
     """Cloud stale-stream patience: ``base`` scaled for context size, then floored for
     known reasoning models. ``model`` (OpenAI/Anthropic) wins over ``modelId`` (Bedrock);
@@ -612,15 +896,27 @@ def _cloud_stale_timeout(base: float, api_kwargs: dict) -> float:
     floor = get_reasoning_stale_timeout_floor(api_kwargs.get("model") or api_kwargs.get("modelId") or "")
     if floor is None and api_kwargs.get("modelId"):
         floor = _bedrock_reasoning_stale_floor(api_kwargs["modelId"])
+    # ⤷ 出口 return：返回 timeout if floor is None else max(timeout, floor)
     return timeout if floor is None else max(timeout, floor)
 
 
+# ┌── 函数 def _derive_stream_stale_timeout()
+# │  作用：Stale-stream patience for a provider that is never a local endpoint (Bedrock):
+# │  参数：agent, api_kwargs: dict
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _derive_stream_stale_timeout(agent, api_kwargs: dict) -> float:
     """Stale-stream patience for a provider that is never a local endpoint (Bedrock):
     the OpenAI/Anthropic stale detector's budget minus its local branch."""
+    # ⤷ 出口 return：返回 _cloud_stale_timeout(_configured_stale_base(agent), api_kwar…
     return _cloud_stale_timeout(_configured_stale_base(agent), api_kwargs)
 
 
+# ┌── 函数 def _bedrock_reasoning_stale_floor()
+# │  作用：Map a Bedrock inference-profile id to its reasoning stale-timeout floor.
+# │  参数：model_id: object
+# │  返回：'float | None'
+# └──────────────────────────────────────────────────────────────
 def _bedrock_reasoning_stale_floor(model_id: object) -> "float | None":
     """Map a Bedrock inference-profile id to its reasoning stale-timeout floor.
 
@@ -633,6 +929,7 @@ def _bedrock_reasoning_stale_floor(model_id: object) -> "float | None":
     """
     from agent.reasoning_timeouts import get_reasoning_stale_timeout_floor
     if not model_id or not isinstance(model_id, str):
+        # ⤷ 出口 return：返回 None
         return None
     name = model_id.strip().lower()
     for prefix in ("global.", "us.", "eu.", "apac.", "ap.", "au.", "jp.", "ca.", "sa.", "me.", "af."):
@@ -646,9 +943,15 @@ def _bedrock_reasoning_stale_floor(model_id: object) -> "float | None":
     candidates = dict.fromkeys(
         form for cand in base_candidates
         for form in (cand, re.sub(r"(?<=\d)-(?=\d)", ".", cand), re.sub(r"(?<=\d)\.(?=\d)", "-", cand)))
+    # ⤷ 出口 return：返回 next((f for f in map(get_reasoning_stale_timeout_floor, cand…
     return next((f for f in map(get_reasoning_stale_timeout_floor, candidates) if f is not None), None)
 
 
+# ┌── 函数 def _bedrock_converse_call()
+# │  作用：Pop the Hermes routing keys and call ``converse`` / ``converse_stream`` (boto3
+# │  参数：api_kwargs: dict, stream: bool, on_stream_denied = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _bedrock_converse_call(api_kwargs: dict, *, stream: bool, on_stream_denied=None):
     """Pop the Hermes routing keys and call ``converse`` / ``converse_stream`` (boto3
     directly) with the shared recovery: a cachePoint rejection (Nova: toolConfig.tools,
@@ -664,20 +967,30 @@ def _bedrock_converse_call(api_kwargs: dict, *, stream: bool, on_stream_denied=N
     client = _get_bedrock_runtime_client(region)
     method = client.converse_stream if stream else client.converse
     finish = (lambda raw: raw.get("stream", [])) if stream else normalize_converse_response
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         raw_response = method(**api_kwargs)
     except Exception as exc:
         retry_kwargs = recover_from_cache_point_rejection(exc, api_kwargs)
         if retry_kwargs is not None:
+            # ⤷ 出口 return：返回 finish(method(**retry_kwargs))
             return finish(method(**retry_kwargs))
         if on_stream_denied is not None and is_streaming_access_denied_error(exc):
+            # ⤷ 出口 return：返回 on_stream_denied(client, api_kwargs, exc)
             return on_stream_denied(client, api_kwargs, exc)
         if is_stale_connection_error(exc):
             invalidate_runtime_client(region)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
+    # ⤷ 出口 return：返回 finish(raw_response)
     return finish(raw_response)
 
 
+# ┌── 函数 def _dispatch_nonstreaming_api_request()
+# │  作用：Run one non-streaming LLM request for the active api_mode and return it.
+# │  参数：agent, api_kwargs: dict, make_client
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _dispatch_nonstreaming_api_request(agent, api_kwargs: dict, *, make_client):
     """Run one non-streaming LLM request for the active api_mode and return it.
 
@@ -687,14 +1000,17 @@ def _dispatch_nonstreaming_api_request(agent, api_kwargs: dict, *, make_client):
     manage their own clients. Interrupt/abort/close semantics stay in callers.
     """
     if agent.api_mode == "codex_responses":
+        # ⤷ 出口 return：返回 agent._run_codex_stream(api_kwargs, client=make_client('code…
         return agent._run_codex_stream(api_kwargs, client=make_client("codex_stream_request"),
             on_first_delta=getattr(agent, "_codex_on_first_delta", None))
     if agent.api_mode == "anthropic_messages":
         # Request-local client so the stale/interrupt watchdog aborts sockets
         # from the stranger thread while the worker owns the SDK close (#67142).
         request_client = make_client("anthropic_messages_request", kind="anthropic_messages")
+        # ⤷ 出口 return：返回 agent._anthropic_messages_create(api_kwargs, client=request_…
         return agent._anthropic_messages_create(api_kwargs, client=request_client)
     if agent.api_mode == "bedrock_converse":
+        # ⤷ 出口 return：返回 _bedrock_converse_call(api_kwargs, stream=False)
         return _bedrock_converse_call(api_kwargs, stream=False)
     if agent.provider == "moa":
         # MoA is a virtual provider backed by the in-process MoAClient facade — never
@@ -705,10 +1021,17 @@ def _dispatch_nonstreaming_api_request(agent, api_kwargs: dict, *, make_client):
         _completions = getattr(getattr(agent.client, "chat", None), "completions", None)
         if not callable(getattr(_completions, "prepare", None)):
             api_kwargs.pop("_moa_prepared_request", None)
+        # ⤷ 出口 return：返回 agent.client.chat.completions.create(**api_kwargs)
         return agent.client.chat.completions.create(**api_kwargs)
+    # ⤷ 出口 return：返回 make_client('chat_completion_request').chat.completions.crea…
     return make_client("chat_completion_request").chat.completions.create(**api_kwargs)
 
 
+# ┌── 函数 def should_use_direct_api_call()
+# │  作用：Whether an OpenAI-wire request should skip the interrupt worker.
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def should_use_direct_api_call(agent) -> bool:
     """Whether an OpenAI-wire request should skip the interrupt worker.
 
@@ -720,15 +1043,19 @@ def should_use_direct_api_call(agent) -> bool:
     keep their workers: their cancellation and client ownership differ.
     """
     if getattr(agent, "api_mode", None) != "chat_completions" or getattr(agent, "provider", None) == "moa":
+        # ⤷ 出口 return：返回 False
         return False
     if getattr(agent, "platform", None) == "cron":
+        # ⤷ 出口 return：返回 True
         return True
     # Delegated child — via the execution ContextVar set by _run_single_child,
     # with the agent's platform stamp as a fallback for callers that bypass it.
     with contextlib.suppress(Exception):
         from agent.delegation_context import is_delegated_child_context
         if is_delegated_child_context():
+            # ⤷ 出口 return：返回 True
             return True
+    # ⤷ 出口 return：返回 getattr(agent, 'platform', None) == 'subagent'
     return getattr(agent, "platform", None) == "subagent"
 
 
@@ -737,13 +1064,20 @@ def should_use_direct_api_call(agent) -> bool:
 _DIRECT_API_ACTIVITY_HEARTBEAT_SECONDS = 15.0
 
 
+# ┌── 函数 def _managed_local_load_notice()
+# │  作用：Live phase notice ("⏳ loading <model> into memory — N%" / "⚙ processing
+# │  参数：agent, api_kwargs: dict
+# │  返回：'Optional[str]'
+# └──────────────────────────────────────────────────────────────
 def _managed_local_load_notice(agent, api_kwargs: dict) -> "Optional[str]":
     """Live phase notice ("⏳ loading <model> into memory — N%" / "⚙ processing
     prompt — P%") while the managed local server works before the first token;
     None when neither applies. Otherwise a cold load reads as a generic stall."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         base = str(getattr(agent, "base_url", "") or "")
         if not base:
+            # ⤷ 出口 return：返回 None
             return None
         from urllib.parse import urlparse
         from hermes_cli.local_runtime.load_progress import get_loading_progress, get_prefill_progress
@@ -751,25 +1085,34 @@ def _managed_local_load_notice(agent, api_kwargs: dict) -> "Optional[str]":
         state = json.loads(state_path().read_text(encoding="utf-8"))
         managed = urlparse(str(state.get("base_url", ""))).netloc.lower()
         if not managed or urlparse(base).netloc.lower() != managed:
+            # ⤷ 出口 return：返回 None
             return None
         model = str(api_kwargs.get("model", ""))
         progress = get_loading_progress().get(model)
         if progress is not None:
+            # ⤷ 出口 return：返回 f"⏳ loading {model} into memory — {progress['percent']}% (re…
             return (f"⏳ loading {model} into memory — {progress['percent']}% "
                 "(responses start once the model is loaded)")
         prefill = get_prefill_progress(model)
         if prefill is None:
+            # ⤷ 出口 return：返回 None
             return None
         processed = int(prefill["processed"])
         total = estimate_request_context_tokens(api_kwargs)
         if total and total >= processed:
             return f"⚙ processing prompt — {max(0, min(100, round(processed / total * 100)))}%"
         # Counter past the estimate (estimator undercounted): no honest denominator, label-only.
+        # ⤷ 出口 return：返回 '⚙ processing prompt'
         return "⚙ processing prompt"
     except Exception:  # noqa: BLE001 — a status nicety must never break a call
         return None
 
 
+# ┌── 函数 def _resolve_direct_stale_timeout()
+# │  作用：Stale budget for the inline call via ``agent._compute_non_stream_stale_timeout``.
+# │  参数：agent, api_kwargs: dict
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _resolve_direct_stale_timeout(agent, api_kwargs: dict) -> float:
     """Stale budget for the inline call via ``agent._compute_non_stream_stale_timeout``.
     A non-numeric result (stub agent) leaves the watchdog disarmed; a resolver
@@ -777,10 +1120,17 @@ def _resolve_direct_stale_timeout(agent, api_kwargs: dict) -> float:
     resolver = getattr(agent, "_compute_non_stream_stale_timeout", None)
     value = resolver(api_kwargs) if callable(resolver) else None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
+        # ⤷ 出口 return：返回 float('inf')
         return float("inf")
+    # ⤷ 出口 return：返回 float(value)
     return float(value)
 
 
+# ┌── 函数 def _inline_nonstream_hard_timeout()
+# │  作用：Socket-level backstop for inline non-streaming calls (#85252): the keepalive
+# │  参数：stale_timeout: float
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _inline_nonstream_hard_timeout(stale_timeout: float):
     """Socket-level backstop for inline non-streaming calls (#85252): the keepalive
     client uses ``read=None`` and the stranger-thread abort must not ``close()`` the
@@ -788,21 +1138,34 @@ def _inline_nonstream_hard_timeout(stale_timeout: float):
     ``httpx.Timeout`` with read == stale budget, a float if httpx is unavailable,
     or ``None`` when the watchdog is disarmed (non-finite budget)."""
     if not math.isfinite(stale_timeout) or stale_timeout <= 0:
+        # ⤷ 出口 return：返回 None
         return None
     conn_cap = min(stale_timeout, 60.0)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import httpx as _httpx
+        # ⤷ 出口 return：返回 _httpx.Timeout(connect=conn_cap, read=stale_timeout, write=c…
         return _httpx.Timeout(connect=conn_cap, read=stale_timeout, write=conn_cap, pool=conn_cap)
     except Exception:
+        # ⤷ 出口 return：返回 stale_timeout
         return stale_timeout
 
 
+# ┌── 类 class _InlineRequest
+# │  说明：Lifecycle state for one inline non-streaming request (#75301). Every transition
+# │  成员：共 10 个方法；对外可用 6 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _InlineRequest:
     """Lifecycle state for one inline non-streaming request (#75301). Every transition
     happens under ``lock``: ``done`` stops a late timer bumping the stale streak after
     unwind; ``cancelled`` lets an interrupt own the outcome so a racing timer can't
     misclassify the kill as staleness; ``stale`` is the one-shot transition."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, agent, api_kwargs: dict, stale_timeout: float, call_start: float
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, agent, api_kwargs: dict, stale_timeout: float, call_start: float):
         self.agent = agent
         self.api_kwargs = api_kwargs
@@ -818,6 +1181,11 @@ class _InlineRequest:
         self._hb = threading.Thread(target=self._activity_heartbeat, name="direct-api-activity-hb", daemon=True)
         self._watchdog = None
 
+    # ┌── 函数 def _activity_heartbeat()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _activity_heartbeat(self) -> None:
         # Never put the API call itself on another worker thread — that is the nested-pool
         # deadlock this path exists to avoid (#60203). This ticker only refreshes the clock.
@@ -825,6 +1193,11 @@ class _InlineRequest:
             with contextlib.suppress(Exception):
                 self.agent._touch_activity("waiting for non-streaming API response")
 
+    # ┌── 函数 def _on_stale()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_stale(self) -> None:
         # Timer thread: aborts sockets only, never issues a request (keeps the no-worker
         # property). False = request finished or an interrupt owns the outcome; stay silent.
@@ -834,6 +1207,11 @@ class _InlineRequest:
         _report_stale_nonstream_kill(self.agent, self.api_kwargs, elapsed, self.stale_timeout, inline=True)
         _touch_stale_kill_activity(self.agent, elapsed)
 
+    # ┌── 函数 def start_watchdogs()
+    # │  作用：Start the activity heartbeat and (for a finite budget) the stale timer.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def start_watchdogs(self) -> None:
         """Start the activity heartbeat and (for a finite budget) the stale timer."""
         self._hb.start()
@@ -843,6 +1221,11 @@ class _InlineRequest:
             self._watchdog.daemon = True
             self._watchdog.start()
 
+    # ┌── 函数 def stop_watchdogs()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def stop_watchdogs(self) -> None:
         if self._watchdog is not None:
             self._watchdog.cancel()
@@ -850,12 +1233,23 @@ class _InlineRequest:
         self._hb_stop.set()
         self._hb.join(timeout=2.0)
 
+    # ┌── 函数 def _abort_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, client, reason: str, log_msg: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _abort_client(self, client, reason: str, log_msg: str) -> None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             self.agent._abort_request_openai_client(client, reason=reason)
         except Exception:
             logger.debug(log_msg, exc_info=True)
 
+    # ┌── 函数 def abort()
+    # │  作用：Abort the inline request from a watchdog/interrupt thread. Returns True
+    # │  参数：self, reason: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def abort(self, reason: str) -> bool:
         """Abort the inline request from a watchdog/interrupt thread. Returns True
         when this call owned the stale transition (the timer reports/bumps once,
@@ -864,9 +1258,11 @@ class _InlineRequest:
         cache the client and the NEXT call check it out."""
         with self.lock:
             if self.done:
+                # ⤷ 出口 return：返回 False
                 return False
             if reason == "stale_call_kill":
                 if self.cancelled:
+                    # ⤷ 出口 return：返回 False
                     return False
                 newly_stale = not self.stale
                 if newly_stale:
@@ -881,8 +1277,14 @@ class _InlineRequest:
                 newly_stale = False
             if self.client is not None:
                 self._abort_client(self.client, reason, f"Inline request abort failed ({reason})")
+            # ⤷ 出口 return：返回 newly_stale
             return newly_stale
 
+    # ┌── 函数 def make_client()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, reason: str, kind: str = 'openai'
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def make_client(self, reason: str, kind: str = "openai"):
         # Only OpenAI-wire requests reach direct_api_call; ``kind`` exists
         # for signature parity with the dispatch helper.
@@ -897,21 +1299,39 @@ class _InlineRequest:
                 # before httpx opens its socket is accepted.)
                 self._abort_client(client, "stale_call_kill", "Inline abort after late client registration failed")
         if stale_before_dispatch:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise TimeoutError(
                 f"Non-streaming API call timed out before request dispatch (threshold: {int(self.stale_timeout)}s)")
         self.agent._active_request_abort = self.abort_hook
+        # ⤷ 出口 return：返回 client
         return client
 
+    # ┌── 函数 def mark_done()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def mark_done(self) -> None:
         with self.lock:
             self.done = True
 
+    # ┌── 函数 def pop_client()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def pop_client(self):
         with self.lock:
             client, self.client = self.client, None
+        # ⤷ 出口 return：返回 client
         return client
 
 
+# ┌── 函数 def direct_api_call()
+# │  作用：Run a non-streaming LLM call inline on the conversation thread (cron turns,
+# │  参数：agent, api_kwargs: dict
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def direct_api_call(agent, api_kwargs: dict):
     """Run a non-streaming LLM call inline on the conversation thread (cron turns,
     delegated children — see ``should_use_direct_api_call``): no interrupt worker,
@@ -938,22 +1358,27 @@ def direct_api_call(agent, api_kwargs: dict):
     # Only a clean return reports the reuse reason; errors/interrupts really
     # close the client so the retry builds a fresh pool.
     succeeded = False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         response = _dispatch_nonstreaming_api_request(agent, api_kwargs, make_client=request.make_client)
     except Exception:
         if getattr(agent, "_interrupt_requested", False):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise InterruptedError("Agent interrupted during API call") from None
         with request.lock:
             was_stale = request.stale
         if was_stale:
             # Our own abort caused the transport error: raise a retryable
             # TimeoutError, never InterruptedError ("the user wants to stop").
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise TimeoutError(
                 f"Non-streaming API call timed out after {int(time.time() - call_start)}s with no response "
                 f"(threshold: {int(stale_timeout)}s)") from None
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
     else:
         if getattr(agent, "_interrupt_requested", False):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise InterruptedError("Agent interrupted during API call")
         # Mark ``done`` under the lock so a timer firing between response
         # arrival and unwind is a no-op and cannot overwrite the reset below.
@@ -962,6 +1387,7 @@ def direct_api_call(agent, api_kwargs: dict):
         request.mark_done()
         _reset_stale_streak(agent)
         succeeded = True
+        # ⤷ 出口 return：返回 response
         return response
     finally:
         request.stop_watchdogs()
@@ -973,6 +1399,10 @@ def direct_api_call(agent, api_kwargs: dict):
                 reason="request_complete" if succeeded else "request_error_cleanup")
 
 
+# ┌── 类 class _RequestClientRegistry
+# │  说明：Per-request client / stream-handle registry shared by the request worker
+# │  成员：共 6 个方法；对外可用 3 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _RequestClientRegistry:
     """Per-request client / stream-handle registry shared by the request worker
     and the stranger threads (interrupt loop, stale detector) that may abort it.
@@ -990,6 +1420,11 @@ class _RequestClientRegistry:
     NEXT call check it out. Stream handles are safe to close from any thread.
     """
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, agent
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, agent):
         self.agent = agent
         self.client = None
@@ -998,32 +1433,63 @@ class _RequestClientRegistry:
         self.diag = None  # per-attempt stream diagnostics (streaming path)
         self.lock = threading.Lock()
 
+    # ┌── 函数 def set_client()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, client, kind: str = ...
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def set_client(self, client, *, kind: str = "openai"):
         with self.lock:
             self.client, self.kind, self.owner_tid = client, kind, threading.get_ident()
+        # ⤷ 出口 return：返回 client
         return client
 
+    # ┌── 函数 def _stream_close_callable()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：stream
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _stream_close_callable(stream):
         for owner in (stream, getattr(stream, "response", None)):
             close = getattr(owner, "close", None)
             if callable(close):
+                # ⤷ 出口 return：返回 close
                 return close
+        # ⤷ 出口 return：返回 None
         return None
 
+    # ┌── 函数 def set_stream_handle()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, stream
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def set_stream_handle(self, stream):
+        # ⤷ 出口 return：返回 stream if self._stream_close_callable(stream) is None else s…
         return stream if self._stream_close_callable(stream) is None else self.set_client(stream, kind="stream")
 
+    # ┌── 函数 def _close_stream_handle()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_stream_handle(self, stream, reason: str) -> None:
         close = self._stream_close_callable(stream)
         if close is None:
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             close()
             logger.info("Streaming response handle closed (%s)", reason)
         except Exception as exc:
             logger.debug("Streaming response handle close failed (%s): %s", reason, exc)
 
+    # ┌── 函数 def close_once()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def close_once(self, reason: str) -> None:
         with self.lock:
             request_client, request_kind, owner_tid = self.client, self.kind, self.owner_tid
@@ -1050,6 +1516,10 @@ class _RequestClientRegistry:
             self.agent._close_request_openai_client(request_client, reason=reason)
 
 
+# ┌── 类 class _NonStreamWatchdogs
+# │  说明：Poll-loop thresholds for one non-streaming request.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _NonStreamWatchdogs:
     """Poll-loop thresholds for one non-streaming request."""
@@ -1063,6 +1533,11 @@ class _NonStreamWatchdogs:
     idle_requires_progress: bool
 
 
+# ┌── 函数 def _resolve_nonstream_watchdogs()
+# │  作用：Stale-call timeout plus the Codex Responses stream watchdogs.
+# │  参数：agent, api_kwargs: dict
+# │  返回：_NonStreamWatchdogs
+# └──────────────────────────────────────────────────────────────
 def _resolve_nonstream_watchdogs(agent, api_kwargs: dict) -> _NonStreamWatchdogs:
     """Stale-call timeout plus the Codex Responses stream watchdogs.
 
@@ -1128,6 +1603,7 @@ def _resolve_nonstream_watchdogs(agent, api_kwargs: dict) -> _NonStreamWatchdogs
     # default for unset AND unparseable values, so both count as implicit.
     idle_explicit = env_float("HERMES_CODEX_EVENT_STALE_TIMEOUT_SECONDS", -1.0) != -1.0
     idle_timeout = env_float("HERMES_CODEX_EVENT_STALE_TIMEOUT_SECONDS", idle_default)
+    # ⤷ 出口 return：返回 _NonStreamWatchdogs(stale_timeout=stale_timeout, codex=codex…
     return _NonStreamWatchdogs(stale_timeout=stale_timeout, codex=codex, est_tokens=est_tokens,
         ttfb_enabled=ttfb_enabled, ttfb_timeout=ttfb_timeout, idle_enabled=codex and idle_timeout > 0,
         idle_timeout=idle_timeout,
@@ -1136,15 +1612,27 @@ def _resolve_nonstream_watchdogs(agent, api_kwargs: dict) -> _NonStreamWatchdogs
         ))
 
 
+# ┌── 函数 def _codex_silent_hang_hint()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_kwargs: dict
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _codex_silent_hang_hint(agent, api_kwargs: dict) -> Optional[str]:
     hint_fn = getattr(agent, "_codex_silent_hang_hint", None)
     with contextlib.suppress(Exception):
         if callable(hint_fn):
+            # ⤷ 出口 return：返回 hint_fn(model=api_kwargs.get('model'))
             return hint_fn(model=api_kwargs.get("model"))
+    # ⤷ 出口 return：返回 None
     return None
 
 
 
+# ┌── 函数 def interruptible_api_call()
+# │  作用：Run the API call on a worker thread so the caller can detect interrupts
+# │  参数：agent, api_kwargs: dict
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def interruptible_api_call(agent, api_kwargs: dict):
     """Run the API call on a worker thread so the caller can detect interrupts
     without waiting for the full HTTP round-trip. Each worker gets its own
@@ -1154,13 +1642,20 @@ def interruptible_api_call(agent, api_kwargs: dict):
     # Nested-pool contexts (cron, delegated children) wedge on a worker thread
     # (#62151): run inline. See should_use_direct_api_call.
     if should_use_direct_api_call(agent):
+        # ⤷ 出口 return：返回 direct_api_call(agent, api_kwargs)
         return direct_api_call(agent, api_kwargs)
     _check_stale_giveup(agent)  # cross-turn stale breaker (#58962), non-streaming sibling
     from agent.chat_completion_nonstream import _NonStreamRequest
 
+    # ⤷ 出口 return：返回 _NonStreamRequest(agent, api_kwargs).run()
     return _NonStreamRequest(agent, api_kwargs).run()
 
 
+# ┌── 函数 def _consume_ephemeral_reasoning_off()
+# │  作用：Consume the one-shot "answer without thinking" continuation flag.
+# │  参数：agent
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _consume_ephemeral_reasoning_off(agent) -> bool:
     """Consume the one-shot "answer without thinking" continuation flag.
 
@@ -1175,9 +1670,15 @@ def _consume_ephemeral_reasoning_off(agent) -> bool:
     consumed = bool(getattr(agent, "_ephemeral_reasoning_off", False))
     if consumed:
         agent._ephemeral_reasoning_off = False
+    # ⤷ 出口 return：返回 consumed
     return consumed
 
 
+# ┌── 函数 def _reasoning_config_for_wire()
+# │  作用：``agent.reasoning_config`` with the one-shot reasoning-off override applied.
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _reasoning_config_for_wire(agent):
     """``agent.reasoning_config`` with the one-shot reasoning-off override applied.
 
@@ -1198,13 +1699,21 @@ def _reasoning_config_for_wire(agent):
         if isinstance(cfg, dict) and (
             cfg.get("enabled") is False or cfg.get("effort") == "none"
         ):
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 cfg
         return cfg
     if ephemeral_off:
         cfg = {**(cfg or {}), "enabled": False, "effort": "none"}
+    # ⤷ 出口 return：返回 cfg
     return cfg
 
 
+# ┌── 函数 def _alias_tool_search_bridge_for_xai()
+# │  作用：xAI chat-completions reserves ``tool_search`` and 400s when the bridge declares
+# │  参数：agent, transport, tools_for_api
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _alias_tool_search_bridge_for_xai(agent, transport, tools_for_api):
     """xAI chat-completions reserves ``tool_search`` and 400s when the bridge declares
     it (#95003): rename the wire declaration; ``normalize_response`` maps calls back
@@ -1214,7 +1723,9 @@ def _alias_tool_search_bridge_for_xai(agent, transport, tools_for_api):
         transport._last_wire_aliases = {}
     is_xai_chat = agent.provider in {"xai", "xai-oauth"} or agent._base_url_hostname == "api.x.ai"
     if not (is_xai_chat and tools_for_api):
+        # ⤷ 出口 return：返回 tools_for_api
         return tools_for_api
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import copy as _copy_xai
         from agent.transports.chat_completions import _rename_tool_search_bridge_for_xai
@@ -1228,17 +1739,29 @@ def _alias_tool_search_bridge_for_xai(agent, transport, tools_for_api):
                 transport._last_wire_aliases = alias_map
     except Exception as exc:
         logger.warning("%s⚠️ Failed to alias tool_search bridge for xAI: %s", getattr(agent, "log_prefix", ""), exc)
+    # ⤷ 出口 return：返回 tools_for_api
     return tools_for_api
 
 
+# ┌── 函数 def _consume_ephemeral_max_output()
+# │  作用：Pop the one-shot ephemeral output cap; whichever path builds the request consumes it.
+# │  参数：agent
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _consume_ephemeral_max_output(agent):
     """Pop the one-shot ephemeral output cap; whichever path builds the request consumes it."""
     ephemeral_out = getattr(agent, "_ephemeral_max_output_tokens", None)
     if ephemeral_out is not None:
         agent._ephemeral_max_output_tokens = None
+    # ⤷ 出口 return：返回 ephemeral_out
     return ephemeral_out
 
 
+# ┌── 函数 def _build_anthropic_kwargs()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages, tools_for_api, reasoning_config, request_overrides
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_anthropic_kwargs(agent, api_messages, tools_for_api, reasoning_config, request_overrides):
     ctx_len = getattr(agent, "context_compressor", None)
     ephemeral_out = _consume_ephemeral_max_output(agent)
@@ -1253,16 +1776,28 @@ def _build_anthropic_kwargs(agent, api_messages, tools_for_api, reasoning_config
         drop_context_1m_beta=bool(getattr(agent, "_oauth_1m_beta_disabled", False)))
     # Portal reads ``tags`` / ``session_id`` on its Messages route too, but the profile hook
     # is only consulted by the OpenAI-wire transport — merge here to keep sticky routing.
+    # ⤷ 出口 return：返回 _merge_nous_portal_messages_extra_body(agent, anthropic_kwar…
     return _merge_nous_portal_messages_extra_body(agent, anthropic_kwargs)
 
 
+# ┌── 函数 def _build_bedrock_kwargs()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages, tools_for_api
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_bedrock_kwargs(agent, api_messages, tools_for_api):
     # Bedrock Converse — the adapter converts messages/tools and calls boto3 directly.
+    # ⤷ 出口 return：返回 agent._get_transport().build_kwargs(model=agent.model, messa…
     return agent._get_transport().build_kwargs(model=agent.model, messages=api_messages, tools=tools_for_api,
         max_tokens=agent.max_tokens, region=getattr(agent, "_bedrock_region", None) or "us-east-1",
         guardrail_config=getattr(agent, "_bedrock_guardrail_config", None))
 
 
+# ┌── 函数 def _build_codex_kwargs()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages, tools_for_api, reasoning_config, request_overrides, cache_scope_id
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_codex_kwargs(agent, api_messages, tools_for_api, reasoning_config, request_overrides, cache_scope_id):
     from agent.codex_responses_adapter import classify_responses_route
     from agent.native_compaction import native_compaction_context_management
@@ -1275,6 +1810,7 @@ def _build_codex_kwargs(agent, api_messages, tools_for_api, reasoning_config, re
     # ``enum`` values containing ``/`` — strip them (#27197). Deep-copy first: the
     # sanitizers mutate in place and tools_for_api aliases agent.tools (#27907).
     if is_xai_responses:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             import copy as _copy
             from tools.schema_sanitizer import strip_pattern_and_format, strip_slash_enum
@@ -1283,6 +1819,7 @@ def _build_codex_kwargs(agent, api_messages, tools_for_api, reasoning_config, re
             tools_for_api, _ = strip_slash_enum(tools_for_api)
         except Exception as exc:
             logger.warning("%s⚠️ Failed to sanitize tool schemas for xAI: %s", getattr(agent, "log_prefix", ""), exc)
+    # ⤷ 出口 return：返回 agent._get_transport().build_kwargs(model=agent.model, messa…
     return agent._get_transport().build_kwargs(model=agent.model,
         messages=agent._prepare_messages_for_non_vision_model(api_messages), tools=tools_for_api,
         reasoning_config=reasoning_config, session_id=getattr(agent, "session_id", None),
@@ -1296,6 +1833,11 @@ def _build_codex_kwargs(agent, api_messages, tools_for_api, reasoning_config, re
 
 
 
+# ┌── 函数 def _build_chat_completions_kwargs()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages, tools_for_api, reasoning_config, request_overrides, cache_scope_id
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_chat_completions_kwargs(agent, api_messages, tools_for_api, reasoning_config, request_overrides, cache_scope_id):
     transport = agent._get_transport()
     tools_for_api = _alias_tool_search_bridge_for_xai(agent, transport, tools_for_api)
@@ -1337,9 +1879,11 @@ def _build_chat_completions_kwargs(agent, api_messages, tools_for_api, reasoning
         qwen_session_metadata=_qwen_meta)
     if _profile:
         # Profiles handle per-provider quirks via hooks fed the context above.
+        # ⤷ 出口 return：返回 transport.build_kwargs(provider_profile=_profile, **_common)
         return transport.build_kwargs(provider_profile=_profile, **_common)
 
     # Legacy flag path: only for a provider absent from the providers/ registry.
+    # ⤷ 出口 return：返回 transport.build_kwargs(**_common, model_lower=(agent.model o…
     return transport.build_kwargs(
         **_common,
         model_lower=(agent.model or "").lower(),
@@ -1362,6 +1906,11 @@ def _build_chat_completions_kwargs(agent, api_messages, tools_for_api, reasoning
     )
 
 
+# ┌── 函数 def build_api_kwargs()
+# │  作用：Build the keyword arguments dict for the active API mode.
+# │  参数：agent, api_messages: list, tools_for_api: list | None = None
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = None) -> dict:
     """Build the keyword arguments dict for the active API mode.
 
@@ -1373,6 +1922,7 @@ def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = Non
     from agent.opencode_affinity import merge_opencode_session_headers
 
     kwargs = _build_api_kwargs_for_mode(agent, api_messages, tools_for_api)
+    # ⤷ 出口 return：返回 merge_opencode_session_headers(kwargs, getattr(agent, 'provi…
     return merge_opencode_session_headers(
         kwargs,
         getattr(agent, "provider", None),
@@ -1381,6 +1931,11 @@ def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = Non
     )
 
 
+# ┌── 函数 def _build_api_kwargs_for_mode()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages: list, tools_for_api: list | None = None
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _build_api_kwargs_for_mode(agent, api_messages: list, tools_for_api: list | None = None) -> dict:
     # One-shot continuation override — consumed exactly once, on the FIRST
     # request this call builds (only one api_mode branch runs per invocation).
@@ -1391,29 +1946,51 @@ def _build_api_kwargs_for_mode(agent, api_messages: list, tools_for_api: list | 
     # in agent.request_overrides; auto/cold windows layer the fast override per request.
     request_overrides = effective_request_overrides(agent)
     if agent.api_mode == "anthropic_messages":
+        # ⤷ 出口 return：返回 _build_anthropic_kwargs(agent, api_messages, tools_for_api, …
         return _build_anthropic_kwargs(agent, api_messages, tools_for_api, reasoning_config, request_overrides)
     if agent.api_mode == "bedrock_converse":
+        # ⤷ 出口 return：返回 _build_bedrock_kwargs(agent, api_messages, tools_for_api)
         return _build_bedrock_kwargs(agent, api_messages, tools_for_api)
     # Rotation-stable logical cache scope shared by every OpenAI-wire branch
     # (memoized on the agent); anthropic/bedrock above don't use it.
     cache_scope_id = _prompt_cache_scope_for_agent(agent)
     builder = _build_codex_kwargs if agent.api_mode == "codex_responses" else _build_chat_completions_kwargs
+    # ⤷ 出口 return：返回 builder(agent, api_messages, tools_for_api, reasoning_config…
     return builder(agent, api_messages, tools_for_api, reasoning_config, request_overrides, cache_scope_id)
 
 
+# ┌── 函数 def _model_dump_safe()
+# │  作用：``model_dump(warnings=False)`` (avoids pydantic serializer UserWarnings on
+# │  参数：obj
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _model_dump_safe(obj):
     """``model_dump(warnings=False)`` (avoids pydantic serializer UserWarnings on
     generic-union SDK models), falling back for shims that reject the kwarg."""
+    # ⤷ 关键分支 try/except：捕获 TypeError，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 obj.model_dump(warnings=False)
         return obj.model_dump(warnings=False)
     except TypeError:
+        # ⤷ 出口 return：返回 obj.model_dump()
         return obj.model_dump()
 
 
+# ┌── 函数 def _dump_if_model()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：value
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _dump_if_model(value):
+    # ⤷ 出口 return：返回 _model_dump_safe(value) if hasattr(value, 'model_dump') else…
     return _model_dump_safe(value) if hasattr(value, "model_dump") else value
 
 
+# ┌── 函数 def _assistant_reasoning_text()
+# │  作用：Structured reasoning, else inline ``<think>`` blocks embedded in content.
+# │  参数：agent, assistant_message
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _assistant_reasoning_text(agent, assistant_message) -> Optional[str]:
     """Structured reasoning, else inline ``<think>`` blocks embedded in content."""
     reasoning_text = agent._extract_reasoning(assistant_message)
@@ -1431,9 +2008,15 @@ def _assistant_reasoning_text(agent, assistant_message) -> Optional[str]:
     if reasoning_text and agent.reasoning_callback and not agent.stream_delta_callback and not agent._stream_callback:
         with contextlib.suppress(Exception):
             agent.reasoning_callback(reasoning_text)
+    # ⤷ 出口 return：返回 _sanitize_surrogates(reasoning_text) if reasoning_text else …
     return _sanitize_surrogates(reasoning_text) if reasoning_text else reasoning_text
 
 
+# ┌── 函数 def _assistant_content_for_storage()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, assistant_message
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _assistant_content_for_storage(agent, assistant_message):
     # Sanitize surrogates (Kimi/GLM via Ollama emit code points that crash json.dumps),
     # strip inline <think> tags at the storage boundary (they leaked to platforms and
@@ -1445,9 +2028,15 @@ def _assistant_content_for_storage(agent, assistant_message):
         if content:
             from agent.redact import redact_sensitive_text
             content = redact_sensitive_text(content)
+    # ⤷ 出口 return：返回 content
     return content
 
 
+# ┌── 函数 def _assistant_tool_call_dict()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, tool_call, index: int
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _assistant_tool_call_dict(agent, tool_call, index: int) -> dict:
     raw_id = getattr(tool_call, "id", None)
     call_id = getattr(tool_call, "call_id", None)
@@ -1489,9 +2078,15 @@ def _assistant_tool_call_dict(agent, tool_call, index: int) -> dict:
     extra = getattr(tool_call, "extra_content", None)
     if extra is not None:
         tc_dict["extra_content"] = _dump_if_model(extra)
+    # ⤷ 出口 return：返回 tc_dict
     return tc_dict
 
 
+# ┌── 函数 def build_assistant_message()
+# │  作用：Build a normalized assistant message dict (reasoning, reasoning_details,
+# │  参数：agent, assistant_message, finish_reason: str
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def build_assistant_message(agent, assistant_message, finish_reason: str) -> dict:
     """Build a normalized assistant message dict (reasoning, reasoning_details,
     optional tool_calls) shared by the tool-call and final-response paths.
@@ -1577,9 +2172,15 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
 
     if assistant_tool_calls:
         msg["tool_calls"] = [_assistant_tool_call_dict(agent, tc, i) for i, tc in enumerate(assistant_tool_calls)]
+    # ⤷ 出口 return：返回 msg
     return msg
 
 
+# ┌── 函数 def rewrite_prompt_model_identity()
+# │  作用：Rewrite the cached prompt's ``Model:``/``Provider:`` lines after a provider switch.
+# │  参数：agent, model: str, provider: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def rewrite_prompt_model_identity(agent, model: str, provider: str) -> None:
     """Rewrite the cached prompt's ``Model:``/``Provider:`` lines after a provider switch.
 
@@ -1599,21 +2200,36 @@ def rewrite_prompt_model_identity(agent, model: str, provider: str) -> None:
     agent._cached_system_prompt = sp
 
 
+# ┌── 函数 def _fallback_entry_key()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：fb: dict
+# │  返回：tuple[str, str, str]
+# └──────────────────────────────────────────────────────────────
 def _fallback_entry_key(fb: dict) -> tuple[str, str, str]:
+    # ⤷ 出口 return：返回 (str(fb.get('provider') or '').strip().lower(), str(fb.get('…
     return (str(fb.get("provider") or "").strip().lower(), str(fb.get("model") or "").strip(),
             str(fb.get("base_url") or "").strip().rstrip("/"))
 
 
+# ┌── 函数 def _fallback_entry_unavailable_without_network()
+# │  作用：Return a skip reason for fallback entries known to be unusable locally.
+# │  参数：agent, fb: dict
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _fallback_entry_unavailable_without_network(agent, fb: dict) -> Optional[str]:
     """Return a skip reason for fallback entries known to be unusable locally."""
     if (fb.get("provider") or "").strip().lower() != "nous":
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.auth import get_provider_auth_state
         state = get_provider_auth_state("nous") or {}
     except Exception as exc:
+        # ⤷ 出口 return：返回 f'nous_auth_unreadable:{type(exc).__name__}'
         return f"nous_auth_unreadable:{type(exc).__name__}"
     has_token = any(isinstance(t, str) and t.strip() for t in (state.get("access_token"), state.get("refresh_token")))
+    # ⤷ 出口 return：返回 None if has_token else 'nous_token_missing'
     return None if has_token else "nous_token_missing"
 
 
@@ -1644,19 +2260,36 @@ _FALLBACK_REASON_LABELS = {
 }
 
 
+# ┌── 函数 def _fallback_reason_text()
+# │  作用：Return a concise operator-facing explanation for a fallback switch.
+# │  参数：reason: 'FailoverReason | None'
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _fallback_reason_text(reason: "FailoverReason | None") -> str:
     """Return a concise operator-facing explanation for a fallback switch."""
     label = _FALLBACK_REASON_LABELS.get(reason)
+    # ⤷ 出口 return：返回 label or str(getattr(reason, 'value', None) or reason or 'pr…
     return label or str(getattr(reason, "value", None) or reason or "provider failure").replace("_", " ")
 
 
+# ┌── 函数 def _is_anthropic_wire_url()
+# │  作用：Same Messages-only host match as determine_api_mode() / _detect_api_mode_for_url(): api.anthropic.com,
+# │  参数：url: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_anthropic_wire_url(url: str) -> bool:
     """Same Messages-only host match as determine_api_mode() / _detect_api_mode_for_url(): api.anthropic.com,
     a /anthropic suffix, or Kimi Code's api.kimi.com/coding (its /chat/completions 404s — #77256)."""
     from hermes_cli.providers import host_mandated_api_mode
+    # ⤷ 出口 return：返回 host_mandated_api_mode(url) == 'anthropic_messages'
     return host_mandated_api_mode(url) == "anthropic_messages"
 
 
+# ┌── 函数 def _fallback_api_mode_hint()
+# │  作用：(explicit, api_mode) for a fallback entry from its ORIGINAL base_url: resolve_provider_client()
+# │  参数：fb: dict, fb_provider: str, fb_base_url_hint: Optional[str]
+# │  返回：tuple[bool, str]
+# └──────────────────────────────────────────────────────────────
 def _fallback_api_mode_hint(fb: dict, fb_provider: str, fb_base_url_hint: Optional[str]) -> tuple[bool, str]:
     """(explicit, api_mode) for a fallback entry from its ORIGINAL base_url: resolve_provider_client()
     rewrites a dual-surface /anthropic base to /v1, losing the Anthropic wire signal. An explicit
@@ -1664,35 +2297,54 @@ def _fallback_api_mode_hint(fb: dict, fb_provider: str, fb_base_url_hint: Option
     ``provider: anthropic`` without a base_url still resolves to anthropic_messages."""
     explicit = str(fb.get("api_mode") or "").strip()
     if explicit:
+        # ⤷ 出口 return：返回 (True, explicit)
         return True, explicit
     if fb_provider == "anthropic" or (fb_base_url_hint and _is_anthropic_wire_url(fb_base_url_hint)):
+        # ⤷ 出口 return：返回 (False, 'anthropic_messages')
         return False, "anthropic_messages"
+    # ⤷ 出口 return：返回 (False, 'chat_completions')
     return False, "chat_completions"
 
 
+# ┌── 函数 def _fallback_api_mode_resolved()
+# │  作用：Re-detect api_mode from provider / resolved base URL / model when the hint pass
+# │  参数：agent, fb_provider: str, fb_model: str, fb_base_url: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _fallback_api_mode_resolved(agent, fb_provider: str, fb_model: str, fb_base_url: str) -> str:
     """Re-detect api_mode from provider / resolved base URL / model when the hint pass
     landed on the chat_completions default (never called for an explicit api_mode)."""
     if fb_provider == "openai-codex":
+        # ⤷ 出口 return：返回 'codex_responses'
         return "codex_responses"
     if fb_provider in {"nous", "nous-portal", "nousresearch"}:
         # Portal is dual-wire: anthropic/* must land on /v1/messages (the swap rebuilds the native client).
         from hermes_cli.providers import nous_api_mode
+        # ⤷ 出口 return：返回 nous_api_mode(fb_model)
         return nous_api_mode(fb_model)
     if _is_anthropic_wire_url(fb_base_url):
         # Named custom providers (cron-anthropic) resolve base_url from config; the hint pass never saw it.
+        # ⤷ 出口 return：返回 'anthropic_messages'
         return "anthropic_messages"
     if agent._is_azure_openai_url(fb_base_url):
+        # ⤷ 出口 return：返回 'chat_completions'
         return "chat_completions"  # Azure serves gpt-5.x on /chat/completions — no Responses API.
     # Provider exceptions (Copilot gpt-5-mini) stay inside the requires-responses predicate.
     if agent._is_direct_openai_url(fb_base_url) or agent._provider_model_requires_responses_api(fb_model, provider=fb_provider):
+        # ⤷ 出口 return：返回 'codex_responses'
         return "codex_responses"
     host = base_url_hostname(fb_base_url)
     if fb_provider == "bedrock" or (host.startswith("bedrock-runtime.") and base_url_host_matches(fb_base_url, "amazonaws.com")):
         return "bedrock_converse"
+    # ⤷ 出口 return：返回 'chat_completions'
     return "chat_completions"
 
 
+# ┌── 函数 def _rebind_fallback_credential_pool()
+# │  作用：Rebind the credential pool when the provider changes (else rate_limit/billing/auth recovery
+# │  参数：agent, fb_provider: str, fb_model: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _rebind_fallback_credential_pool(agent, fb_provider: str, fb_model: str) -> None:
     """Rebind the credential pool when the provider changes (else rate_limit/billing/auth recovery
     mutates the wrong credentials and overwrites the fallback's base_url). Same-provider pool: kept."""
@@ -1705,6 +2357,7 @@ def _rebind_fallback_credential_pool(agent, fb_provider: str, fb_model: str) -> 
                 fb_provider, fb_model, pool_provider)
             agent._credential_pool = agent._credential_pool_entry_id = None
     if getattr(agent, "_credential_pool", None) is None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.credential_pool import load_pool
             fallback_pool = load_pool(fb_provider)
@@ -1715,6 +2368,11 @@ def _rebind_fallback_credential_pool(agent, fb_provider: str, fb_model: str) -> 
             logger.debug("Fallback to %s/%s: could not attach credential pool: %s", fb_provider, fb_model, exc)
 
 
+# ┌── 函数 def _fallback_chain_exhausted()
+# │  作用：Chain exhausted (always False). A non-empty chain walked on a non-rate-limit failure arms a
+# │  参数：agent, reason: 'FailoverReason | None'
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _fallback_chain_exhausted(agent, reason: "FailoverReason | None") -> bool:
     """Chain exhausted (always False). A non-empty chain walked on a non-rate-limit failure arms a
     short cooldown so next turn's restore_primary_runtime stays gated instead of replaying the whole
@@ -1723,25 +2381,35 @@ def _fallback_chain_exhausted(agent, reason: "FailoverReason | None") -> bool:
     if agent._fallback_chain and reason not in _RATE_LIMIT_FAILOVER_REASONS:
         agent._rate_limited_until = max(
             getattr(agent, "_rate_limited_until", 0) or 0, time.monotonic() + _FALLBACK_EXHAUSTED_COOLDOWN_S)
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _should_skip_fallback_candidate()
+# │  作用：True when the entry is already unavailable, malformed, locally unusable, or resolves
+# │  参数：agent, fb: dict, fb_key: tuple, fb_provider: str, fb_model: str, unavailable: set
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_skip_fallback_candidate(agent, fb: dict, fb_key: tuple, fb_provider: str, fb_model: str, unavailable: set) -> bool:
     """True when the entry is already unavailable, malformed, locally unusable, or resolves
     to the backend that just failed (falling back to it would loop the failure)."""
     if fb_key in unavailable:
         logger.debug("Fallback skip: %s previously marked unavailable", fb_key)
+        # ⤷ 出口 return：返回 True
         return True
     if not fb_provider or not fb_model:
+        # ⤷ 出口 return：返回 True
         return True
     from agent.fallback_cooldown import _is_entitlement_rejected
     if _is_entitlement_rejected(agent, fb_provider, fb_model):
         logger.info("Fallback skip: %s/%s was rejected as unentitled for this account", fb_provider, fb_model)
+        # ⤷ 出口 return：返回 True
         return True
     local_skip_reason = _fallback_entry_unavailable_without_network(agent, fb)
     if local_skip_reason:
         unavailable.add(fb_key)
         logger.warning("Fallback skip: %s/%s is not locally usable (%s); suppressing for this session", fb_provider, fb_model, local_skip_reason)
+        # ⤷ 出口 return：返回 True
         return True
     # Identity semantics (axes, shim aliases, credential surfaces, multi-endpoint pools)
     # are owned by agent.backend_identity — do not re-implement comparisons here.
@@ -1755,10 +2423,17 @@ def _should_skip_fallback_candidate(agent, fb: dict, fb_key: tuple, fb_provider:
         logger.warning(
             "Fallback skip: chain entry %s/%s resolves to the same backend as the current one (%s)",
             fb_provider, fb_model, current_ident.base_url or current_ident.provider)
+        # ⤷ 出口 return：返回 True
         return True
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _update_fallback_context_compressor()
+# │  作用：Point compression limits at the fallback model's context window (not the primary's),
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _update_fallback_context_compressor(agent) -> None:
     """Point compression limits at the fallback model's context window (not the primary's),
     respecting the explicit model.context_length config override."""
@@ -1779,9 +2454,15 @@ def _update_fallback_context_compressor(agent) -> None:
     )
 
 
+# ┌── 函数 def _reresolve_fallback_reasoning_config()
+# │  作用：Per-model override > global reasoning_effort (YAML False = disabled); a config load
+# │  参数：agent
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reresolve_fallback_reasoning_config(agent) -> None:
     """Per-model override > global reasoning_effort (YAML False = disabled); a config load
     failure keeps the current reasoning_config rather than killing the swap."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Re-resolve reasoning_config for the new fallback model (Closes #21256). Wrapped in try/except
         # because a config load failure must not kill the swap.
@@ -1793,11 +2474,17 @@ def _reresolve_fallback_reasoning_config(agent) -> None:
         logger.debug("Failed to resolve reasoning_config for fallback %s; keeping current: %s", agent.model, _reasoning_err)
 
 
+# ┌── 函数 def _rescope_fallback_extra_body()
+# │  作用：Drop the OLD provider's custom_providers-contributed extra_body keys, then merge the fallback
+# │  参数：agent, old_model: str, old_provider: str, old_base_url: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _rescope_fallback_extra_body(agent, old_model: str, old_provider: str, old_base_url: str) -> None:
     """Drop the OLD provider's custom_providers-contributed extra_body keys, then merge the fallback
     provider's own. KEY-SCOPED: a key is dropped only if its value still equals what the old provider's
     config injected — a caller override of the same key won at init and differs, so it survives;
     keys the new provider redefines are re-added by the merge."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.agent_init import _custom_provider_extra_body_for_agent, _merge_custom_provider_extra_body
         custom_providers = getattr(agent, "_custom_providers", None) or []
@@ -1817,6 +2504,11 @@ def _rescope_fallback_extra_body(agent, old_model: str, old_provider: str, old_b
         logger.debug("Failed to resolve extra_body for fallback %s; keeping current: %s", agent.model, _eb_err)
 
 
+# ┌── 函数 def _buffer_fallback_notice()
+# │  作用：Buffer the switch notice for terminal failure AND retain it as a durable one-shot for
+# │  参数：agent, notice: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _buffer_fallback_notice(agent, notice: str) -> None:
     """Buffer the switch notice for terminal failure AND retain it as a durable one-shot for
     _emit_pending_fallback_notice (a successful fallback clears retry chatter)."""
@@ -1828,6 +2520,11 @@ def _buffer_fallback_notice(agent, notice: str) -> None:
         agent._pending_fallback_notice = [str(pending), notice] if pending else [notice]
 
 
+# ┌── 函数 def try_activate_fallback()
+# │  作用：Switch to the next fallback model/provider in the chain; False when exhausted. Swaps client,
+# │  参数：agent, reason: 'FailoverReason | None' = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool:
     """Switch to the next fallback model/provider in the chain; False when exhausted. Swaps client,
     model slug and provider in place so the retry loop continues on the new backend; client
@@ -1836,6 +2533,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
     cooldown_seconds = _arm_rate_limit_cooldown(agent, reason)
     while True:
         if agent._fallback_index >= len(agent._fallback_chain):
+            # ⤷ 出口 return：返回 _fallback_chain_exhausted(agent, reason)
             return _fallback_chain_exhausted(agent, reason)
         fb = agent._fallback_chain[agent._fallback_index]
         agent._fallback_index += 1
@@ -1848,6 +2546,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         if _should_skip_fallback_candidate(agent, fb, fb_key, fb_provider, fb_model, unavailable):
             continue
 
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.auxiliary_client import resolve_provider_client
             from hermes_cli.fallback_config import resolve_entry_api_key
@@ -1868,6 +2567,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
                 logger.warning("Fallback to %s failed: provider not configured", fb_provider)
                 unavailable.add(fb_key)
                 continue
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.model_normalize import normalize_model_for_provider
                 fb_model = normalize_model_for_provider(fb_model, fb_provider)
@@ -1928,6 +2628,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
             from agent.native_compaction import resolve_native_compaction_capabilities
             agent.runtime_capabilities = resolve_native_compaction_capabilities(
                 model=agent.model, base_url=agent.base_url, provider=fb_provider, is_codex_backend=fb_provider == "openai-codex")
+            # ⤷ 出口 return：返回 True
             return True
         except Exception as e:
             if fb_provider == "nous":
@@ -1944,6 +2645,11 @@ _SUMMARY_FOREIGN_MESSAGE_KEYS = ("reasoning", "finish_reason", "tool_name", "cod
 _EMPTY_SUMMARY_RESPONSE = "I reached the iteration limit and couldn't generate a summary."
 
 
+# ┌── 函数 def _iteration_summary_api_messages()
+# │  作用：Wire-ready messages for the summary call, mirroring the main loop's api_messages build
+# │  参数：agent, messages: list
+# │  返回：list
+# └──────────────────────────────────────────────────────────────
 def _iteration_summary_api_messages(agent, messages: list) -> list:
     """Wire-ready messages for the summary call, mirroring the main loop's api_messages build
     (sidecar substitution, tool-call repair, thinking-only drop, underscore-key sweep)."""
@@ -1998,11 +2704,18 @@ def _iteration_summary_api_messages(agent, messages: list) -> list:
         if isinstance(api_msg, dict):
             for internal_key in [k for k in api_msg if isinstance(k, str) and k.startswith("_")]:
                 del api_msg[internal_key]
+    # ⤷ 出口 return：返回 api_messages
     return api_messages
 
 
+# ┌── 函数 def _managed_summary_call()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_request_id: str, request, callback, retry_count: int
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _managed_summary_call(agent, api_request_id: str, request, callback, *, retry_count: int):
     from agent import relay_llm
+    # ⤷ 出口 return：返回 relay_llm.execute_current(request, callback, name=str(getatt…
     return relay_llm.execute_current(
         request, callback,
         name=str(getattr(agent, "provider", "") or "provider"), model_name=str(getattr(agent, "model", "") or ""),
@@ -2012,15 +2725,26 @@ def _managed_summary_call(agent, api_request_id: str, request, callback, *, retr
     )
 
 
+# ┌── 函数 def _summary_text()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, response, **normalize_kwargs
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _summary_text(agent, response, **normalize_kwargs) -> str:
     normalized = agent._get_transport().normalize_response(response, **normalize_kwargs)
     if normalized.tool_calls:
         # No summary path executes tool calls; log so a tool-only response that falls into the
         # empty-summary retry is diagnosable.
         logger.warning("Iteration summary emitted tool calls; discarding them")
+    # ⤷ 出口 return：返回 (normalized.content or '').strip()
     return (normalized.content or "").strip()
 
 
+# ┌── 函数 def _codex_summary_attempt()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages: list, api_request_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _codex_summary_attempt(agent, api_messages: list, api_request_id: str):
     def _attempt(retry_count: int) -> str:
         codex_kwargs = agent._build_api_kwargs(api_messages)
@@ -2029,10 +2753,17 @@ def _codex_summary_attempt(agent, api_messages: list, api_request_id: str):
         codex_kwargs.pop("tools", None)
         codex_kwargs.pop("tool_choice", None)
         codex_kwargs.pop("parallel_tool_calls", None)
+        # ⤷ 出口 return：返回 _summary_text(agent, agent._run_codex_stream(codex_kwargs))
         return _summary_text(agent, agent._run_codex_stream(codex_kwargs))
+    # ⤷ 出口 return：返回 _attempt
     return _attempt
 
 
+# ┌── 函数 def _anthropic_summary_attempt()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages: list, api_request_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _anthropic_summary_attempt(agent, api_messages: list, api_request_id: str):
     def _attempt(retry_count: int) -> str:
         ant_kw = agent._get_transport().build_kwargs(
@@ -2041,10 +2772,17 @@ def _anthropic_summary_attempt(agent, api_messages: list, api_request_id: str):
             preserve_dots=agent._anthropic_preserve_dots(), base_url=getattr(agent, "_anthropic_base_url", None))
         ant_kw = _merge_nous_portal_messages_extra_body(agent, ant_kw)
         response = _managed_summary_call(agent, api_request_id, ant_kw, agent._anthropic_messages_create, retry_count=retry_count)
+        # ⤷ 出口 return：返回 _summary_text(agent, response, strip_tool_prefix=agent._is_a…
         return _summary_text(agent, response, strip_tool_prefix=agent._is_anthropic_oauth)
+    # ⤷ 出口 return：返回 _attempt
     return _attempt
 
 
+# ┌── 函数 def _chat_summary_attempt()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_messages: list, api_request_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _chat_summary_attempt(agent, api_messages: list, api_request_id: str):
     # Same kwargs builder as the main loop so the summary keeps the cached prefix (tools,
     # prompt_cache_key, xAI alias, Moonshot sanitization). Do not omit tools or force
@@ -2059,13 +2797,20 @@ def _chat_summary_attempt(agent, api_messages: list, api_request_id: str):
         summary_client = agent._ensure_primary_openai_client(reason="iteration_limit_summary_retry" if retry_count else "iteration_limit_summary")
         response = _managed_summary_call(
             agent, api_request_id, summary_kwargs, lambda request: summary_client.chat.completions.create(**request), retry_count=retry_count)
+        # ⤷ 出口 return：返回 _summary_text(agent, response)
         return _summary_text(agent, response)
+    # ⤷ 出口 return：返回 _attempt
     return _attempt
 
 
 _SUMMARY_ATTEMPT_BUILDERS = {"codex_responses": _codex_summary_attempt, "anthropic_messages": _anthropic_summary_attempt}
 
 
+# ┌── 函数 def handle_max_iterations()
+# │  作用：Request a summary when max iterations are reached. Returns the final response text.
+# │  参数：agent, messages: list, api_call_count: int
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
     """Request a summary when max iterations are reached. Returns the final response text."""
     warning = f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary..."
@@ -2086,6 +2831,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
     from agent.context_compressor import MAX_ITERATIONS_SUMMARY_REQUEST
     append_message(messages, {"role": "user", "content": MAX_ITERATIONS_SUMMARY_REQUEST})
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         api_messages = _iteration_summary_api_messages(agent, messages)
         build_attempt = _SUMMARY_ATTEMPT_BUILDERS.get(agent.api_mode, _chat_summary_attempt)
@@ -2112,24 +2858,34 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
         from agent import relay_llm
         relay_llm.complete_logical_call(summary_api_request_id, outcome=summary_call_outcome)
 
+    # ⤷ 出口 return：返回 final_response
     return final_response
 
 
+# ┌── 函数 def cleanup_task_resources()
+# │  作用：Per-turn VM + browser cleanup for a task. Skips ``cleanup_vm`` for persistent
+# │  参数：agent, task_id: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def cleanup_task_resources(agent, task_id: str) -> None:
     """Per-turn VM + browser cleanup for a task. Skips ``cleanup_vm`` for persistent
     terminal envs (``_cleanup_inactive_envs`` reaps them after ``terminal.lifetime_seconds``)
     and ``cleanup_browser`` in headed mode (the inactivity reaper handles idle sessions)."""
     def _headed() -> bool:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.browser_tool_cloud import _is_headed_mode
+            # ⤷ 出口 return：返回 _is_headed_mode()
             return _is_headed_mode()
         except Exception:
+            # ⤷ 出口 return：返回 bool(os.environ.get('AGENT_BROWSER_HEADED'))
             return bool(os.environ.get("AGENT_BROWSER_HEADED"))
 
     for label, skip, skip_what, cleanup in (
         ("VM", is_persistent_env, "cleanup_vm for persistent env", lambda: _ra().cleanup_vm(task_id)),
         ("browser", lambda _tid: _headed(), "cleanup_browser for headed session", lambda: _ra().cleanup_browser(task_id)),
     ):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             if skip(task_id):
                 if agent.verbose_logging:
@@ -2141,6 +2897,11 @@ def cleanup_task_resources(agent, task_id: str) -> None:
                 logger.warning("Failed to cleanup %s for task %s: %s", label, task_id, e)
 
 
+# ┌── 函数 def _build_partial_stream_stub()
+# │  作用：Stub for an SSE stream that ended without ``finish_reason`` after
+# │  参数：role, full_content, full_reasoning, model_name, usage_obj, dropped_tool_names = ..., overflow_terminal = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _build_partial_stream_stub(role, full_content, full_reasoning, model_name, usage_obj, *,
     dropped_tool_names=None, overflow_terminal=False):
     """Stub for an SSE stream that ended without ``finish_reason`` after
@@ -2153,6 +2914,7 @@ def _build_partial_stream_stub(role, full_content, full_reasoning, model_name, u
     would grow every later request into the same overflow (#106260); the loop
     treats the marker as terminal and ends the turn via the recovery contract.
     """
+    # ⤷ 出口 return：返回 SimpleNamespace(id=PARTIAL_STREAM_STUB_ID, model=model_name,…
     return SimpleNamespace(
         id=PARTIAL_STREAM_STUB_ID,
         model=model_name,
@@ -2177,56 +2939,96 @@ _SSE_CONN_PHRASES = ("connection lost", "connection reset", "connection closed",
     "upstream connect error")
 
 
+# ┌── 函数 def _rejects_stream_options()
+# │  作用：A 400/422 whose body names ``stream_options`` as an unknown/extra field: strict
+# │  参数：exc: BaseException
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _rejects_stream_options(exc: BaseException) -> bool:
     """A 400/422 whose body names ``stream_options`` as an unknown/extra field: strict
     OpenAI-compatible endpoints (Azure AI Foundry MaaS, Pydantic ``extra_forbidden``) reject
     the usage extension outright (#9705). Distinct from "stream not supported", which flips
     the whole session to non-streaming."""
     if getattr(exc, "status_code", None) not in (400, 422):
+        # ⤷ 出口 return：返回 False
         return False
     body = f"{getattr(exc, 'body', '') or ''} {exc}".lower()
+    # ⤷ 出口 return：返回 'stream_options' in body and any((k in body for k in ('extra…
     return "stream_options" in body and any(
         k in body for k in ("extra", "not supported", "unrecognized", "unexpected", "unknown"))
 
 
+# ┌── 函数 def _is_sse_connection_error()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：exc: BaseException
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_sse_connection_error(exc: BaseException) -> bool:
     from openai import APIError as _APIError
     if not isinstance(exc, _APIError) or getattr(exc, "status_code", None):
+        # ⤷ 出口 return：返回 False
         return False
     err_lower = str(exc).lower()
+    # ⤷ 出口 return：返回 any((phrase in err_lower for phrase in _SSE_CONN_PHRASES))
     return any(phrase in err_lower for phrase in _SSE_CONN_PHRASES)
 
 
+# ┌── 函数 def _relay_stream_identity()
+# │  作用：``session_id``/``name``/``model_name`` kwargs for ``relay_llm.stream``.
+# │  参数：agent, name_default: str
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _relay_stream_identity(agent, name_default: str) -> dict:
     """``session_id``/``name``/``model_name`` kwargs for ``relay_llm.stream``."""
+    # ⤷ 出口 return：返回 {'session_id': str(getattr(agent, 'session_id', '') or ''), …
     return {"session_id": str(getattr(agent, "session_id", "") or ""),
         "name": str(getattr(agent, "provider", "") or name_default),
         "model_name": str(getattr(agent, "model", "") or "")}
 
 
+# ┌── 函数 def _relay_stream_metadata()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：agent, api_mode: str
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _relay_stream_metadata(agent, api_mode: str) -> dict:
     call_role = ("delegated" if getattr(agent, "is_subagent", False)
                  else "fallback" if int(getattr(agent, "_fallback_index", 0) or 0) > 0 else "primary")
+    # ⤷ 出口 return：返回 {'api_mode': api_mode, 'api_request_id': getattr(agent, '_cu…
     return {"api_mode": api_mode, "api_request_id": getattr(agent, "_current_api_request_id", None),
         "call_role": call_role}
 
 
+# ┌── 函数 def _stream_final_text()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：response
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _stream_final_text(response) -> str:
     with contextlib.suppress(Exception):
         choices = getattr(response, "choices", None)
         first_choice = choices[0] if isinstance(choices, (list, tuple)) and choices else None
         content = getattr(getattr(first_choice, "message", None), "content", None)
         if isinstance(content, str):
+            # ⤷ 出口 return：返回 content
             return content
     with contextlib.suppress(Exception):
         content = getattr(response, "content", None)
         if isinstance(content, str):
+            # ⤷ 出口 return：返回 content
             return content
         if isinstance(content, list):
+            # ⤷ 出口 return：返回 ''.join((t for t in (getattr(part, 'text', None) for part in…
             return "".join(t for t in (getattr(part, "text", None) for part in content) if isinstance(t, str))
+    # ⤷ 出口 return：返回 ''
     return ""
 
 
+# ┌── 函数 def _with_stream_emitters()
+# │  作用：Bracket ``run()`` with the agent's ``_emit_stream_start`` / ``_emit_stream_end``
+# │  参数：agent, run
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _with_stream_emitters(agent, run):
     """Bracket ``run()`` with the agent's ``_emit_stream_start`` / ``_emit_stream_end``
     hooks when present (end carries the final text on success, the error string on
@@ -2234,35 +3036,54 @@ def _with_stream_emitters(agent, run):
     start = getattr(agent, "_emit_stream_start", None)
     if start is not None:
         start()
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         response = run()
     except Exception as exc:
         end = getattr(agent, "_emit_stream_end", None)
         if end is not None:
             end(final_text="", finished=False, error=str(exc))
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise
     end = getattr(agent, "_emit_stream_end", None)
     if end is not None:
         end(final_text=_stream_final_text(response), finished=True, error=None)
+    # ⤷ 出口 return：返回 response
     return response
 
 
+# ┌── 函数 def _stream_codex_passthrough()
+# │  作用：Codex streams internally via _run_codex_stream (reached through
+# │  参数：agent, api_kwargs: dict, on_first_delta
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _stream_codex_passthrough(agent, api_kwargs: dict, on_first_delta):
     """Codex streams internally via _run_codex_stream (reached through
     _interruptible_api_call); park ``on_first_delta`` on the agent so it can pick
     it up, and bracket the call with the stream start/end emitters."""
     agent._codex_on_first_delta = on_first_delta
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 _with_stream_emitters(agent, lambda: agent._interruptible_ap…
         return _with_stream_emitters(agent, lambda: agent._interruptible_api_call(api_kwargs))
     finally:
         agent._codex_on_first_delta = None
 
 
+# ┌── 类 class _BedrockStream
+# │  说明：Bedrock Converse streaming: boto3 ``converse_stream()`` on a worker thread
+# │  成员：共 11 个方法；对外可用 1 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _BedrockStream:
     """Bedrock Converse streaming: boto3 ``converse_stream()`` on a worker thread
     with real-time delta callbacks, polled by an interrupt / stale-event watchdog
     (same UX as the Anthropic and chat_completions streams)."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, agent, api_kwargs: dict, on_first_delta
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, agent, api_kwargs: dict, on_first_delta):
         self.agent = agent
         self.api_kwargs = api_kwargs
@@ -2280,9 +3101,20 @@ class _BedrockStream:
         # Same patience budget as the OpenAI/Anthropic stale detector.
         self.stale_timeout = _derive_stream_stale_timeout(agent, api_kwargs)
 
+    # ┌── 函数 def _model()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _model(self) -> str:
+        # ⤷ 出口 return：返回 self.api_kwargs.get('modelId', 'unknown')
         return self.api_kwargs.get("modelId", "unknown")
 
+    # ┌── 函数 def _fire_first()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _fire_first(self):
         self.response_started = True
         if not self.first_delta_fired and self.on_first_delta:
@@ -2290,16 +3122,33 @@ class _BedrockStream:
             with contextlib.suppress(Exception):
                 self.on_first_delta()
 
+    # ┌── 函数 def _after_first()
+    # │  作用：Wrap a delta callback so the first delivered event also fires ``on_first_delta``.
+    # │  参数：self, fire
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _after_first(self, fire):
         """Wrap a delta callback so the first delivered event also fires ``on_first_delta``."""
         def _on(value):
             self._fire_first()
             fire(value)
+        # ⤷ 出口 return：返回 _on
         return _on
 
+    # ┌── 函数 def _open_stream()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, next_api_kwargs: dict[str, Any]
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _open_stream(self, next_api_kwargs: dict[str, Any]):
+        # ⤷ 出口 return：返回 _bedrock_converse_call(dict(next_api_kwargs), stream=True, o…
         return _bedrock_converse_call(dict(next_api_kwargs), stream=True, on_stream_denied=self._fall_back_to_converse)
 
+    # ┌── 函数 def _fall_back_to_converse()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, client, final_kwargs: dict, exc: Exception
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _fall_back_to_converse(self, client, final_kwargs: dict, exc: Exception):
         # InvokeModel-only IAM policies cannot stream; fall back inside the same Relay
         # attempt (one lifecycle boundary).
@@ -2310,11 +3159,18 @@ class _BedrockStream:
             "   Grant that action to restore streaming output.\n")
         logger.info("bedrock: converse_stream denied by IAM (%s) — "
             "using non-streaming converse() for this session.", type(exc).__name__)
+        # ⤷ 出口 return：返回 normalize_converse_response(client.converse(**final_kwargs))
         return normalize_converse_response(client.converse(**final_kwargs))
 
+    # ┌── 函数 def _worker()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _worker(self):
         agent = self.agent
         stream = None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent import relay_llm
             from agent.bedrock_adapter import stream_converse_with_callbacks
@@ -2326,11 +3182,13 @@ class _BedrockStream:
 
             def _accept_event(_event: Any) -> bool:
                 token = writer_token["value"]
+                # ⤷ 出口 return：返回 token is None or stream_writer_is_current(agent, token)
                 return token is None or stream_writer_is_current(agent, token)
 
             def _stamp_event() -> None:
                 self.last_event = time.time()
 
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from agent.plugin_stream_hooks import has_reasoning_stream_observer_hooks
                 plugin_reasoning_observer = has_reasoning_stream_observer_hooks()
@@ -2358,6 +3216,11 @@ class _BedrockStream:
             if stream is not None:
                 stream.close()
 
+    # ┌── 函数 def _raise_if_interrupted()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, message: str, worker = None
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _raise_if_interrupted(self, message: str, worker=None) -> None:
         if not self.agent._interrupt_requested:
             return
@@ -2366,8 +3229,14 @@ class _BedrockStream:
         if worker is not None:
             # Let the worker unwind Relay scopes before raising (#81521).
             _join_worker_for_relay_teardown(worker, label="Bedrock streaming")
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise InterruptedError(message)
 
+    # ┌── 函数 def _on_stale()
+    # │  作用：No event past the stale timeout = wedged stream (the worker would
+    # │  参数：self, stale_elapsed: float
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _on_stale(self, stale_elapsed: float) -> None:
         """No event past the stale timeout = wedged stream (the worker would
         block in the event loop forever)."""
@@ -2381,6 +3250,7 @@ class _BedrockStream:
         # This does NOT abort the in-flight botocore EventStream (no external
         # cancellation exists); the daemon worker keeps reading until its
         # socket errors, so THIS call ends via the TimeoutError below.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.bedrock_adapter import invalidate_runtime_client
             invalidate_runtime_client(self.region)
@@ -2394,6 +3264,11 @@ class _BedrockStream:
             f"Bedrock stream produced no events for {int(stale_elapsed)}s (threshold {int(self.stale_timeout)}s) "
             f"— aborting stalled stream so the retry/fallback path can recover.")
 
+    # ┌── 函数 def _poll()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _poll(self):
         t = threading.Thread(target=_context_thread_target(self._worker), daemon=True)
         t.start()
@@ -2408,25 +3283,42 @@ class _BedrockStream:
         # (on_interrupt_check), so the in-loop raise may never fire. Re-check (#59999 area).
         self._raise_if_interrupted("Agent interrupted during Bedrock API call (post-worker)")
         if self.result["error"] is not None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise self.result["error"]
         # Success clears the cross-turn breaker (#58962).
         if self.result["response"] is not None:
             _reset_stale_streak(self.agent)
+        # ⤷ 出口 return：返回 self.result['response']
         return self.result["response"]
 
+    # ┌── 函数 def run()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def run(self):
         # Cross-turn stale-stream circuit breaker (#58962), as on the OpenAI/
         # Anthropic path.
         _check_stale_giveup(self.agent)
+        # ⤷ 出口 return：返回 _with_stream_emitters(self.agent, self._poll)
         return _with_stream_emitters(self.agent, self._poll)
 
 
+# ┌── 类 class _ToolCallAccumulator
+# │  说明：Assemble streamed tool-call deltas into complete ``tool_calls`` entries
+# │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _ToolCallAccumulator:
     """Assemble streamed tool-call deltas into complete ``tool_calls`` entries
     (``acc``: slot index -> entry dict). Ollama-compatible endpoints reuse index 0
     for every call in a parallel batch, distinguishing them only by id, so a new
     id at an already-seen raw index is redirected to a fresh slot."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self):
         self.acc: dict = {}
         self._notified: set = set()
@@ -2436,12 +3328,23 @@ class _ToolCallAccumulator:
         # ``+=`` per chunk rebuilds the whole string every delta (quadratic on big args).
         self._argument_parts: dict[int, list[str]] = {}
 
+    # ┌── 函数 def materialize()
+    # │  作用：Join buffered argument deltas into each entry's ``arguments``; idempotent. Returns ``acc``.
+    # │  参数：self
+    # │  返回：dict
+    # └──────────────────────────────────────────────────────────────
     def materialize(self) -> dict:
         """Join buffered argument deltas into each entry's ``arguments``; idempotent. Returns ``acc``."""
         for idx, parts in self._argument_parts.items():
             self.acc[idx]["function"]["arguments"] = "".join(parts)
+        # ⤷ 出口 return：返回 self.acc
         return self.acc
 
+    # ┌── 函数 def feed()
+    # │  作用：Merge one delta; return the tool name the first time it is complete.
+    # │  参数：self, tc_delta
+    # │  返回：Optional[str]
+    # └──────────────────────────────────────────────────────────────
     def feed(self, tc_delta) -> Optional[str]:
         """Merge one delta; return the tool name the first time it is complete."""
         raw_idx = getattr(tc_delta, "index", None)
@@ -2481,15 +3384,26 @@ class _ToolCallAccumulator:
         name = entry["function"]["name"]
         if name and idx not in self._notified:
             self._notified.add(idx)
+            # ⤷ 出口 return：返回 name
             return name
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 类 class _StreamingCall（继承自：StreamingWaitMonitor）
+# │  说明：One streaming request on the chat_completions / anthropic_messages wire.
+# │  成员：共 39 个方法；对外可用 1 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class _StreamingCall(StreamingWaitMonitor):
     """One streaming request on the chat_completions / anthropic_messages wire.
     State shared between the request worker and the poll-loop monitor (heartbeat,
     stale kill, interrupt abort) lives on the instance, mutated from both threads."""
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, agent, api_kwargs: dict, on_first_delta
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, agent, api_kwargs: dict, on_first_delta):
         self.agent = agent
         self.api_kwargs = api_kwargs
@@ -2516,24 +3430,47 @@ class _StreamingCall(StreamingWaitMonitor):
 
     # ── shared small helpers ────────────────────────────────────────────
 
+    # ┌── 函数 def _quiet()
+    # │  作用：Best-effort callback: never let a display hook break the stream.
+    # │  参数：fn, *args
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _quiet(fn, *args) -> None:
         """Best-effort callback: never let a display hook break the stream."""
         with contextlib.suppress(Exception):
             fn(*args)
 
+    # ┌── 函数 def _set_managed_stream()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream: Any
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _set_managed_stream(self, stream: Any) -> Any:
         self.managed_stream_holder["stream"] = stream
+        # ⤷ 出口 return：返回 stream
         return stream
 
+    # ┌── 函数 def _close_managed_stream()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_managed_stream(self) -> None:
         close = getattr(self.managed_stream_holder.pop("stream", None), "close", None)
         if callable(close):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 close()
             except Exception:
                 logger.debug("Managed provider stream cleanup failed", exc_info=True)
 
+    # ┌── 函数 def _start_stream_attempt()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：int
+    # └──────────────────────────────────────────────────────────────
     def _start_stream_attempt(self) -> int:
         with self.stream_attempt_lock:
             self.stream_attempt_state["current"] += 1
@@ -2542,8 +3479,14 @@ class _StreamingCall(StreamingWaitMonitor):
         # Attempt-local like provider_tool_in_flight: a tool name from a stream that died
         # before any text must not label a later attempt's partial stub or its retry decision.
         self.result["partial_tool_names"] = []
+        # ⤷ 出口 return：返回 attempt_id
         return attempt_id
 
+    # ┌── 函数 def _cancel_current_stream_attempt()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _cancel_current_stream_attempt(self, reason: str) -> None:
         with self.stream_attempt_lock:
             current = int(self.stream_attempt_state["current"])
@@ -2552,16 +3495,34 @@ class _StreamingCall(StreamingWaitMonitor):
         if current:
             logger.debug("Marked stream attempt %s cancelled: %s", current, reason)
 
+    # ┌── 函数 def _stream_attempt_is_active()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream_attempt_id: int
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _stream_attempt_is_active(self, stream_attempt_id: int) -> bool:
         with self.stream_attempt_lock:
             state = self.stream_attempt_state
+            # ⤷ 出口 return：返回 stream_attempt_id == int(state['current']) and stream_attemp…
             return stream_attempt_id == int(state["current"]) and stream_attempt_id not in state["cancelled"]
 
+    # ┌── 函数 def _stream_attempt_was_cancelled()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream_attempt_id: int
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _stream_attempt_was_cancelled(self, stream_attempt_id: int) -> bool:
         with self.stream_attempt_lock:
+            # ⤷ 出口 return：返回 stream_attempt_id in self.stream_attempt_state['cancelled']
             return stream_attempt_id in self.stream_attempt_state["cancelled"]
 
+    # ┌── 函数 def _discard_stale_stream_chunk()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream_attempt_id: int, chunk
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _discard_stale_stream_chunk(self, stream_attempt_id: int, chunk) -> None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             chunk_bytes = len(repr(chunk))
         except Exception:
@@ -2578,24 +3539,49 @@ class _StreamingCall(StreamingWaitMonitor):
             stream_attempt_id, discarded_chunks, discarded_bytes,
         )
 
+    # ┌── 函数 def _fire_first_delta()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _fire_first_delta(self):
         if not self.first_delta_fired["done"] and self.on_first_delta:
             self.first_delta_fired["done"] = True
             self._quiet(self.on_first_delta)
 
+    # ┌── 函数 def _emit_text()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, text: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _emit_text(self, text: str) -> None:
         self._fire_first_delta()
         self.agent._fire_stream_delta(text)
         self.deltas_were_sent["yes"] = True
 
+    # ┌── 函数 def _emit_reasoning()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, text: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _emit_reasoning(self, text: str) -> None:
         self._fire_first_delta()
         self.agent._fire_reasoning_delta(text)
 
+    # ┌── 函数 def _emit_tool_started()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, name: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _emit_tool_started(self, name: str) -> None:
         self._fire_first_delta()
         self.agent._fire_tool_gen_started(name)
 
+    # ┌── 函数 def _route_suppressed_text()
+    # │  作用：Tool-call turns suppress content streaming (no chatty preamble), but
+    # │  参数：self, text: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _route_suppressed_text(self, text: str) -> None:
         """Tool-call turns suppress content streaming (no chatty preamble), but
         reasoning tags inside it must still reach the display: route through
@@ -2604,11 +3590,22 @@ class _StreamingCall(StreamingWaitMonitor):
         if self.agent.stream_delta_callback:
             self._quiet(lambda: (self.agent.stream_delta_callback(text), self.agent._record_streamed_assistant_text(text)))
 
+    # ┌── 函数 def _new_diag()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：dict
+    # └──────────────────────────────────────────────────────────────
     def _new_diag(self) -> dict:
         diag = self.agent._stream_diag_init()
         self.clients.diag = diag
+        # ⤷ 出口 return：返回 diag
         return diag
 
+    # ┌── 函数 def _count_chunk()
+    # │  作用：Stamp liveness for a real chunk; diagnostics are best-effort.
+    # │  参数：self, diag, chunk
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _count_chunk(self, diag, chunk) -> None:
         """Stamp liveness for a real chunk; diagnostics are best-effort."""
         self.last_chunk_time["t"] = time.time()
@@ -2622,6 +3619,11 @@ class _StreamingCall(StreamingWaitMonitor):
 
     # ── chat_completions wire ───────────────────────────────────────────
 
+    # ┌── 函数 def _stream_timeouts()
+    # │  作用：``(write, read, connect/pool)`` socket timeouts. Per-provider
+    # │  参数：self
+    # │  返回：tuple[float, float, float]
+    # └──────────────────────────────────────────────────────────────
     def _stream_timeouts(self) -> tuple[float, float, float]:
         """``(write, read, connect/pool)`` socket timeouts. Per-provider
         ``request_timeout_seconds`` wins over HERMES_API_TIMEOUT (1800s) and
@@ -2630,6 +3632,7 @@ class _StreamingCall(StreamingWaitMonitor):
         cfg = get_provider_request_timeout(self.agent.provider, self.agent.model)
         base = cfg if cfg is not None else env_float("HERMES_API_TIMEOUT", 1800.0)
         if cfg is not None:
+            # ⤷ 出口 return：返回 (base, cfg, min(base, 60.0))
             return base, cfg, min(base, 60.0)
         read = env_float("HERMES_STREAM_READ_TIMEOUT", 120.0)
         stale = self._stream_stale_timeout
@@ -2641,8 +3644,15 @@ class _StreamingCall(StreamingWaitMonitor):
             # tolerates that, so the raw read timeout must not fire first.
             read = stale
             logger.debug("Cloud reasoning stream — read timeout raised to %.0fs to match stale-stream detector", read)
+        # ⤷ 出口 return：返回 (base, read, 30.0)
         return base, read, 30.0
 
+    # ┌── 函数 def _choiceless_chunk()
+    # │  作用：Chunk with empty ``choices`` -> ``(usage, finish_reason)``. Raises
+    # │  参数：chunk, finish_reason
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _choiceless_chunk(chunk, finish_reason):
         """Chunk with empty ``choices`` -> ``(usage, finish_reason)``. Raises
@@ -2658,6 +3668,7 @@ class _StreamingCall(StreamingWaitMonitor):
             _status = _status_code_from_payload({"code": _err_type, "message": _err_msg}) or _status_code_from_value(_err_type)
             body = _provider_error_body(
                 {"code": _err_type or "provider_in_stream_error", "message": str(_err_msg or chunk)}, _status)
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise ProviderStreamError(status_code=_status, body=body, raw_text=f"{_err_type}: {_err_msg}")
         # Nous Portal usage frames (choices=[] + lastOne=true, no [DONE]) are a
         # clean terminal, not a drop; relabelled upstreams send 1 / "true".
@@ -2667,8 +3678,14 @@ class _StreamingCall(StreamingWaitMonitor):
             last_one = chunk.model_extra.get("lastOne")
         if last_one in (True, 1, "true") and finish_reason is None:
             finish_reason = "stop"
+        # ⤷ 出口 return：返回 (usage, finish_reason)
         return usage, finish_reason
 
+    # ┌── 函数 def _open_chat_stream()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream_kwargs: dict[str, Any]
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _open_chat_stream(self, stream_kwargs: dict[str, Any]):
         # Native Gemini rejects OpenAI's usage-streaming extension; so do strict endpoints that
         # already 4xx'd on it this session (``_stream_options_unsupported``, see #9705).
@@ -2678,8 +3695,14 @@ class _StreamingCall(StreamingWaitMonitor):
             self.agent._create_request_openai_client(reason="chat_completion_stream_request", api_kwargs=stream_kwargs))
         self.last_chunk_time["t"] = time.time()
         self.agent._touch_activity("waiting for provider response (streaming)")
+        # ⤷ 出口 return：返回 request_client.chat.completions.create(**stream_kwargs)
         return request_client.chat.completions.create(**stream_kwargs)
 
+    # ┌── 函数 def _chat_stream_created()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, raw_stream: Any
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _chat_stream_created(self, raw_stream: Any) -> None:
         response = self._attempt_stream_response = getattr(raw_stream, "response", None)
         self.agent._capture_rate_limits(response)
@@ -2689,6 +3712,11 @@ class _StreamingCall(StreamingWaitMonitor):
         self.agent._check_openrouter_cache_status(response)
         self._writer_token = claim_stream_writer(self.agent)
 
+    # ┌── 函数 def _accept_chat_chunk()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream_attempt_id: int, chunk: Any
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _accept_chat_chunk(self, stream_attempt_id: int, chunk: Any) -> bool:
         with contextlib.suppress(Exception):
             choices = getattr(chunk, "choices", None)
@@ -2702,26 +3730,42 @@ class _StreamingCall(StreamingWaitMonitor):
             # MORE text; fending the completion signal would mislabel a clean end as a drop.
             if getattr(choice, "finish_reason", None) and not any(
                 getattr(delta, attr, None) for attr in ("content", "tool_calls", "reasoning_content", "reasoning")):
+                # ⤷ 出口 return：返回 True
                 return True
         if not self._stream_attempt_is_active(stream_attempt_id):
+            # ⤷ 出口 return：返回 False
             return False
         if not self._writer_still_current("Streaming"):
+            # ⤷ 出口 return：返回 False
             return False
         # Stamp BEFORE Relay processes the chunk so the watchdog can't cancel
         # a live stream mid-interceptor.
         self.last_chunk_time["t"] = time.time()
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _writer_still_current()
+    # │  作用：Single-writer fence: False (with a warning) once a newer stream claimed the writer slot.
+    # │  参数：self, label: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _writer_still_current(self, label: str) -> bool:
         """Single-writer fence: False (with a warning) once a newer stream claimed the writer slot."""
         token = self._writer_token
         if token is None or stream_writer_is_current(self.agent, token):
+            # ⤷ 出口 return：返回 True
             return True
         logger.warning(
             "%s attempt superseded by a newer stream; stopping consumption to preserve the "
             "single-writer invariant (model=%s).", label, self.api_kwargs.get("model", "unknown"))
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ┌── 函数 def _call_chat_completions()
+    # │  作用：Stream a chat completions response.
+    # │  参数：self, stream_attempt_id: int
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _call_chat_completions(self, stream_attempt_id: int):
         """Stream a chat completions response."""
         import httpx as _httpx
@@ -2742,6 +3786,7 @@ class _StreamingCall(StreamingWaitMonitor):
 
         def _open_stream(next_api_kwargs: dict[str, Any]):
             timeout = _httpx.Timeout(connect=conn_cap, read=read_timeout, write=base_timeout, pool=conn_cap)
+            # ⤷ 出口 return：返回 self._open_chat_stream({**next_api_kwargs, 'stream': True, '…
             return self._open_chat_stream({**next_api_kwargs, "stream": True, "timeout": timeout})
 
         def _flush_pending_stream_text():
@@ -2766,6 +3811,7 @@ class _StreamingCall(StreamingWaitMonitor):
             if self.agent._interrupt_requested:
                 # A half-read SSE response stays checked out of the httpx pool and the finally
                 # would cache the client WITH the leaked connection: close on the owner first.
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     stream.close()
                 except Exception:
@@ -2842,13 +3888,21 @@ class _StreamingCall(StreamingWaitMonitor):
         tool_calls.materialize()
         self._close_managed_stream()
         if self._stream_attempt_was_cancelled(stream_attempt_id):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise _httpx.RemoteProtocolError(f"stream attempt {stream_attempt_id} was superseded")
         if stream.final_response is not None:
+            # ⤷ 出口 return：返回 self._adopt_final_response(stream.final_response)
             return self._adopt_final_response(stream.final_response)
+        # ⤷ 出口 return：返回 self._finish_chat_stream(stream, role, content_parts, reason…
         return self._finish_chat_stream(stream, role, content_parts, reasoning_parts, tool_calls_acc,
             finish_reason, model_name, usage_obj, flush_pending=_flush_pending_stream_text,
             response_id=response_id, upstream_provider=upstream_provider, reasoning_details=reasoning_details)
 
+    # ┌── 函数 def _adopt_final_response()
+    # │  作用：Adapter returned a completed response for ``stream=True``: switch the
+    # │  参数：self, final_response
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _adopt_final_response(self, final_response):
         """Adapter returned a completed response for ``stream=True``: switch the
         session to non-streaming and replay its content as deltas."""
@@ -2866,8 +3920,15 @@ class _StreamingCall(StreamingWaitMonitor):
             if isinstance(content, str) and content:
                 self._fire_first_delta()
                 self.agent._fire_stream_delta(content)  # not _emit_text: deltas_were_sent stays False here
+        # ⤷ 出口 return：返回 final_response
         return final_response
 
+    # ┌── 函数 def _assemble_tool_calls()
+    # │  作用：Materialize accumulated tool calls; flag truncated/unrepairable args.
+    # │  参数：tool_calls_acc, finish_reason
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _assemble_tool_calls(tool_calls_acc, finish_reason):
         """Materialize accumulated tool calls; flag truncated/unrepairable args."""
@@ -2877,6 +3938,7 @@ class _StreamingCall(StreamingWaitMonitor):
             tc = tool_calls_acc[idx]
             arguments = tc["function"]["arguments"]
             if arguments and arguments.strip():
+                # ⤷ 关键分支 try/except：捕获 json.JSONDecodeError，出错走兜底而不是崩溃。
                 try:
                     json.loads(arguments)
                 except json.JSONDecodeError:
@@ -2893,8 +3955,14 @@ class _StreamingCall(StreamingWaitMonitor):
             mock_tool_calls.append(SimpleNamespace(
                 id=tc["id"], type=tc["type"], extra_content=tc.get("extra_content"),
                 function=SimpleNamespace(name=tc["function"]["name"], arguments=arguments)))
+        # ⤷ 出口 return：返回 (mock_tool_calls or None, has_truncated_tool_args)
         return mock_tool_calls or None, has_truncated_tool_args
 
+    # ┌── 函数 def _finish_chat_stream()
+    # │  作用：Assemble the non-streaming-shaped response after the chunk loop. A
+    # │  参数：self, stream, role, content_parts, reasoning_parts, tool_calls_acc, finish_reason, model_name  …共 13 个
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _finish_chat_stream(self, stream, role, content_parts, reasoning_parts, tool_calls_acc, finish_reason,
         model_name, usage_obj, *, flush_pending, response_id=None, upstream_provider=None, reasoning_details=None):
         """Assemble the non-streaming-shaped response after the chunk loop. A
@@ -2906,6 +3974,7 @@ class _StreamingCall(StreamingWaitMonitor):
         mock_tool_calls, has_truncated_tool_args = self._assemble_tool_calls(tool_calls_acc, finish_reason)
         # Zero-chunk guard: nothing usable = upstream error / malformed SSE.
         if finish_reason is None and not content_parts and not reasoning_parts and not tool_calls_acc:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise EmptyStreamError(
                 "Provider returned an empty stream with no finish_reason (possible upstream error or malformed SSE response).")
         if has_truncated_tool_args and finish_reason is None:
@@ -2916,6 +3985,7 @@ class _StreamingCall(StreamingWaitMonitor):
                 "Stream ended with no finish_reason while a tool call's arguments were still incomplete "
                 "(tools=%s); treating as a mid-tool-call stream drop, not an output-length truncation.",
                 _dropped_names)
+            # ⤷ 出口 return：返回 _build_partial_stream_stub(role, full_content, full_reasonin…
             return _build_partial_stream_stub(
                 role, full_content, full_reasoning, model_name, usage_obj, dropped_tool_names=_dropped_names or None)
         if finish_reason is None and (content_parts or reasoning_parts) and not tool_calls_acc and usage_obj is None:
@@ -2925,11 +3995,13 @@ class _StreamingCall(StreamingWaitMonitor):
             # A usage object proves the provider finished (include_usage's final chunk).
             logger.warning(
                 "Stream ended with no finish_reason after delivering text with no tool calls; treating as a mid-stream drop.")
+            # ⤷ 出口 return：返回 _build_partial_stream_stub(role, full_content, full_reasonin…
             return _build_partial_stream_stub(role, full_content, full_reasoning, model_name, usage_obj)
         effective_finish_reason = "length" if has_truncated_tool_args else (finish_reason or "stop")
         provider_stream_error = _provider_stream_error_from_text(
             full_content or "", effective_finish_reason, response=getattr(stream, "response", None))
         if provider_stream_error is not None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise provider_stream_error
         flush_pending()
         message = SimpleNamespace(role=role, content=full_content, tool_calls=mock_tool_calls, reasoning_content=full_reasoning)
@@ -2939,12 +4011,19 @@ class _StreamingCall(StreamingWaitMonitor):
             message.reasoning_details = reasoning_details
         # The provider's id when the chunks carried one (chatcmpl-/gen-...): it is what a provider needs to
         # look a request up. Fabricated only when the stream never sent one.
+        # ⤷ 出口 return：返回 SimpleNamespace(id=response_id or 'stream-' + str(uuid.uuid4…
         return SimpleNamespace(id=response_id or ("stream-" + str(uuid.uuid4())), model=model_name, usage=usage_obj,
             provider=upstream_provider,
             choices=[SimpleNamespace(index=0, message=message, finish_reason=effective_finish_reason)])
 
     # ── anthropic_messages wire ─────────────────────────────────────────
 
+    # ┌── 函数 def _check_anthropic_message()
+    # │  作用：Raise EmptyStreamError for a message the stream never completed: no
+    # │  参数：message, tool_drop: bool = ...
+    # │  返回：（未标注类型）
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _check_anthropic_message(message, *, tool_drop: bool = True):
         """Raise EmptyStreamError for a message the stream never completed: no
@@ -2954,15 +4033,23 @@ class _StreamingCall(StreamingWaitMonitor):
         empty-args execution (bounded retry, or stub/continuation after text)."""
         content = getattr(message, "content", None)
         if not content and getattr(message, "stop_reason", None) is None:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise EmptyStreamError(
                 "Provider returned an empty stream with no stop_reason (possible upstream error or malformed event stream).")
         if tool_drop and getattr(message, "stop_reason", None) is None and any(
             getattr(block, "type", None) == "tool_use" for block in content or []):
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise EmptyStreamError(
                 "Stream ended with no stop_reason while a tool_use block was still incomplete; "
                 "treating as a mid-tool-call stream drop (#80498).")
+        # ⤷ 出口 return：返回 message
         return message
 
+    # ┌── 函数 def _call_anthropic()
+    # │  作用：Stream an Anthropic Messages API response; fires delta callbacks but
+    # │  参数：self, request_client
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _call_anthropic(self, request_client):
         """Stream an Anthropic Messages API response; fires delta callbacks but
         returns the native Message from get_final_message(). Runs on the
@@ -2987,6 +4074,7 @@ class _StreamingCall(StreamingWaitMonitor):
             sanitize_anthropic_kwargs(final_kwargs, log_prefix=getattr(self.agent, "log_prefix", ""))
             manager = request_client.messages.stream(**final_kwargs)
             _stream_context["manager"] = manager
+            # ⤷ 出口 return：返回 manager.__enter__()
             return manager.__enter__()
 
         def _anthropic_stream_created(raw_stream: Any) -> None:
@@ -3001,6 +4089,7 @@ class _StreamingCall(StreamingWaitMonitor):
             on_stream_created=_anthropic_stream_created, on_chunk=accumulator.observe,
             accept_chunk=lambda _event: self._writer_still_current("Anthropic streaming"),
             metadata=_relay_stream_metadata(self.agent, "anthropic_messages"), defer_logical_completion=True))
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             for event in stream:
                 saw_stream_event = True
@@ -3028,6 +4117,7 @@ class _StreamingCall(StreamingWaitMonitor):
                         self._emit_reasoning(delta.thinking)
             raw_stream = _stream_context["stream"]
             if not self.agent._interrupt_requested and raw_stream is not None:
+                # ⤷ 关键分支 try/except：捕获 AssertionError，出错走兜底而不是崩溃。
                 try:
                     base_final_message = raw_stream.get_final_message()
                 except AssertionError:
@@ -3036,6 +4126,7 @@ class _StreamingCall(StreamingWaitMonitor):
                             "Provider returned an empty stream with no events (possible upstream error or malformed event stream).") from None
                     raise
         finally:
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
                 self._close_managed_stream()
             finally:
@@ -3044,15 +4135,22 @@ class _StreamingCall(StreamingWaitMonitor):
                     manager.__exit__(None, None, None)
 
         if self.agent._interrupt_requested:
+            # ⤷ 出口 return：返回 None
             return None
         if base_final_message is not None:
             self._check_anthropic_message(base_final_message, tool_drop=False)
             if not stream.output_modified:
                 return self._check_anthropic_message(base_final_message)
+        # ⤷ 出口 return：返回 self._check_anthropic_message(accumulator.response(base_fina…
         return self._check_anthropic_message(accumulator.response(base_final_message))
 
     # ── retry loop ──────────────────────────────────────────────────────
 
+    # ┌── 函数 def _retry_after_drop()
+    # │  作用：Warn about the drop and tear down the request-local client. Shared
+    # │  参数：self, e, attempt: int, max_retries: int, mid_tool_call: bool, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _retry_after_drop(self, e, attempt: int, max_retries: int, *, mid_tool_call: bool, reason: str) -> None:
         """Warn about the drop and tear down the request-local client. Shared
         clients are never closed from inside a request (FD-recycle hazard); the
@@ -3065,6 +4163,11 @@ class _StreamingCall(StreamingWaitMonitor):
         self._cancel_current_stream_attempt(reason)
         self.clients.close_once(reason)
 
+    # ┌── 函数 def _maybe_disable_streaming()
+    # │  作用：Flip to non-streaming when the provider rejects streaming outright or
+    # │  参数：self, e
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _maybe_disable_streaming(self, e) -> None:
         """Flip to non-streaming when the provider rejects streaming outright or
         AnthropicBedrock IAM lacks InvokeModelWithResponseStream."""
@@ -3085,6 +4188,11 @@ class _StreamingCall(StreamingWaitMonitor):
                 "   To avoid this delay, set display.streaming: false in config.yaml\n"
             )
 
+    # ┌── 函数 def _handle_stream_error()
+    # │  作用：Classify a failed attempt: True = retry; False = stop with
+    # │  参数：self, e: Exception, attempt: int, max_retries: int
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _handle_stream_error(self, e: Exception, attempt: int, max_retries: int) -> bool:
         """Classify a failed attempt: True = retry; False = stop with
         ``result["error"]`` set (unless our own interrupt force-closed the
@@ -3094,6 +4202,7 @@ class _StreamingCall(StreamingWaitMonitor):
         # poll loop raises InterruptedError).
         if self._request_cancelled["value"]:
             logger.debug("Streaming worker caught %s after request cancellation — exiting without retry.", type(e).__name__)
+            # ⤷ 出口 return：返回 False
             return False
         _is_timeout = isinstance(e, (_httpx.ReadTimeout, _httpx.ConnectTimeout, _httpx.PoolTimeout))
         _is_conn_err = isinstance(e, (_httpx.ConnectError, _httpx.RemoteProtocolError, ConnectionError))
@@ -3110,6 +4219,7 @@ class _StreamingCall(StreamingWaitMonitor):
                         getattr(e, "status_code", None))
             self._cancel_current_stream_attempt("stream_options_rejected_retry")
             self.clients.close_once("stream_options_rejected_retry")
+            # ⤷ 出口 return：返回 True
             return True
 
         if self.deltas_were_sent["yes"]:
@@ -3121,6 +4231,7 @@ class _StreamingCall(StreamingWaitMonitor):
             if not (_partial_tool_in_flight and _is_transient and attempt < max_retries):
                 logger.warning("Streaming failed after partial delivery, not retrying: %s", e)
                 self.result["error"] = e
+                # ⤷ 出口 return：返回 False
                 return False
             # Marker explains the re-streamed preamble (``_emit_stream_drop`` logs the WARNING);
             # reset the streamed-text buffer so it isn't double-recorded; fresh accumulators.
@@ -3129,12 +4240,14 @@ class _StreamingCall(StreamingWaitMonitor):
             self.deltas_were_sent["yes"] = False
             self.first_delta_fired["done"] = False
             self._retry_after_drop(e, attempt, max_retries, mid_tool_call=True, reason="stream_mid_tool_retry_cleanup")
+            # ⤷ 出口 return：返回 True
             return True
 
         if _is_transient or _is_empty_stream:
             # Transient network / timeout error: retry with a fresh connection first.
             if attempt < max_retries:
                 self._retry_after_drop(e, attempt, max_retries, mid_tool_call=False, reason="stream_retry_cleanup")
+                # ⤷ 出口 return：返回 True
                 return True
             # Exhausted: log full diagnostics (chain, headers, bytes/elapsed).
             self.agent._log_stream_retry(kind="exhausted", error=e, attempt=max_retries + 1,
@@ -3150,16 +4263,29 @@ class _StreamingCall(StreamingWaitMonitor):
             logger.exception("Streaming failed before delivery: %s", e)
         # Propagate to the main retry loop (credential rotation, fallback, backoff).
         self.result["error"] = e
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ┌── 函数 def _call_wire()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, stream_attempt_id: int
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _call_wire(self, stream_attempt_id: int):
         if self.agent.api_mode != "anthropic_messages":
+            # ⤷ 出口 return：返回 self._call_chat_completions(stream_attempt_id)
             return self._call_chat_completions(stream_attempt_id)
         # Per-request client so the watchdog aborts its socket, not the shared one.
         request_client = self.clients.set_client(
             self.agent._create_request_anthropic_client(reason="anthropic_stream_request"), kind="anthropic_messages")
+        # ⤷ 出口 return：返回 self._call_anthropic(request_client)
         return self._call_anthropic(request_client)
 
+    # ┌── 函数 def _call()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _call(self):
         _max_stream_retries = env_int("HERMES_STREAM_RETRIES", 2)
         # The one stream_options compatibility retry (#9705) is not a network retry and must not
@@ -3167,6 +4293,7 @@ class _StreamingCall(StreamingWaitMonitor):
         # handler returned True and the loop ended with neither a response nor an error set.
         self._compat_retries = 0
         _stream_attempt = -1
+        # ⤷ 关键分支 try/except：捕获 InterruptedError，出错走兜底而不是崩溃。
         try:
             while _stream_attempt < _max_stream_retries + self._compat_retries:
                 _stream_attempt += 1
@@ -3175,7 +4302,9 @@ class _StreamingCall(StreamingWaitMonitor):
                 # FRESH one, blocking up to a full read timeout per attempt.
                 if self.agent._interrupt_requested:
                     self._cancel_current_stream_attempt("interrupt_before_stream_retry")
+                    # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                     raise InterruptedError("Agent interrupted before stream retry")
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     self.result["response"] = _with_stream_emitters(
                         self.agent, lambda: self._call_wire(stream_attempt_id))
@@ -3196,12 +4325,23 @@ class _StreamingCall(StreamingWaitMonitor):
 
     # ── poll-loop monitor (heartbeat / stale kill / interrupt) ──────────
 
+    # ┌── 函数 def _run_call()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _run_call(self):
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             self._call()
         finally:
             self._call_done.set()
 
+    # ┌── 函数 def _kill_stale_stream()
+    # │  作用：SSE pings but no chunks: cancel the attempt and abort the request-local
+    # │  参数：self, elapsed: float
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _kill_stale_stream(self, elapsed: float) -> None:
         """SSE pings but no chunks: cancel the attempt and abort the request-local
         client so the retry loop opens a fresh one. The shared client is never
@@ -3225,6 +4365,11 @@ class _StreamingCall(StreamingWaitMonitor):
         self.agent._emit_wait_notice(f"⚠ no output from provider for {int(elapsed)}s — reconnecting...")
         self.agent._touch_activity(f"stale stream detected after {int(elapsed)}s, reconnecting")
 
+    # ┌── 函数 def _abort_for_interrupt()
+    # │  作用：/stop seen by the monitor: mark cancelled, abort the request-local
+    # │  参数：self, stale_elapsed: float
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _abort_for_interrupt(self, stale_elapsed: float) -> None:
         """/stop seen by the monitor: mark cancelled, abort the request-local
         socket, wait for the worker, flag the interrupt."""
@@ -3247,6 +4392,11 @@ class _StreamingCall(StreamingWaitMonitor):
 
     # ── orchestration ───────────────────────────────────────────────────
 
+    # ┌── 函数 def _resolve_stale_timeout()
+    # │  作用：Set ``_stream_stale_timeout``. Local endpoints (unless the env is set) get
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _resolve_stale_timeout(self) -> None:
         """Set ``_stream_stale_timeout``. Local endpoints (unless the env is set) get
         long but FINITE patience — 900s / ``agent.local_stream_stale_timeout`` /
@@ -3269,6 +4419,11 @@ class _StreamingCall(StreamingWaitMonitor):
             return
         self._stream_stale_timeout = _cloud_stale_timeout(base, self.api_kwargs)
 
+    # ┌── 函数 def _partial_stream_stub()
+    # │  作用：Tokens already reached the platform: a finish_reason="length" stub fires the
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _partial_stream_stub(self):
         """Tokens already reached the platform: a finish_reason="length" stub fires the
         continuation machinery; tool_calls=None blocks executing incomplete calls.
@@ -3307,6 +4462,7 @@ class _StreamingCall(StreamingWaitMonitor):
                 "NOT seeding a continuation stub (transcript is already over budget): %s",
                 len(_partial_text or ""), error,
             )
+            # ⤷ 出口 return：返回 _build_partial_stream_stub('assistant', None, None, getattr(…
             return _build_partial_stream_stub(
                 "assistant", None, None, getattr(self.agent, "model", "unknown"), None,
                 dropped_tool_names=_partial_names, overflow_terminal=True,
@@ -3320,8 +4476,14 @@ class _StreamingCall(StreamingWaitMonitor):
             getattr(self.agent, "model", "unknown"), None, dropped_tool_names=_partial_names)
         if _cls is not None and _cls.reason == FailoverReason.content_policy_blocked:
             _stub._content_filter_terminated = True
+        # ⤷ 出口 return：返回 _stub
         return _stub
 
+    # ┌── 函数 def run()
+    # │  作用：Resolve the stale timeout, run the request (worker thread or inline),
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def run(self):
         """Resolve the stale timeout, run the request (worker thread or inline),
         drive the heartbeat/stale/interrupt monitor, then translate the outcome."""
@@ -3337,6 +4499,7 @@ class _StreamingCall(StreamingWaitMonitor):
             monitor = threading.Thread(
                 target=_context_thread_target(self._monitor_loop), name="stream-inline-monitor", daemon=True)
             monitor.start()
+            # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
             try:
                 self._run_call()
             finally:
@@ -3346,34 +4509,48 @@ class _StreamingCall(StreamingWaitMonitor):
             self.worker.start()
             self._monitor_loop()
         if self._monitor_interrupted["yes"]:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise InterruptedError("Agent interrupted during streaming API call")
         if self.agent._interrupt_requested:  # worker returned early before the monitor saw the flag
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise InterruptedError("Agent interrupted during streaming API call (post-worker)")
         if self.result["error"] is not None:
             if self.deltas_were_sent["yes"]:
+                # ⤷ 出口 return：返回 self._partial_stream_stub()
                 return self._partial_stream_stub()
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise self.result["error"]
         if self.result["response"] is not None:
             _reset_stale_streak(self.agent)  # provider proved responsive: clear the breaker
         # Propagate first-chunk timing for the ``post_api_request`` hook.
         if isinstance(self.clients.diag, dict) and self.clients.diag.get("first_chunk_at"):
             self.agent._last_api_first_chunk_at = float(self.clients.diag["first_chunk_at"])
+        # ⤷ 出口 return：返回 self.result['response']
         return self.result["response"]
 
 
+# ┌── 函数 def interruptible_streaming_api_call()
+# │  作用：Streaming variant of _interruptible_api_call: fires the delta callbacks per
+# │  参数：agent, api_kwargs: dict, on_first_delta = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=None):
     """Streaming variant of _interruptible_api_call: fires the delta callbacks per
     text token (tool-call turns suppress them) and returns a SimpleNamespace in
     the non-streaming response shape. codex_responses delegates to the already-
     streaming codex runner; cron turns and delegated children run inline."""
     if agent._interrupt_requested:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise InterruptedError("Agent interrupted before streaming API call")
     if agent.api_mode == "codex_responses":
+        # ⤷ 出口 return：返回 _stream_codex_passthrough(agent, api_kwargs, on_first_delta)
         return _stream_codex_passthrough(agent, api_kwargs, on_first_delta)
     if agent.api_mode == "bedrock_converse":
+        # ⤷ 出口 return：返回 _BedrockStream(agent, api_kwargs, on_first_delta).run()
         return _BedrockStream(agent, api_kwargs, on_first_delta).run()
     # Cross-turn stale-stream circuit breaker (see ``_stale_streak()``).
     _check_stale_giveup(agent)
+    # ⤷ 出口 return：返回 _StreamingCall(agent, api_kwargs, on_first_delta).run()
     return _StreamingCall(agent, api_kwargs, on_first_delta).run()
 
 

@@ -3,6 +3,27 @@
 ``ClientLifecycleMixin`` owns task cleanup, the shared primary client, per-request client caches
 (owner-thread close vs stranger-thread abort), credential rotation and route-derived headers.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/client_lifecycle.py（约 998 行）
+# 地位：AIAgent 的客户端生命周期管理（连接、清理、凭证刷新）。
+#
+# 以 class ClientLifecycleMixin 的形式提供（AIAgent 继承了它），49 个方法。
+#
+# 主要职责：
+#   - 任务资源清理：_close_task_resources()
+#   - 共享的主客户端：_ensure_primary_openai_client / _replace_primary_openai_client /
+#     _close_openai_client / _retire_shared_openai_client
+#   - 每请求客户端缓存：_request_slot / _checkout_request_slot
+#     源码注释提到的关键点：owner-thread close vs stranger-thread abort
+#     —— 自己的线程可以正常关闭连接；别的线程要中断只能 abort。这是并发下很实际的考量。
+#   - 凭证轮换与路由相关请求头：_routermint_headers / _qwen_portal_headers
+#   - keepalive 连接：_build_keepalive_http_client
+#
+# 值得学的点：HTTP 客户端（底层连接池）的生命周期管理，是长时间运行的 Agent 必备的基础设施。
+# ==========================================================================
+#
 import logging
 import threading
 import time
@@ -21,15 +42,27 @@ _ANTHROPIC_SLOT = "_request_anthropic_client_cache"
 _NO_SOCKETS_SUFFIX = " — no sockets found; in-flight request may keep running until the provider finishes"
 
 
+# ┌── 函数 def _routermint_headers()
+# │  作用：User-Agent RouterMint needs to avoid Cloudflare 1010 blocks.
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _routermint_headers() -> dict:
     """User-Agent RouterMint needs to avoid Cloudflare 1010 blocks."""
     from hermes_cli import __version__ as _HERMES_VERSION
+    # ⤷ 出口 return：返回 {'User-Agent': f'HermesAgent/{_HERMES_VERSION}'}
     return {"User-Agent": f"HermesAgent/{_HERMES_VERSION}"}
 
 
+# ┌── 函数 def _qwen_portal_headers()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _qwen_portal_headers() -> dict:
     import platform as _plat
     _ua = f"QwenCode/{_QWEN_CODE_VERSION} ({_plat.system().lower()}; {_plat.machine()})"
+    # ⤷ 出口 return：返回 {'User-Agent': _ua, 'X-DashScope-CacheControl': 'enable', 'X…
     return {
         "User-Agent": _ua, "X-DashScope-CacheControl": "enable", "X-DashScope-UserAgent": _ua,
         "X-DashScope-AuthType": "qwen-oauth",
@@ -53,6 +86,11 @@ _ROUTE_DEFAULT_HEADERS = (
 )
 
 
+# ┌── 函数 def _reset_slot()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：cache: dict, in_use: bool = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reset_slot(cache: dict, *, in_use: bool = False) -> None:
     cache["client"] = None
     cache["key"] = None
@@ -60,10 +98,21 @@ def _reset_slot(cache: dict, *, in_use: bool = False) -> None:
     cache["in_use"] = in_use
 
 
+# ┌── 函数 def _valid_credential_pair()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：api_key: Any, base_url: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _valid_credential_pair(api_key: Any, base_url: Any) -> bool:
+    # ⤷ 出口 return：返回 bool(isinstance(api_key, str) and api_key.strip() and isinst…
     return bool(isinstance(api_key, str) and api_key.strip() and isinstance(base_url, str) and base_url.strip())
 
 
+# ┌── 函数 def _swap_fallback_clients()
+# │  作用：Install the fallback client(s) in place, honoring request_timeout_seconds (None = SDK default).
+# │  参数：agent, fb_client, fb_provider: str, fb_model: str, fb_base_url: str, fb_api_mode: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _swap_fallback_clients(agent, fb_client, fb_provider: str, fb_model: str, fb_base_url: str, fb_api_mode: str) -> None:
     """Install the fallback client(s) in place, honoring request_timeout_seconds (None = SDK default)."""
     timeout = get_provider_request_timeout(fb_provider, fb_model)
@@ -103,7 +152,15 @@ def _swap_fallback_clients(agent, fb_client, fb_provider: str, fb_model: str, fb
         agent._replace_primary_openai_client(reason="fallback_timeout_apply")
 
 
+# ┌── 类 class ClientLifecycleMixin
+# │  成员：共 49 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class ClientLifecycleMixin:
+    # ┌── 函数 def _close_task_resources()
+    # │  作用：Release task resources without treating a shared environment as process ownership.
+    # │  参数：self, task_id: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_task_resources(self, task_id: str) -> None:
         """Release task resources without treating a shared environment as process ownership."""
         from run_agent import _quietly, cleanup_browser, cleanup_vm
@@ -126,21 +183,45 @@ class ClientLifecycleMixin:
         for step in (kill_processes, lambda: cleanup_vm(task_id), lambda: cleanup_browser(task_id), release_computer_use):
             _quietly(step)
 
+    # ┌── 函数 def _client_log_context()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _client_log_context(self) -> str:
         thread = threading.current_thread()
+        # ⤷ 出口 return：返回 f"thread={thread.name}:{thread.ident} provider={getattr(self…
         return (
             f"thread={thread.name}:{thread.ident} provider={getattr(self, 'provider', 'unknown')} "
             f"base_url={getattr(self, 'base_url', 'unknown')} model={getattr(self, 'model', 'unknown')}"
         )
 
+    # ┌── 函数 def _anthropic_log_context()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _anthropic_log_context(self) -> str:
+        # ⤷ 出口 return：返回 f"provider={getattr(self, 'provider', None)} model={getattr(…
         return f"provider={getattr(self, 'provider', None)} model={getattr(self, 'model', None)}"
 
+    # ┌── 函数 def _openai_client_lock()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：threading.RLock
+    # └──────────────────────────────────────────────────────────────
     def _openai_client_lock(self) -> threading.RLock:
         if getattr(self, "_client_lock", None) is None:
             self._client_lock = threading.RLock()
+        # ⤷ 出口 return：返回 self._client_lock
         return self._client_lock
 
+    # ┌── 函数 def _is_openai_client_closed()
+    # │  作用：Check if an OpenAI client is closed.
+    # │  参数：client: Any
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _is_openai_client_closed(client: Any) -> bool:
         """Check if an OpenAI client is closed.
@@ -155,6 +236,7 @@ class ClientLifecycleMixin:
         from unittest.mock import Mock
 
         if isinstance(client, Mock):
+            # ⤷ 出口 return：返回 False
             return False
 
         is_closed_attr = getattr(client, "is_closed", None)
@@ -162,19 +244,30 @@ class ClientLifecycleMixin:
             # Handle method (openai SDK) vs property (httpx)
             if callable(is_closed_attr):
                 if is_closed_attr():
+                    # ⤷ 出口 return：返回 True
                     return True
             elif bool(is_closed_attr):
+                # ⤷ 出口 return：返回 True
                 return True
 
         http_client = getattr(client, "_client", None)
         if http_client is not None:
+            # ⤷ 出口 return：返回 bool(getattr(http_client, 'is_closed', False))
             return bool(getattr(http_client, "is_closed", False))
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ┌── 函数 def _build_keepalive_http_client()
+    # │  作用：Build the shared OpenAI httpx client used by main and aux paths.
+    # │  参数：base_url: str = '', verify: Any = ...
+    # │  返回：Any
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _build_keepalive_http_client(base_url: str = "", *, verify: Any = True) -> Any:
         """Build the shared OpenAI httpx client used by main and aux paths."""
         from agent.process_bootstrap import build_keepalive_http_client
+        # ⤷ 出口 return：返回 build_keepalive_http_client(base_url, verify=verify)
         return build_keepalive_http_client(base_url, verify=verify)
 
     _create_openai_client = _forward("agent.agent_runtime_helpers", "create_openai_client")
@@ -183,18 +276,29 @@ class ClientLifecycleMixin:
     _run_codex_stream = _forward("agent.codex_runtime", "run_codex_stream")
     _recover_with_credential_pool = _forward("agent.agent_runtime_helpers", "recover_with_credential_pool")
 
+    # ┌── 函数 def _close_openai_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, client: Any, reason: str, shared: bool
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> None:
         if client is None:
             return
         ctx = self._client_log_context()
         # Force-close TCP sockets first (no CLOSE-WAIT accumulation), then the graceful SDK close.
         force_closed = self._force_close_tcp_sockets(client)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             client.close()
             logger.info("OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s", reason, shared, force_closed, ctx)
         except Exception as exc:
             logger.debug("OpenAI client close failed (%s, shared=%s) %s error=%s", reason, shared, ctx, exc)
 
+    # ┌── 函数 def _retire_shared_openai_client()
+    # │  作用：Ownership-safe retirement of a replaced shared OpenAI client: ``shutdown()`` sockets only, FDs to GC.
+    # │  参数：self, client: Any, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _retire_shared_openai_client(self, client: Any, *, reason: str) -> None:
         """Ownership-safe retirement of a replaced shared OpenAI client: ``shutdown()`` sockets only, FDs to GC.
 
@@ -210,6 +314,7 @@ class ClientLifecycleMixin:
         """
         if client is None:
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             shutdown_count = self._force_close_tcp_sockets(client)
             logger.info(
@@ -219,6 +324,11 @@ class ClientLifecycleMixin:
         except Exception as exc:
             logger.debug("Shared OpenAI client retire failed (%s) %s error=%s", reason, self._client_log_context(), exc)
 
+    # ┌── 函数 def _drain_transports_after_abandonment()
+    # │  作用：FD-safe transport drain for an abandoned (timed-out) worker; returns sockets shut down.
+    # │  参数：self, reason: str
+    # │  返回：int
+    # └──────────────────────────────────────────────────────────────
     def _drain_transports_after_abandonment(self, *, reason: str) -> int:
         """FD-safe transport drain for an abandoned (timed-out) worker; returns sockets shut down.
 
@@ -233,6 +343,7 @@ class ClientLifecycleMixin:
         """
         drained = 0
         # Shared primary client (codex-direct / MoA stream on it directly).
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             client = getattr(self, "client", None)
             if client is not None:
@@ -245,6 +356,7 @@ class ClientLifecycleMixin:
             (_OPENAI_SLOT, self._abort_request_openai_client, "request"),
             (_ANTHROPIC_SLOT, self._abort_request_anthropic_client, "anthropic"),
         ):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 with self._openai_client_lock():
                     cache = getattr(self, slot_attr, None)
@@ -254,6 +366,7 @@ class ClientLifecycleMixin:
             except Exception:
                 logger.debug("Abandoned-worker drain: %s client abort failed", label, exc_info=True)
         # Codex app-server session watches a private interrupt event.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             request_interrupt = getattr(getattr(self, "_codex_session", None), "request_interrupt", None)
             if callable(request_interrupt):
@@ -261,6 +374,7 @@ class ClientLifecycleMixin:
         except Exception:
             logger.debug("Abandoned-worker drain: codex interrupt failed", exc_info=True)
         # Inline (cron-style) request abort hook, when registered.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             abort_active = getattr(self, "_active_request_abort", None)
             if callable(abort_active):
@@ -271,11 +385,18 @@ class ClientLifecycleMixin:
             "Abandoned-worker transports drained (%s, tcp_shutdown=%d, fd_release=deferred_to_worker) %s",
             reason, drained, self._client_log_context(),
         )
+        # ⤷ 出口 return：返回 drained
         return drained
 
+    # ┌── 函数 def _replace_primary_openai_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, reason: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _replace_primary_openai_client(self, *, reason: str) -> bool:
         with self._openai_client_lock():
             old_client = getattr(self, "client", None)
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 # MoA's ``client`` is an in-process facade, not an SDK client; generic rebuilds must preserve that.
                 if (getattr(self, "provider", "") or "").strip().lower() == "moa":
@@ -287,6 +408,7 @@ class ClientLifecycleMixin:
                 logger.warning(
                     "Failed to rebuild shared primary client (%s) %s error=%s", reason, self._client_log_context(), exc,
                 )
+                # ⤷ 出口 return：返回 False
                 return False
             self.client = new_client
         # Never hard-close the replaced shared client (another thread may still be unwinding on the old pool).
@@ -296,39 +418,59 @@ class ClientLifecycleMixin:
         # shared client itself). Retire it instead: sockets are shut down (FD-safe), FD release deferred to
         # GC.
         self._retire_shared_openai_client(old_client, reason=f"replace:{reason}")
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _ensure_primary_openai_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, reason: str
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _ensure_primary_openai_client(self, *, reason: str) -> Any:
         with self._openai_client_lock():
             client = getattr(self, "client", None)
             if client is not None and not self._is_openai_client_closed(client):
+                # ⤷ 出口 return：返回 client
                 return client
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 new_client = self._create_openai_client(self._client_kwargs, reason=reason, shared=True)
             except Exception as exc:
                 logger.warning(
                     "Failed to recreate closed OpenAI client (%s) %s error=%s", reason, self._client_log_context(), exc,
                 )
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise RuntimeError("Failed to recreate closed OpenAI client") from exc
             self.client = new_client
         logger.warning(
             "Detected closed shared OpenAI client; recreated before use (%s) %s", reason, self._client_log_context(),
         )
         self._close_openai_client(client, reason=f"replace:{reason}", shared=True)
+        # ⤷ 出口 return：返回 new_client
         return new_client
 
+    # ┌── 函数 def _api_kwargs_have_image_parts()
+    # │  作用：True when the outbound request still has native image parts (Chat ``messages`` / Responses ``input``).
+    # │  参数：api_kwargs: dict
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _api_kwargs_have_image_parts(api_kwargs: dict) -> bool:
         """True when the outbound request still has native image parts (Chat ``messages`` / Responses ``input``)."""
         if not isinstance(api_kwargs, dict):
+            # ⤷ 出口 return：返回 False
             return False
 
         def _contains_image(value: Any) -> bool:
             if isinstance(value, dict):
+                # ⤷ 出口 return：返回 value.get('type') in {'image_url', 'input_image'} or any((_c…
                 return value.get("type") in {"image_url", "input_image"} or any(
                     _contains_image(v) for v in value.values()
                 )
+            # ⤷ 出口 return：返回 isinstance(value, list) and any((_contains_image(v) for v in…
             return isinstance(value, list) and any(_contains_image(v) for v in value)
+        # ⤷ 出口 return：返回 any((_contains_image(item) for field in ('messages', 'input'…
         return any(
             _contains_image(item)
             for field in ("messages", "input")
@@ -344,28 +486,47 @@ class ClientLifecycleMixin:
     # attest a healthy pool. Poisoning still wins.
     _REQUEST_CLIENT_REUSE_REASONS = frozenset({"request_complete", "stream_request_complete"})
 
+    # ┌── 函数 def _request_slot()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, slot_attr: str
+    # │  返回：dict
+    # └──────────────────────────────────────────────────────────────
     def _request_slot(self, slot_attr: str) -> dict:
         cache = getattr(self, slot_attr, None)  # lazy: tests build agents via AIAgent.__new__ without __init__
         if cache is None:
             setattr(self, slot_attr, cache := {})
             _reset_slot(cache)
+        # ⤷ 出口 return：返回 cache
         return cache
 
+    # ┌── 函数 def _checkout_request_slot()
+    # │  作用：Return ``(reusable_client, stale_client)``; at most one is non-None.
+    # │  参数：self, slot_attr: str, key: Any
+    # │  返回：tuple
+    # └──────────────────────────────────────────────────────────────
     def _checkout_request_slot(self, slot_attr: str, key: Any) -> tuple:
         """Return ``(reusable_client, stale_client)``; at most one is non-None."""
         with self._openai_client_lock():
             cache = self._request_slot(slot_attr)
             cached = cache["client"]
             if cached is None or cache["in_use"]:
+                # ⤷ 出口 return：返回 (None, None)
                 return None, None
             if not cache["poisoned"] and cache["key"] == key and not self._is_openai_client_closed(cached):
                 cache["in_use"] = True
+                # ⤷ 出口 return：返回 (cached, None)
                 return cached, None
             # Key changed / poisoned / externally closed — rebuild. in_use was False, so closing the stale
             # client from this thread is FD-safe (no worker owns it).
             _reset_slot(cache)
+            # ⤷ 出口 return：返回 (None, cached)
             return None, cached
 
+    # ┌── 函数 def _store_request_slot()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, slot_attr: str, client: Any, key: Any
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _store_request_slot(self, slot_attr: str, client: Any, key: Any) -> None:
         with self._openai_client_lock():
             cache = self._request_slot(slot_attr)
@@ -373,6 +534,11 @@ class ClientLifecycleMixin:
                 cache.update(client=client, key=key, poisoned=False, in_use=True)
             # else: a concurrent call holds the slot — hand this client out untracked (fully closed later).
 
+    # ┌── 函数 def _release_request_slot()
+    # │  作用：Owner-thread release; True when the client stays cached (clean finish, not poisoned).
+    # │  参数：self, slot_attr: str, client: Any, reason: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _release_request_slot(self, slot_attr: str, client: Any, reason: str) -> bool:
         """Owner-thread release; True when the client stays cached (clean finish, not poisoned)."""
         with self._openai_client_lock():
@@ -380,10 +546,17 @@ class ClientLifecycleMixin:
             if cache["client"] is client:
                 if reason in self._REQUEST_CLIENT_REUSE_REASONS and not cache["poisoned"]:
                     cache["in_use"] = False
+                    # ⤷ 出口 return：返回 True
                     return True
                 _reset_slot(cache)
+        # ⤷ 出口 return：返回 False
         return False
 
+    # ┌── 函数 def _take_request_slot()
+    # │  作用：Teardown: empty the slot and return ``(client, was_in_use)``.
+    # │  参数：self, slot_attr: str
+    # │  返回：tuple
+    # └──────────────────────────────────────────────────────────────
     def _take_request_slot(self, slot_attr: str) -> tuple:
         """Teardown: empty the slot and return ``(client, was_in_use)``."""
         with self._openai_client_lock():
@@ -391,8 +564,14 @@ class ClientLifecycleMixin:
             client, in_use = (cache["client"], bool(cache["in_use"])) if cache else (None, False)
             if cache is not None:
                 _reset_slot(cache)
+        # ⤷ 出口 return：返回 (client, in_use)
         return client, in_use
 
+    # ┌── 函数 def _abort_request_slot_client()
+    # │  作用：Cross-thread abort (interrupt loop, stale detector): ``shutdown(SHUT_RDWR)`` without releasing FDs.
+    # │  参数：self, slot_attr: str, client: Any, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _abort_request_slot_client(self, slot_attr: str, client: Any, *, reason: str) -> None:
         """Cross-thread abort (interrupt loop, stale detector): ``shutdown(SHUT_RDWR)`` without releasing FDs.
 
@@ -408,6 +587,7 @@ class ClientLifecycleMixin:
             cache = self._request_slot(slot_attr)
             if cache["client"] is client:
                 cache["poisoned"] = True
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             shutdown_count = self._force_close_tcp_sockets(client)
             # Zero sockets shut down means the worker stays blocked — WARN, not success.
@@ -423,10 +603,16 @@ class ClientLifecycleMixin:
         except Exception as exc:
             logger.debug("%s client abort failed (%s, shared=False) %s error=%s", label, reason, context, exc)
 
+    # ┌── 函数 def _create_request_openai_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, reason: str, api_kwargs: Optional[dict] = ...
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _create_request_openai_client(self, *, reason: str, api_kwargs: Optional[dict] = None) -> Any:
         from unittest.mock import Mock
         primary_client = self._ensure_primary_openai_client(reason=reason)
         if self.provider == "moa" or isinstance(primary_client, Mock):
+            # ⤷ 出口 return：返回 primary_client
             return primary_client
         with self._openai_client_lock():
             request_kwargs = dict(self._client_kwargs)
@@ -439,6 +625,7 @@ class ClientLifecycleMixin:
             request_kwargs["default_headers"] = copilot_request_headers(is_agent_turn=True, is_vision=True)
         cached, stale = self._checkout_request_slot(_OPENAI_SLOT, request_kwargs)
         if cached is not None:
+            # ⤷ 出口 return：返回 cached
             return cached
         if stale is not None:
             self._close_openai_client(stale, reason=f"reuse_evict:{reason}", shared=False)
@@ -446,12 +633,23 @@ class ClientLifecycleMixin:
         # Snapshot nested dicts (default_headers) so an aliased inner object can't mutate the cache key.
         snapshot = {k: dict(v) if isinstance(v, dict) else v for k, v in request_kwargs.items()}
         self._store_request_slot(_OPENAI_SLOT, client, snapshot)
+        # ⤷ 出口 return：返回 client
         return client
 
+    # ┌── 函数 def _close_request_openai_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, client: Any, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_request_openai_client(self, client: Any, *, reason: str) -> None:
         if not self._release_request_slot(_OPENAI_SLOT, client, reason):
             self._close_openai_client(client, reason=reason, shared=False)
 
+    # ┌── 函数 def _close_cached_request_openai_client()
+    # │  作用：Teardown hook: really close the cached per-request wire client.
+    # │  参数：self, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_cached_request_openai_client(self, *, reason: str) -> None:
         """Teardown hook: really close the cached per-request wire client."""
         client, in_use = self._take_request_slot(_OPENAI_SLOT)
@@ -464,34 +662,70 @@ class ClientLifecycleMixin:
         else:
             self._close_openai_client(client, reason=reason, shared=False)
 
+    # ┌── 函数 def _abort_request_openai_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, client: Any, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _abort_request_openai_client(self, client: Any, *, reason: str) -> None:
         self._abort_request_slot_client(_OPENAI_SLOT, client, reason=reason)
 
+    # ┌── 函数 def _request_anthropic_client_key()
+    # │  作用：Cache key over everything forcing a fresh client: credential, base URL/region, timeout, 1M-beta flag.
+    # │  参数：self
+    # │  返回：tuple
+    # └──────────────────────────────────────────────────────────────
     def _request_anthropic_client_key(self) -> tuple:
         """Cache key over everything forcing a fresh client: credential, base URL/region, timeout, 1M-beta flag."""
         if getattr(self, "provider", None) == "bedrock":
+            # ⤷ 出口 return：返回 ('bedrock', getattr(self, '_bedrock_region', 'us-east-1') or…
             return ("bedrock", getattr(self, "_bedrock_region", "us-east-1") or "us-east-1")
+        # ⤷ 出口 return：返回 ('direct', self._anthropic_api_key, getattr(self, '_anthropi…
         return (
             "direct", self._anthropic_api_key, getattr(self, "_anthropic_base_url", None),
             get_provider_request_timeout(self.provider, self.model), bool(getattr(self, "_oauth_1m_beta_disabled", False)),
         )
 
+    # ┌── 函数 def _build_direct_anthropic_client()
+    # │  作用：Native Anthropic client for ``token``/``base_url`` with the provider/model request timeout.
+    # │  参数：self, token: str, base_url: Any
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _build_direct_anthropic_client(self, token: str, base_url: Any) -> Any:
         """Native Anthropic client for ``token``/``base_url`` with the provider/model request timeout."""
         from agent.anthropic_adapter import build_anthropic_client
+        # ⤷ 出口 return：返回 build_anthropic_client(token, base_url, timeout=get_provider…
         return build_anthropic_client(token, base_url, timeout=get_provider_request_timeout(self.provider, self.model))
 
+    # ┌── 函数 def _anthropic_oauth_flag()
+    # │  作用：OAuth flag only on native Anthropic; third-party Anthropic-protocol endpoints must not trip OAuth paths.
+    # │  参数：self, token: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _anthropic_oauth_flag(self, token: str) -> bool:
         """OAuth flag only on native Anthropic; third-party Anthropic-protocol endpoints must not trip OAuth paths."""
         from agent.anthropic_credentials import _is_oauth_token
+        # ⤷ 出口 return：返回 _is_oauth_token(token) if self.provider == 'anthropic' else …
         return _is_oauth_token(token) if self.provider == "anthropic" else False
 
+    # ┌── 函数 def _build_anthropic_client_for_key()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, key: tuple
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _build_anthropic_client_for_key(self, key: tuple) -> Any:
         from agent.anthropic_adapter import build_anthropic_bedrock_client, build_anthropic_client
         if key[0] == "bedrock":
+            # ⤷ 出口 return：返回 build_anthropic_bedrock_client(key[1])
             return build_anthropic_bedrock_client(key[1])
+        # ⤷ 出口 return：返回 build_anthropic_client(key[1], key[2], timeout=key[3], drop_…
         return build_anthropic_client(key[1], key[2], timeout=key[3], drop_context_1m_beta=key[4])
 
+    # ┌── 函数 def _create_request_anthropic_client()
+    # │  作用：Build (or reuse) a request-local Anthropic client for one in-flight call.
+    # │  参数：self, reason: str
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _create_request_anthropic_client(self, *, reason: str) -> Any:
         """Build (or reuse) a request-local Anthropic client for one in-flight call.
 
@@ -503,18 +737,26 @@ class ClientLifecycleMixin:
         key = self._request_anthropic_client_key()
         cached, stale = self._checkout_request_slot(_ANTHROPIC_SLOT, key)
         if cached is not None:
+            # ⤷ 出口 return：返回 cached
             return cached
         if stale is not None:
             self._close_request_anthropic_client(stale, reason=f"reuse_evict:{reason}")
         client = self._build_anthropic_client_for_key(key)
         logger.debug("Anthropic request client created (%s, shared=False) %s", reason, self._anthropic_log_context())
         self._store_request_slot(_ANTHROPIC_SLOT, client, key)
+        # ⤷ 出口 return：返回 client
         return client
 
+    # ┌── 函数 def _close_request_anthropic_client()
+    # │  作用：Owner-thread close: clean finish keeps the pool warm; otherwise force-close sockets (CLOSE-WAIT) + SDK close.
+    # │  参数：self, client: Any, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_request_anthropic_client(self, client: Any, *, reason: str) -> None:
         """Owner-thread close: clean finish keeps the pool warm; otherwise force-close sockets (CLOSE-WAIT) + SDK close."""
         if client is None or self._release_request_slot(_ANTHROPIC_SLOT, client, reason):
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             self._force_close_tcp_sockets(client)
             client.close()
@@ -524,6 +766,11 @@ class ClientLifecycleMixin:
                 "Anthropic client close failed (%s, shared=False) %s error=%s", reason, self._anthropic_log_context(), exc,
             )
 
+    # ┌── 函数 def _close_cached_request_anthropic_client()
+    # │  作用：Teardown hook: really close the cached per-request Anthropic client.
+    # │  参数：self, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _close_cached_request_anthropic_client(self, *, reason: str) -> None:
         """Teardown hook: really close the cached per-request Anthropic client."""
         client, in_use = self._take_request_slot(_ANTHROPIC_SLOT)
@@ -536,26 +783,49 @@ class ClientLifecycleMixin:
             self._force_close_tcp_sockets(client)
             client.close()
 
+    # ┌── 函数 def _abort_request_anthropic_client()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, client: Any, reason: str
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _abort_request_anthropic_client(self, client: Any, *, reason: str) -> None:
         self._abort_request_slot_client(_ANTHROPIC_SLOT, client, reason=reason)
 
     # ------------------------------------------------------------------ credential refresh
+    # ┌── 函数 def _sync_client_kwargs_credentials()
+    # │  作用：Mirror ``self.api_key`` / ``self.base_url`` into the OpenAI-style client kwargs.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _sync_client_kwargs_credentials(self) -> None:
         """Mirror ``self.api_key`` / ``self.base_url`` into the OpenAI-style client kwargs."""
         self._client_kwargs["api_key"] = self.api_key
         self._client_kwargs["base_url"] = self.base_url
 
+    # ┌── 函数 def _adopt_openai_credentials()
+    # │  作用：Apply a fresh key/base_url to the OpenAI-style kwargs and rebuild the shared client.
+    # │  参数：self, api_key: str, base_url: str, reason: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _adopt_openai_credentials(self, api_key: str, base_url: str, *, reason: str) -> bool:
         """Apply a fresh key/base_url to the OpenAI-style kwargs and rebuild the shared client."""
         self.api_key, self.base_url = api_key.strip(), base_url.strip().rstrip("/")
         self._sync_client_kwargs_credentials()
+        # ⤷ 出口 return：返回 self._replace_primary_openai_client(reason=reason)
         return self._replace_primary_openai_client(reason=reason)
 
+    # ┌── 函数 def _try_refresh_codex_client_credentials()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, force: bool = ...
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _try_refresh_codex_client_credentials(self, *, force: bool = True) -> bool:
         if self.api_mode != "codex_responses" or self.provider not in {"openai-codex", "xai-oauth"}:
+            # ⤷ 出口 return：返回 False
             return False
         # No silent account swap: a non-singleton credential (manual pool entry, explicit api_key=) must not be
         # replaced by the device_code singleton's tokens — the pool's reactive recovery owns that case.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli import auth as _auth
             resolve = (
@@ -573,7 +843,9 @@ class ClientLifecycleMixin:
                 "%s singleton tokens differ from the active api_key; skipping singleton force-refresh to avoid "
                 "silent account swap. Reactive credential rotation should go through the pool.", self.provider,
             )
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             creds = resolve(force_refresh=force)
         except Exception as exc:
@@ -581,17 +853,26 @@ class ClientLifecycleMixin:
             return False
         api_key, base_url = creds.get("api_key"), creds.get("base_url")
         if not _valid_credential_pair(api_key, base_url):
+            # ⤷ 出口 return：返回 False
             return False
         # No NEW token minted (the resolver returns the same stale token when refresh fails) → False.
         if old_key and api_key.strip() == old_key:
             logger.debug("%s credential refresh returned the same token; refresh likely failed silently", self.provider)
             return False
+        # ⤷ 出口 return：返回 self._adopt_openai_credentials(api_key, base_url, reason=f'{…
         return self._adopt_openai_credentials(api_key, base_url, reason=f"{self.provider}_credential_refresh")
 
+    # ┌── 函数 def _try_refresh_nous_client_credentials()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, force: bool = ..., require_account: str | None = ...
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _try_refresh_nous_client_credentials(self, *, force: bool = True, require_account: str | None = None) -> bool:
         # Portal serves anthropic/* on the native Messages route, so either client kind may hold the expiring JWT.
         if self.provider != "nous" or self.api_mode not in ("chat_completions", "anthropic_messages"):
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.auth import resolve_nous_runtime_credentials
             timeout = env_float("HERMES_NOUS_TIMEOUT_SECONDS", 15)
@@ -605,10 +886,13 @@ class ClientLifecycleMixin:
             return False
         api_key, base_url = creds.get("api_key"), creds.get("base_url")
         if not _valid_credential_pair(api_key, base_url):
+            # ⤷ 出口 return：返回 False
             return False
         if str(api_key).strip() == str(self.api_key or "").strip():
+            # ⤷ 出口 return：返回 False
             return False  # store holds the same key: nothing to adopt, no client rebuild
         if require_account is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.auth_constants import _decode_jwt_claims
                 new_account = _decode_jwt_claims(str(api_key)).get("sub")
@@ -627,12 +911,18 @@ class ClientLifecycleMixin:
             return True
         # Nous requests should not inherit OpenRouter-only attribution headers.
         self._client_kwargs.pop("default_headers", None)
+        # ⤷ 出口 return：返回 self._adopt_openai_credentials(api_key, base_url, reason='no…
         return self._adopt_openai_credentials(api_key, base_url, reason="nous_credential_refresh")
 
     # Adopt a fresh key this many seconds before the one in hand expires. Wider than the store's
     # own refresh skew (120 s) so the keepalive has normally already minted the replacement.
     _NOUS_KEY_ADOPT_SKEW_S = 180
 
+    # ┌── 函数 def _adopt_nous_key_before_expiry()
+    # │  作用：Swap in a fresh Nous agent key BEFORE the one in hand expires, so the request never 401s.
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _adopt_nous_key_before_expiry(self) -> bool:
         """Swap in a fresh Nous agent key BEFORE the one in hand expires, so the request never 401s.
 
@@ -650,33 +940,46 @@ class ClientLifecycleMixin:
         reactive 401 path is unchanged.
         """
         if getattr(self, "provider", "") != "nous" or not getattr(self, "api_key", None):
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.auth_constants import _decode_jwt_claims
             claims = _decode_jwt_claims(self.api_key)
         except Exception:
+            # ⤷ 出口 return：返回 False
             return False
         exp, account = claims.get("exp"), claims.get("sub")
         if not account or not isinstance(exp, (int, float)) or exp - time.time() > self._NOUS_KEY_ADOPT_SKEW_S:
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 出口 return：返回 self._try_refresh_nous_client_credentials(force=False, requi…
         return self._try_refresh_nous_client_credentials(force=False, require_account=str(account))
 
 
+    # ┌── 函数 def _resolve_env_credentials()
+    # │  作用：Current ``.env``-sourced ``(api_key, base_url, default_base)`` for this provider, or ``None``.
+    # │  参数：self
+    # │  返回：Optional[tuple]
+    # └──────────────────────────────────────────────────────────────
     def _resolve_env_credentials(self) -> Optional[tuple]:
         """Current ``.env``-sourced ``(api_key, base_url, default_base)`` for this provider, or ``None``.
 
         Covers registry api-key providers and named custom providers with ``key_env``.
         """
+        # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
         try:
             from agent.credential_pool import get_env_prefer_dotenv
             from hermes_cli.auth import PROVIDER_REGISTRY
         except ImportError:
+            # ⤷ 出口 return：返回 None
             return None
         pconfig = PROVIDER_REGISTRY.get(self.provider)
         if pconfig and getattr(pconfig, "auth_type", "") == "api_key" and getattr(pconfig, "api_key_env_vars", ()):
             # First non-empty env var wins (lazy: later vars are not read).
             api_key = next((k for k in (get_env_prefer_dotenv(v).strip() for v in pconfig.api_key_env_vars) if k), "")
             if not api_key:
+                # ⤷ 出口 return：返回 None
                 return None
             url_var = pconfig.base_url_env_var
             env_url = get_env_prefer_dotenv(url_var).strip().rstrip("/") if url_var else ""
@@ -693,6 +996,7 @@ class ClientLifecycleMixin:
                 base_url = resolver(api_key, pconfig.inference_base_url, env_url).rstrip("/")
         elif self.provider == "custom":
             # Named custom provider: identity in config, credential in key_env; no key_env → nothing to watch.
+            # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.runtime_provider import _get_named_custom_provider
             except ImportError:
@@ -707,9 +1011,16 @@ class ClientLifecycleMixin:
         else:
             return None
         if not base_url:
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 (api_key, base_url, default_base)
         return api_key, base_url, default_base
 
+    # ┌── 函数 def _should_adopt_env_credentials()
+    # │  作用：Adopt only env *edits* (resolved value changed since last look), never drift from ``self.*``:
+    # │  参数：self, api_key: str, base_url: str, default_base: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _should_adopt_env_credentials(self, api_key: str, base_url: str, default_base: str) -> bool:
         """Adopt only env *edits* (resolved value changed since last look), never drift from ``self.*``:
         pool rotation/failover and a config ``model.base_url`` legitimately move the session."""
@@ -723,10 +1034,17 @@ class ClientLifecycleMixin:
                 api_key != self.api_key and getattr(self, "_credential_pool", None) is not None
                 and getattr(self, "_credential_pool_entry_id", None)
             )
+            # ⤷ 出口 return：返回 current_base == default_base and (not unchanged) and (not po…
             return current_base == default_base and not unchanged and not pool_rotated
         # Adopt only while the session still runs on the registry default or the previously-seen env value.
+        # ⤷ 出口 return：返回 (base_url, api_key) != prev and current_base in {default_bas…
         return (base_url, api_key) != prev and current_base in {default_base, prev[0]} and not unchanged
 
+    # ┌── 函数 def _try_refresh_env_client_credentials()
+    # │  作用：Adopt ``~/.hermes/.env`` credential/base-url edits at the turn boundary (a Settings save updates ``.env``
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _try_refresh_env_client_credentials(self) -> bool:
         """Adopt ``~/.hermes/.env`` credential/base-url edits at the turn boundary (a Settings save updates ``.env``
         but a live worker keeps init-time values). Adoption rule: ``_should_adopt_env_credentials``.
@@ -736,13 +1054,16 @@ class ClientLifecycleMixin:
         runtime provider's config lookup instead.
         """
         if self.api_mode != "chat_completions" or getattr(self, "_fallback_activated", False):
+            # ⤷ 出口 return：返回 False
             return False
         resolved = self._resolve_env_credentials()
         if resolved is None:
+            # ⤷ 出口 return：返回 False
             return False
         api_key, base_url, default_base = resolved
         if not self._should_adopt_env_credentials(api_key, base_url, default_base):
             self._env_creds_seen = (base_url, api_key)
+            # ⤷ 出口 return：返回 False
             return False
         from hermes_cli.route_identity import normalize_route_base_url
         route_changed = normalize_route_base_url(self.base_url) != normalize_route_base_url(base_url)
@@ -757,8 +1078,10 @@ class ClientLifecycleMixin:
             self.api_key, self.base_url = prior_api_key, prior_base_url
             self._client_kwargs.clear()
             self._client_kwargs.update(prior_client_kwargs)
+            # ⤷ 出口 return：返回 False
             return False
         # Rebind the pool entry id to the adopted key, or the next 429 quarantines the wrong credential.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.agent_runtime_helpers import sync_credential_pool_entry_id
             sync_credential_pool_entry_id(self)
@@ -766,33 +1089,54 @@ class ClientLifecycleMixin:
             logger.debug("sync_credential_pool_entry_id after env refresh failed", exc_info=True)
         self._env_creds_seen = (base_url, api_key)
         logger.info("Applied updated .env credentials for %s: endpoint %s", self.provider, self.base_url)
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _try_refresh_vertex_client_credentials()
+    # │  作用：Re-mint the Vertex OAuth2 token (~1h TTL; long sessions 401 on the expired bearer) and rebuild the client.
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _try_refresh_vertex_client_credentials(self) -> bool:
         """Re-mint the Vertex OAuth2 token (~1h TTL; long sessions 401 on the expired bearer) and rebuild the client."""
         if self.api_mode != "chat_completions" or self.provider != "vertex":
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.vertex_adapter import get_vertex_config
             token, base_url = get_vertex_config()
         except Exception as exc:
             logger.debug("Vertex credential refresh failed: %s", exc)
+            # ⤷ 出口 return：返回 False
             return False
         ok = _valid_credential_pair(token, base_url) and self._adopt_openai_credentials(
             token, base_url, reason="vertex_credential_refresh",
         )
         if ok:
             logger.info("Vertex AI OAuth token refreshed")
+        # ⤷ 出口 return：返回 ok
         return ok
 
+    # ┌── 函数 def _apply_copilot_token()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, token: str, enterprise_base_url: Any, reason: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _apply_copilot_token(self, token: str, enterprise_base_url: Any, *, reason: str) -> bool:
         self.api_key = token
         if enterprise_base_url:
             self.base_url = enterprise_base_url.rstrip("/")
         self._sync_client_kwargs_credentials()
         self._apply_client_headers_for_base_url(str(self.base_url or ""))
+        # ⤷ 出口 return：返回 self._replace_primary_openai_client(reason=reason)
         return self._replace_primary_openai_client(reason=reason)
 
+    # ┌── 函数 def _try_refresh_copilot_client_credentials()
+    # │  作用：Refresh Copilot credentials and rebuild the shared OpenAI client (caller enforces the single-shot guard).
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _try_refresh_copilot_client_credentials(self) -> bool:
         """Refresh Copilot credentials and rebuild the shared OpenAI client (caller enforces the single-shot guard).
 
@@ -800,17 +1144,22 @@ class ClientLifecycleMixin:
         token expired``), so force a fresh exchange rather than re-resolving the raw token.
         """
         if not self._is_copilot_provider():
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.copilot_auth import resolve_copilot_token, get_copilot_api_token, evict_cached_exchanged_token
             new_token, token_source = resolve_copilot_token()
         except Exception as exc:
             logger.debug("Copilot credential refresh failed: %s", exc)
+            # ⤷ 出口 return：返回 False
             return False
         new_token, enterprise_base_url = (new_token.strip() if isinstance(new_token, str) else ""), None
         if not new_token:
+            # ⤷ 出口 return：返回 False
             return False
         # Fall back to the raw token only if the exchange itself is unavailable.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             evict_cached_exchanged_token(new_token)
             api_token, exchanged_base_url = get_copilot_api_token(new_token)
@@ -821,8 +1170,14 @@ class ClientLifecycleMixin:
         ok = self._apply_copilot_token(new_token, enterprise_base_url, reason="copilot_credential_refresh")
         if ok:
             logger.info("Copilot credentials refreshed from %s", token_source)
+        # ⤷ 出口 return：返回 ok
         return ok
 
+    # ┌── 函数 def _try_recover_stale_copilot_credential()
+    # │  作用：Force a fresh Copilot token exchange + client rebuild after a 400 (single-shot, caller-guarded).
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _try_recover_stale_copilot_credential(self) -> bool:
         """Force a fresh Copilot token exchange + client rebuild after a 400 (single-shot, caller-guarded).
 
@@ -830,11 +1185,14 @@ class ClientLifecycleMixin:
         — typically a raw ``ghu_`` token cached when the startup exchange degraded (restricted integrator allowlist).
         """
         if not self._is_copilot_provider():
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.copilot_auth import resolve_copilot_token, get_copilot_api_token, evict_cached_exchanged_token
             raw_token, token_source = resolve_copilot_token()
             if not isinstance(raw_token, str) or not raw_token.strip():
+                # ⤷ 出口 return：返回 False
                 return False
             raw_token = raw_token.strip()
             # Evict the cached (possibly degraded/raw) exchanged token so the exchange hits the network.
@@ -844,6 +1202,7 @@ class ClientLifecycleMixin:
             logger.debug("Copilot stale-credential recovery failed: %s", exc)
             return False
         if not isinstance(api_token, str) or not api_token.strip():
+            # ⤷ 出口 return：返回 False
             return False
         # Exchange STILL degraded to the raw token: a rebuild won't help — don't burn the single-shot retry.
         if api_token == raw_token and not enterprise_base_url:
@@ -851,12 +1210,19 @@ class ClientLifecycleMixin:
                 "Copilot stale-credential recovery: exchange still degraded to raw token; skipping retry "
                 "(network/exchange endpoint unavailable)."
             )
+            # ⤷ 出口 return：返回 False
             return False
         ok = self._apply_copilot_token(api_token.strip(), enterprise_base_url, reason="copilot_stale_credential_recovery")
         if ok:
             logger.info("Copilot credentials re-exchanged after stale-credential 400 (source=%s)", token_source)
+        # ⤷ 出口 return：返回 ok
         return ok
 
+    # ┌── 函数 def _try_refresh_anthropic_client_credentials()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _try_refresh_anthropic_client_credentials(self) -> bool:
         # Only native Anthropic rotates OAuth tokens; other anthropic_messages providers (MiniMax, Alibaba, ...)
         # and Azure use static keys — a refresh would pick up the ~/.claude OAuth token and break auth.
@@ -865,18 +1231,23 @@ class ClientLifecycleMixin:
             or self.provider != "anthropic"
             or base_url_host_matches(getattr(self, "_anthropic_base_url", "") or "", "azure.com")
         ):
+            # ⤷ 出口 return：返回 False
             return False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.anthropic_credentials import resolve_anthropic_token
             new_token = resolve_anthropic_token()
         except Exception as exc:
             logger.debug("Anthropic credential refresh failed: %s", exc)
+            # ⤷ 出口 return：返回 False
             return False
         new_token = new_token.strip() if isinstance(new_token, str) else ""
         if not new_token or new_token == self._anthropic_api_key:
+            # ⤷ 出口 return：返回 False
             return False
         with suppress(Exception):
             self._anthropic_client.close()
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             base_url = getattr(self, "_anthropic_base_url", None)
             self._anthropic_client = self._build_direct_anthropic_client(new_token, base_url)
@@ -884,9 +1255,15 @@ class ClientLifecycleMixin:
             logger.warning("Failed to rebuild Anthropic client after credential refresh: %s", exc)
             return False
         self._anthropic_api_key, self._is_anthropic_oauth = new_token, self._anthropic_oauth_flag(new_token)
+        # ⤷ 出口 return：返回 True
         return True
 
     # ------------------------------------------------------------------ route-derived client config
+    # ┌── 函数 def _apply_client_headers_for_base_url()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, base_url: str, apply_user_headers: bool = ...
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _apply_client_headers_for_base_url(self, base_url: str, *, apply_user_headers: bool = True) -> None:
         for host, build in _ROUTE_DEFAULT_HEADERS:
             if base_url_host_matches(base_url, host):
@@ -906,12 +1283,18 @@ class ClientLifecycleMixin:
             self._apply_user_default_headers()
         # Per-provider extra_headers last so they survive swaps/rebuilds. SECURITY: may carry credentials; never log.
         if self.api_mode not in ("anthropic_messages", "bedrock_converse"):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.config import apply_custom_provider_extra_headers_to_client_kwargs
                 apply_custom_provider_extra_headers_to_client_kwargs(self._client_kwargs, base_url)
             except Exception:
                 logger.debug("custom-provider extra_headers skipped", exc_info=True)
 
+    # ┌── 函数 def _apply_user_default_headers()
+    # │  作用：Merge config ``model.default_headers`` onto the OpenAI client (user wins; WAFs rejecting SDK headers).
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _apply_user_default_headers(self) -> None:
         """Merge config ``model.default_headers`` onto the OpenAI client (user wins; WAFs rejecting SDK headers).
         Delegates to ``agent.auxiliary_client`` so main and aux clients cannot drift. No-op for Anthropic/Bedrock."""
@@ -922,6 +1305,11 @@ class ClientLifecycleMixin:
         if merged:
             self._client_kwargs["default_headers"] = merged
 
+    # ┌── 函数 def _swap_credential()
+    # │  作用：Adopt *entry* as the live credential. Returns False, changing nothing, when the entry's
+    # │  参数：self, entry
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _swap_credential(self, entry) -> bool:
         """Adopt *entry* as the live credential. Returns False, changing nothing, when the entry's
         route cannot serve this conversation's model (a conversation's model is never rewritten by a
@@ -938,6 +1326,7 @@ class ClientLifecycleMixin:
         from hermes_cli.anon_auth import route_can_serve_model
         if not route_can_serve_model(getattr(self, "provider", None), stripped_base, getattr(self, "model", None)):
             logger.info("Credential %s skipped: its route cannot serve model %s", getattr(entry, "id", "?"), self.model)
+            # ⤷ 出口 return：返回 False
             return False
         if actual_route:
             self.api_mode = "chat_completions"
@@ -953,6 +1342,7 @@ class ClientLifecycleMixin:
             self._anthropic_client = self._build_direct_anthropic_client(runtime_key, self._anthropic_base_url)
             self._is_anthropic_oauth = self._anthropic_oauth_flag(runtime_key)
             self.api_key, self.base_url = runtime_key, stripped_base
+            # ⤷ 出口 return：返回 True
             return True
         self.api_key, self.base_url = runtime_key, stripped_base
         # Inlined (not _sync_client_kwargs_credentials): tests call this unbound on a SimpleNamespace agent.
@@ -960,8 +1350,14 @@ class ClientLifecycleMixin:
         self._client_kwargs["base_url"] = self.base_url
         self._reapply_route_client_config(route_changed=route_changed)
         self._replace_primary_openai_client(reason="credential_rotation")
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _reapply_route_client_config()
+    # │  作用：Recompute route-derived client kwargs (TLS material, default headers) for ``self.base_url``.
+    # │  参数：self, route_changed: bool
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _reapply_route_client_config(self, *, route_changed: bool) -> None:
         """Recompute route-derived client kwargs (TLS material, default headers) for ``self.base_url``.
 
@@ -969,6 +1365,7 @@ class ClientLifecycleMixin:
         """
         self._client_kwargs.pop("ssl_verify", None)
         self._client_kwargs.pop("ssl_ca_cert", None)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import (
                 apply_custom_provider_tls_to_client_kwargs, get_compatible_custom_providers, load_config_readonly,
@@ -980,6 +1377,11 @@ class ClientLifecycleMixin:
             logger.debug("custom-provider TLS resolution skipped on credential rotation", exc_info=True)
         self._apply_client_headers_for_base_url(self.base_url, apply_user_headers=not route_changed)
 
+    # ┌── 函数 def _anthropic_messages_create()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, api_kwargs: dict, client: Any = ...
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _anthropic_messages_create(self, api_kwargs: dict, *, client: Any = None):
         # A supplied request-local client was already refreshed in _create_request_anthropic_client.
         if client is None and self.api_mode == "anthropic_messages":
@@ -987,12 +1389,18 @@ class ClientLifecycleMixin:
         # Strips Responses-only kwargs that leak in under an api_mode-flip race.
         from agent.anthropic_adapter import create_anthropic_message
         # on_response: rate-limit + credits state live in response headers, which the parsed Message drops.
+        # ⤷ 出口 return：返回 create_anthropic_message(client or self._anthropic_client, a…
         return create_anthropic_message(
             client or self._anthropic_client, api_kwargs, log_prefix=getattr(self, "log_prefix", ""),
             prefer_stream=not bool(getattr(self, "_disable_streaming", False)),
             on_response=self._capture_anthropic_response_headers,
         )
 
+    # ┌── 函数 def _rebuild_anthropic_client()
+    # │  作用：Rebuild the Anthropic client after an interrupt/stale call (Bedrock SDK for bedrock; honors 1M-beta flag).
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _rebuild_anthropic_client(self) -> None:
         """Rebuild the Anthropic client after an interrupt/stale call (Bedrock SDK for bedrock; honors 1M-beta flag)."""
         self._anthropic_client = self._build_anthropic_client_for_key(self._request_anthropic_client_key())

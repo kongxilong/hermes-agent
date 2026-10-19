@@ -2,6 +2,38 @@
 
 Provides ``start_gateway()`` (start all configured adapters) and ``GatewayRunner`` (lifecycle).
 Run via ``python -m gateway.run`` or ``python cli.py --gateway``."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：gateway/run.py（约 5551 行，本项目的巨型文件之一）
+# 地位：Gateway（网关）的启动器——把 Agent 接到各种聊天平台上。
+#
+# 它做什么：
+#   启动所有配置好的平台适配器（Telegram / Discord / Slack / 飞书 / Matrix ...），
+#   让每个聊天窗口背后都有一个 Agent 在待命。
+#   运行方式：python -m gateway.run 或 hermes gateway
+#
+# 核心类：class GatewayRunner（继承 GatewayAuthorizationMixin /
+#         GatewayKanbanWatchersMixin / GatewaySlashCommandsMixin），47 个方法。
+#   _init_* 系列同样是一串分步骤初始化：
+#     _init_runtime_settings / _init_session_store / _init_lifecycle_state / _init_runtime_caches ...
+#
+# 核心函数：
+#   start_gateway(config, replace, verbosity)   启动整个网关
+#   load_gateway_config_for_runner()            读配置
+#   main()                                      命令行入口
+#
+# 新手值得关注的几块：
+#   - 配置桥接：_bridge_config_to_env() —— 把 config.yaml 的内容转成环境变量，喂给子进程
+#   - 多配置档：_multiplex_profile_homes / _profile_runtime_scope
+#   - 看门狗：_watch_gateway_turn_inactivity / _abandon_timed_out_gateway_turn /
+#     _dump_wedged_turn_stacks（卡住的轮次怎么发现和处理）
+#   - 家务活线程：_start_gateway_housekeeping()（定期清理媒体缓存、归档、技能同步等）
+#   - 优雅停机：_start_gateway_shutdown_tail()
+#
+# 建议：先看 start_gateway()，顺着它往下走一遍启动流程，比通读 5551 行有效得多。
+# ==========================================================================
+#
 
 # hermes_bootstrap must be the very first import (UTF-8 stdio on Windows; no-op on POSIX).
 try:
@@ -105,12 +137,23 @@ _HYGIENE_COOLDOWN_MAX_SECONDS = 3600.0
 _HYGIENE_TURNHOLD_RETRY_SECONDS = 60.0
 
 
+# ┌── 函数 def _gateway_session_db_inner()
+# │  作用：The raw SessionDB behind ``gateway._session_db`` (unwrapping the async facade), or None.
+# │  参数：gateway
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _gateway_session_db_inner(gateway):
     """The raw SessionDB behind ``gateway._session_db`` (unwrapping the async facade), or None."""
     session_db = getattr(gateway, "_session_db", None)
+    # ⤷ 出口 return：返回 getattr(session_db, '_db', session_db)
     return getattr(session_db, "_db", session_db)
 
 
+# ┌── 函数 def _hygiene_cooldown_for_failure()
+# │  作用：Bump the hygiene failure streak and return the escalated cooldown (x1/x3/x9 over base, clamped).
+# │  参数：gateway, session_key: str, base_cooldown_seconds: float
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _hygiene_cooldown_for_failure(gateway, session_key: str, base_cooldown_seconds: float) -> float:
     """Bump the hygiene failure streak and return the escalated cooldown (x1/x3/x9 over base, clamped).
 
@@ -126,12 +169,14 @@ def _hygiene_cooldown_for_failure(gateway, session_key: str, base_cooldown_secon
     per-run agent and gateway restarts; ``PersistentState`` keeps the hot in-process view.
     """
     streak, state = 1, None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         state = gateway._session_state(session_key).persistent
     except Exception as exc:
         logger.debug("hygiene failure streak update failed: %s", exc)
     increment = getattr(_gateway_session_db_inner(gateway), "increment_hygiene_failure_streak", None)
     if callable(increment):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             streak = max(1, int(increment(session_key)))
             if state is not None:
@@ -146,13 +191,20 @@ def _hygiene_cooldown_for_failure(gateway, session_key: str, base_cooldown_secon
         streak = state.hygiene_failure_streak
     multiplier = _HYGIENE_COOLDOWN_LADDER_MULTIPLIERS[
         min(streak, len(_HYGIENE_COOLDOWN_LADDER_MULTIPLIERS)) - 1]
+    # ⤷ 出口 return：返回 min(base_cooldown_seconds * multiplier, _HYGIENE_COOLDOWN_MA…
     return min(base_cooldown_seconds * multiplier, _HYGIENE_COOLDOWN_MAX_SECONDS)
 
 
+# ┌── 函数 def _reset_hygiene_failure_streak()
+# │  作用：Clear the hygiene failure streak after a compression that reduced context.
+# │  参数：gateway, session_key: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reset_hygiene_failure_streak(gateway, session_key: str) -> None:
     """Clear the hygiene failure streak after a compression that reduced context.
 
     Peeks, never get-or-creates: a no-op 0 write must not create a never-evicted ``_sessions`` row."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         state = gateway._peek_session_state(session_key)
         if state is not None:
@@ -161,12 +213,18 @@ def _reset_hygiene_failure_streak(gateway, session_key: str) -> None:
         logger.debug("hygiene failure streak reset failed: %s", exc)
     reset = getattr(_gateway_session_db_inner(gateway), "reset_hygiene_failure_streak", None)
     if callable(reset):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             reset(session_key)
         except Exception as exc:
             logger.debug("hygiene failure streak persistent reset failed: %s", exc)
 
 
+# ┌── 函数 def hygiene_compaction_recovered()
+# │  作用：True when a hygiene run actually recovered the session (extracted to be unit testable).
+# │  参数：aborted: bool, rotated: bool, in_place: bool, msg_count: int, new_count: int, approx_tokens: int, new_tokens: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def hygiene_compaction_recovered(
     *, aborted: bool, rotated: bool, in_place: bool, msg_count: int, new_count: int,
     approx_tokens: int, new_tokens: int) -> bool:
@@ -183,19 +241,28 @@ def hygiene_compaction_recovered(
     token wobble does not count at all.
     """
     if aborted or not (rotated or in_place):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 compression_made_progress(msg_count, new_count, approx_token…
     return compression_made_progress(msg_count, new_count, approx_tokens, new_tokens)
 
 
+# ┌── 函数 def _hygiene_compression_timeout_message()
+# │  作用：Describe the host timeout that actually ended hygiene compression.
+# │  参数：total_exhausted: bool, elapsed: float, idle_timeout: float, progress_observed: bool
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _hygiene_compression_timeout_message(
     *, total_exhausted: bool, elapsed: float, idle_timeout: float, progress_observed: bool) -> str:
     """Describe the host timeout that actually ended hygiene compression."""
     if total_exhausted:
         progress = " after summary output was observed" if progress_observed else ""
+        # ⤷ 出口 return：返回 f'⚠️ Context compression reached its total ceiling after {el…
         return (
             "⚠️ Context compression reached its total ceiling after "
             f"{elapsed:.1f}s{progress}. No messages were dropped — continuing "
             "without compression. Run /compress to retry or /reset for a clean session.")
+    # ⤷ 出口 return：返回 f'⚠️ Context compression timed out after {idle_timeout:.1f}s…
     return (
         f"⚠️ Context compression timed out after {idle_timeout:.1f}s with no "
         "output from the summary model. No messages were dropped — continuing "
@@ -203,20 +270,34 @@ def _hygiene_compression_timeout_message(
         "session, or check your auxiliary.compression model configuration.")
 
 
+# ┌── 函数 def _cached_agent_for_hygiene()
+# │  作用：The cached live AIAgent for ``session_key`` (or the pending sentinel / None), read under the cache lock.
+# │  参数：gateway, session_key: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _cached_agent_for_hygiene(gateway, session_key: str):
     """The cached live AIAgent for ``session_key`` (or the pending sentinel / None), read under the cache lock."""
     cache = getattr(gateway, "_agent_cache", None)
     if cache is None:
+        # ⤷ 出口 return：返回 None
         return None
     lock = getattr(gateway, "_agent_cache_lock", None)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         with (lock or suppress()):
             entry = cache.get(session_key)
     except Exception:
         entry = None
+    # ⤷ 出口 return：返回 entry[0] if isinstance(entry, tuple) and entry else entry
     return entry[0] if isinstance(entry, tuple) and entry else entry
 
 
+# ┌── 异步函数（协程） def run_codex_hygiene_compaction()
+# │  作用：Session hygiene for ``codex_app_server`` sessions.
+# │  参数：gateway, session_key: str, session_id: str, auto_mode: str, history: list, approx_tokens: int, timeout_seconds: float, failure_cooldown_seconds: float = ...
+# │  返回：str
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def run_codex_hygiene_compaction(
     gateway, session_key: str, session_id: str, *, auto_mode: str, history: list,
     approx_tokens: int, timeout_seconds: float, failure_cooldown_seconds: float = 300.0) -> str:
@@ -237,13 +318,16 @@ async def run_codex_hygiene_compaction(
         mode = "native"
     if mode != "hermes":
         # native = app-server compacts itself; off = operator disabled. Local fallback can't shrink the thread.
+        # ⤷ 出口 return：返回 f'skipped:mode={mode}'
         return f"skipped:mode={mode}"
 
     agent = _cached_agent_for_hygiene(gateway, session_key)
     if agent is None or agent is _AGENT_PENDING_SENTINEL:
         # No live agent → no live thread; a detached mirror-only rewrite is the no-op this exists to remove.
+        # ⤷ 出口 return：返回 'skipped:no-cached-agent'
         return "skipped:no-cached-agent"
     if getattr(agent, "_codex_session", None) is None:
+        # ⤷ 出口 return：返回 'skipped:no-live-thread'
         return "skipped:no-live-thread"
 
     compressor = getattr(agent, "context_compressor", None)
@@ -255,6 +339,7 @@ async def run_codex_hygiene_compaction(
     if callable(track_worker):
         # ``wait_for`` only cancels the asyncio wrapper; keep the running executor thread visible to shutdown.
         track_worker(worker_future, agent)
+    # ⤷ 关键分支 try/except：捕获 asyncio.TimeoutError、Exception，出错走兜底而不是崩溃。
     try:
         await asyncio.wait_for(asyncio.shield(worker_future), timeout=max(float(timeout_seconds), 1.0))
     except asyncio.TimeoutError:
@@ -276,10 +361,17 @@ async def run_codex_hygiene_compaction(
     if count_after > count_before:
         # Native boundary recorded: compacted server-side; mirror NOT rewritten, agent stays cached.
         _reset_hygiene_failure_streak(gateway, session_key)
+        # ⤷ 出口 return：返回 'compacted'
         return "compacted"
     # No boundary: internal skip or compaction error; the codex route already persisted its own cooldown.
+    # ⤷ 出口 return：返回 'failed:no-boundary'
     return "failed:no-boundary"
 
+# ┌── 函数 def hygiene_wait_should_extend()
+# │  作用：Whether the hygiene host should keep waiting for a slow summary.
+# │  参数：idle: float, timeout: float, waited: float, ceiling: float, fence_cancelled: bool = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def hygiene_wait_should_extend(
     *, idle: float, timeout: float, waited: float, ceiling: float, fence_cancelled: bool = False
 ) -> bool:
@@ -289,9 +381,15 @@ def hygiene_wait_should_extend(
 
     Stop extending immediately so the turn can continue. See #96953.
     """
+    # ⤷ 出口 return：返回 not fence_cancelled and idle < timeout and (waited < ceiling…
     return not fence_cancelled and idle < timeout and waited < ceiling
 
 
+# ┌── 函数 def _record_hygiene_cooldown()
+# │  作用：Persist a session-hygiene compression-failure cooldown to the state DB (survives restarts).
+# │  参数：gateway, session_id: str, cooldown_seconds: float, error: Optional[str] = None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _record_hygiene_cooldown(
     gateway, session_id: str, cooldown_seconds: float, error: Optional[str] = None) -> None:
     """Persist a session-hygiene compression-failure cooldown to the state DB (survives restarts).
@@ -305,17 +403,24 @@ def _record_hygiene_cooldown(
     recorder = getattr(_gateway_session_db_inner(gateway), "record_compression_failure_cooldown", None)
     if recorder is None:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         recorder(session_id, time.time() + cooldown_seconds, error)
     except Exception as exc:
         logger.debug("session hygiene cooldown persist failed: %s", exc)
 
 
+# ┌── 函数 def _status_template_to_regex()
+# │  作用：Compile a compression status template constant into a regex source.
+# │  参数：template: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _status_template_to_regex(template: str) -> str:
     """Compile a compression status template constant into a regex source.
 
     Literal text is escaped verbatim (wording drift can't diverge from the matcher); ``{field}`` -> numeric."""
     parts = re.split(r"\{[^{}]*\}", template)
+    # ⤷ 出口 return：返回 '[\\d,]+'.join((re.escape(part) for part in parts))
     return r"[\d,]+".join(re.escape(part) for part in parts)
 
 
@@ -337,6 +442,11 @@ _COMPRESSION_PROGRESS_STATUS_RE = re.compile(
     re.IGNORECASE)
 
 
+# ┌── 函数 def _gateway_compression_progress_notices_enabled()
+# │  作用：True when ``compression.progress_notices`` is on (default False: chat is silent by design).
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _gateway_compression_progress_notices_enabled() -> bool:
     """True when ``compression.progress_notices`` is on (default False: chat is silent by design).
 
@@ -344,22 +454,31 @@ def _gateway_compression_progress_notices_enabled() -> bool:
 
     Reads ``compression.progress_notices`` from the gateway's raw YAML config (#52995).
     """
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         config = _load_gateway_config()
         compression_cfg = config.get("compression") if isinstance(config, dict) else None
         if isinstance(compression_cfg, dict):
+            # ⤷ 出口 return：返回 str(compression_cfg.get('progress_notices', False)).strip().…
             return str(compression_cfg.get("progress_notices", False)).strip().lower() in {
                 "true", "1", "yes", "on"}
     except Exception:
         pass
+    # ⤷ 出口 return：返回 False
     return False
 
 # Surfaces consuming gateway text programmatically must keep RAW status/error text; unknown/empty -> chat.
 _GATEWAY_RAW_TEXT_PLATFORMS = frozenset({"local", "api_server", "webhook", "msgraph_webhook"})
 
 
+# ┌── 函数 def _gateway_surface_passes_raw_text()
+# │  作用：True only for programmatic/local surfaces that must keep raw text.
+# │  参数：platform: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _gateway_surface_passes_raw_text(platform: Any) -> bool:
     """True only for programmatic/local surfaces that must keep raw text."""
+    # ⤷ 出口 return：返回 _gateway_platform_value(platform) in _GATEWAY_RAW_TEXT_PLATF…
     return _gateway_platform_value(platform) in _GATEWAY_RAW_TEXT_PLATFORMS
 
 
@@ -392,6 +511,11 @@ _CONNECTION_ERROR_MARKERS = (
     r"cannot\s+connect", r"failed\s+to\s+establish", r"could\s+not\s+connect")
 _GATEWAY_CONNECTION_ERROR_RE = re.compile("(" + "|".join(_CONNECTION_ERROR_MARKERS) + ")", re.IGNORECASE)
 
+# ┌── 函数 def _ensure_windows_gateway_venv_imports()
+# │  作用：Make detached Windows gateway runs see the Hermes venv packages.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _ensure_windows_gateway_venv_imports() -> None:
     """Make detached Windows gateway runs see the Hermes venv packages.
 
@@ -407,6 +531,7 @@ def _ensure_windows_gateway_venv_imports() -> None:
 
     seen: set[str] = set()
     for venv_dir in candidates:
+        # ⤷ 关键分支 try/except：捕获 OSError，出错走兜底而不是崩溃。
         try:
             resolved_venv = venv_dir.resolve()
         except OSError:
@@ -439,21 +564,39 @@ def _ensure_windows_gateway_venv_imports() -> None:
         return
 
 
+# ┌── 函数 def _gateway_platform_value()
+# │  作用：Return a normalized gateway platform value for enums or raw strings.
+# │  参数：platform: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _gateway_platform_value(platform: Any) -> str:
     """Return a normalized gateway platform value for enums or raw strings."""
+    # ⤷ 出口 return：返回 str(getattr(platform, 'value', platform) or '').strip().lowe…
     return str(getattr(platform, "value", platform) or "").strip().lower()
 
 
+# ┌── 函数 def _non_conversational_metadata()
+# │  作用：Mark Discord lifecycle/status sends without changing other platforms.
+# │  参数：metadata: Optional[Dict[str, Any]] = None, platform: Any = ...
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _non_conversational_metadata(
     metadata: Optional[Dict[str, Any]] = None, *, platform: Any = None) -> Optional[Dict[str, Any]]:
     """Mark Discord lifecycle/status sends without changing other platforms."""
     if _gateway_platform_value(platform) != "discord":
+        # ⤷ 出口 return：返回 metadata
         return metadata
     merged = dict(metadata or {})
     merged["non_conversational"] = True
+    # ⤷ 出口 return：返回 merged
     return merged
 
 
+# ┌── 函数 def _interim_metadata()
+# │  作用：Mark a mid-turn status/advisory send as NOT the turn-final.
+# │  参数：metadata: Optional[Dict[str, Any]] = None
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _interim_metadata(metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Mark a mid-turn status/advisory send as NOT the turn-final.
 
@@ -461,9 +604,15 @@ def _interim_metadata(metadata: Optional[Dict[str, Any]] = None) -> Dict[str, An
     key, so every mid-turn send MUST carry this marker. Gateway-internal; adapters strip it before the wire."""
     merged = dict(metadata or {})
     merged["_interim_send"] = True
+    # ⤷ 出口 return：返回 merged
     return merged
 
 
+# ┌── 函数 def _seed_hygiene_system_prompt()
+# │  作用：Keep gateway hygiene from rebuilding a live session's system prompt.
+# │  参数：agent: Any, session_row: Optional[Dict[str, Any]]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _seed_hygiene_system_prompt(agent: Any, session_row: Optional[Dict[str, Any]]) -> bool:
     """Keep gateway hygiene from rebuilding a live session's system prompt.
 
@@ -476,6 +625,7 @@ def _seed_hygiene_system_prompt(agent: Any, session_row: Optional[Dict[str, Any]
             stored_prompt = raw_prompt
 
     agent._cached_system_prompt = stored_prompt
+    # ⤷ 出口 return：返回 bool(stored_prompt)
     return bool(stored_prompt)
 
 
@@ -485,6 +635,11 @@ _TRANSIENT_NETWORK_ERROR_CLASS_NAMES = frozenset({
     "ClientConnectorError", "ClientOSError"})
 
 
+# ┌── 函数 def _is_transient_network_error()
+# │  作用：True for transient network errors safe to log + swallow (the next poll recovers; never crash).
+# │  参数：exc: BaseException
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_transient_network_error(exc: BaseException) -> bool:
     """True for transient network errors safe to log + swallow (the next poll recovers; never crash).
 
@@ -505,11 +660,18 @@ def _is_transient_network_error(exc: BaseException) -> bool:
         seen.add(ident)
         depth += 1
         if type(cur).__name__ in _TRANSIENT_NETWORK_ERROR_CLASS_NAMES:
+            # ⤷ 出口 return：返回 True
             return True
         cur = cur.__cause__ or cur.__context__
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _gateway_loop_exception_handler()
+# │  作用：Loop-level safety net for transient network errors (installed once by ``start_gateway``).
+# │  参数：loop: 'asyncio.AbstractEventLoop', context: Dict[str, Any]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _gateway_loop_exception_handler(
     loop: "asyncio.AbstractEventLoop", context: Dict[str, Any]) -> None:
     """Loop-level safety net for transient network errors (installed once by ``start_gateway``).
@@ -524,6 +686,7 @@ def _gateway_loop_exception_handler(
         task = context.get("future") or context.get("task")
         task_name = ""
         if task is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 task_name = task.get_name() if hasattr(task, "get_name") else repr(task)
             except Exception:
@@ -535,14 +698,25 @@ def _gateway_loop_exception_handler(
     loop.default_exception_handler(context)
 
 
+# ┌── 函数 def _redact_gateway_user_facing_secrets()
+# │  作用：Secret redaction before text can leave the gateway for a chat platform: the shared egress scrub
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_gateway_user_facing_secrets(text: str) -> str:
     """Secret redaction before text can leave the gateway for a chat platform: the shared egress scrub
     (``force=True`` holds even when ``security.redact_secrets`` is off; fails closed). See #23810."""
     from agent.redact import redact_for_egress
 
+    # ⤷ 出口 return：返回 redact_for_egress(text)
     return redact_for_egress(text)
 
 
+# ┌── 函数 def _redact_approval_command()
+# │  作用：Redact credentials from a command before it goes into an approval prompt.
+# │  参数：cmd: 'str | None'
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _redact_approval_command(cmd: "str | None") -> str:
     """Redact credentials from a command before it goes into an approval prompt.
 
@@ -556,9 +730,15 @@ def _redact_approval_command(cmd: "str | None") -> str:
     """
     from agent.redact import redact_sensitive_text
 
+    # ⤷ 出口 return：返回 redact_sensitive_text(str(cmd or ''), force=True)
     return redact_sensitive_text(str(cmd or ""), force=True)
 
 
+# ┌── 函数 def _format_exec_approval_fallback()
+# │  作用：Render the text fallback from approval capabilities, not platform names.
+# │  参数：command: str, description: str, command_prefix: str, allow_permanent: bool = ..., allow_session: bool = ..., smart_denied: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _format_exec_approval_fallback(
     command: str, description: str, command_prefix: str, *, allow_permanent: bool = True,
     allow_session: bool = True, smart_denied: bool = False) -> str:
@@ -573,6 +753,7 @@ def _format_exec_approval_fallback(
         if allow_permanent:
             choices.append(f"`{command_prefix}approve always` to approve permanently")
     choices.append(f"`{command_prefix}deny` to cancel")
+    # ⤷ 出口 return：返回 f'{heading}\n```\n{cmd_preview}\n```\nReason: {description}\…
     return (
         f"{heading}\n```\n{cmd_preview}\n```\nReason: {description}\n\n"
         + ", ".join(choices[:-1]) + f", or {choices[-1]}.")
@@ -588,11 +769,18 @@ _PROVIDER_ERROR_REPLIES = (
                                    "model endpoint is not running or is unreachable."))
 
 
+# ┌── 函数 def _gateway_provider_error_reply()
+# │  作用：Map raw provider/API errors to a short user-safe Telegram reply.
+# │  参数：text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _gateway_provider_error_reply(text: str) -> str:
     """Map raw provider/API errors to a short user-safe Telegram reply."""
     for pattern, reply in _PROVIDER_ERROR_REPLIES:
         if pattern.search(text):
+            # ⤷ 出口 return：返回 reply
             return reply
+    # ⤷ 出口 return：返回 '⚠️ The model provider failed after retries. I kept raw prov…
     return (
         "⚠️ The model provider failed after retries. I kept raw provider details "
         "out of chat; check gateway logs for diagnostics.")
@@ -610,22 +798,36 @@ _GATEWAY_PROVIDER_ERROR_SHAPE_RE = re.compile(
     re.IGNORECASE)
 
 
+# ┌── 函数 def _looks_like_gateway_provider_error()
+# │  作用：True when text is a provider failure envelope, not normal content.
+# │  参数：text: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _looks_like_gateway_provider_error(text: str) -> bool:
     """True when text is a provider failure envelope, not normal content.
 
     Must be short (envelopes are 1-3 lines) AND start with the marker, so prose citing a status code misses."""
     if not text:
+        # ⤷ 出口 return：返回 False
         return False
     body = str(text).strip()
     if len(body) > 400 or body.count("\n") > 4:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 bool(_GATEWAY_PROVIDER_ERROR_SHAPE_RE.search(body))
     return bool(_GATEWAY_PROVIDER_ERROR_SHAPE_RE.search(body))
 
 
+# ┌── 函数 def _sanitize_gateway_final_response()
+# │  作用：Sanitize final gateway replies for chat surfaces: concise, secret-redacted provider failure
+# │  参数：platform: Any, text: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
     """Sanitize final gateway replies for chat surfaces: concise, secret-redacted provider failure
     categories instead of raw HTTP bodies, request IDs, leaked credentials, or policy text."""
     if not text or _gateway_surface_passes_raw_text(platform):
+        # ⤷ 出口 return：返回 text
         return text
 
     # Lone UTF-16 surrogates make Telegram/Signal ``.encode()`` raise; last defense for legacy/plugin paths.
@@ -642,22 +844,32 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
     # Cancellation metadata, not prose; ACP/TUI already suppress this sentinel, chat surfaces should too.
     # See #7921.
     if str(text).strip().startswith(INTERRUPT_WAITING_FOR_MODEL_PREFIX):
+        # ⤷ 出口 return：返回 ''
         return ""
 
     redacted = _redact_gateway_user_facing_secrets(str(text))
     if _looks_like_gateway_provider_error(redacted):
+        # ⤷ 出口 return：返回 _gateway_provider_error_reply(redacted)
         return _gateway_provider_error_reply(redacted)
+    # ⤷ 出口 return：返回 redacted
     return redacted
 
 
+# ┌── 函数 def _prepare_gateway_status_message()
+# │  作用：Filter/sanitize agent status callbacks before platform delivery.
+# │  参数：platform: Any, event_type: str, message: str
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _prepare_gateway_status_message(platform: Any, event_type: str, message: str) -> Optional[str]:
     """Filter/sanitize agent status callbacks before platform delivery.
 
     Local/CLI keep the raw diagnostic stream; messaging surfaces drop transient aux/compression noise."""
     text = str(message or "").strip()
     if not text:
+        # ⤷ 出口 return：返回 None
         return None
     if _gateway_surface_passes_raw_text(platform):
+        # ⤷ 出口 return：返回 text
         return text
 
     text = _redact_gateway_user_facing_secrets(text)
@@ -665,19 +877,34 @@ def _prepare_gateway_status_message(platform: Any, event_type: str, message: str
     if _TELEGRAM_NOISY_STATUS_RE.search(text) and not (
         _gateway_compression_progress_notices_enabled() and _COMPRESSION_PROGRESS_STATUS_RE.search(text)
     ):
+        # ⤷ 出口 return：返回 None
         return None
     if _looks_like_gateway_provider_error(text):
+        # ⤷ 出口 return：返回 _gateway_provider_error_reply(text)
         return _gateway_provider_error_reply(text)
+    # ⤷ 出口 return：返回 text
     return text
 
 
+# ┌── 函数 def render_notice_line()
+# │  作用：Render an AgentNotice to a single plaintext line (messaging has no status bar: one-shot push).
+# │  参数：notice
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def render_notice_line(notice) -> str:
     """Render an AgentNotice to a single plaintext line (messaging has no status bar: one-shot push).
 
     The level glyph is already baked into the text (prepending would DOUBLE it); malformed/empty -> ""."""
+    # ⤷ 出口 return：返回 str(getattr(notice, 'text', '') or '').strip()
     return str(getattr(notice, "text", "") or "").strip()
 
 
+# ┌── 异步函数（协程） def _send_or_update_status_coro()
+# │  作用：Route a status through adapter.send_or_update_status when supported (edits the previous
+# │  参数：adapter, chat_id, status_key, content, metadata
+# │  返回：（未标注类型）
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _send_or_update_status_coro(adapter, chat_id, status_key, content, metadata):
     """Route a status through adapter.send_or_update_status when supported (edits the previous
     bubble for the same status_key instead of appending); otherwise fall back to plain send.
@@ -686,10 +913,19 @@ async def _send_or_update_status_coro(adapter, chat_id, status_key, content, met
     """
     sender = getattr(adapter, "send_or_update_status", None)
     if callable(sender):
+        # ⤷ 出口 return：返回 await sender(chat_id, status_key, content, metadata=metadata…
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         return await sender(chat_id, status_key, content, metadata=metadata)
+    # ⤷ 出口 return：返回 await adapter.send(chat_id, content, metadata=metadata)
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     return await adapter.send(chat_id, content, metadata=metadata)
 
 
+# ┌── 函数 def _approval_send_outcome()
+# │  作用：Classify an approval prompt send as ``sent`` / ``failed`` / ``ambiguous``.
+# │  参数：future, timeout: float
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _approval_send_outcome(future, timeout: float) -> str:
     """Classify an approval prompt send as ``sent`` / ``failed`` / ``ambiguous``.
 
@@ -697,7 +933,9 @@ def _approval_send_outcome(future, timeout: float) -> str:
     Only a DEFINITIVE failure (error result / non-timeout exception / no future) re-asks; logged here."""
     if future is None:
         logger.warning("Prompt send failed: no scheduling future (loop unavailable)")
+        # ⤷ 出口 return：返回 'failed'
         return "failed"
+    # ⤷ 关键分支 try/except：捕获 concurrent.futures.TimeoutError、Exception，出错走兜底而不是崩溃。
     try:
         result = future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
@@ -706,6 +944,7 @@ def _approval_send_outcome(future, timeout: float) -> str:
         logger.warning("Prompt send failed: %s", exc)
         return "failed"
     if getattr(result, "success", False):
+        # ⤷ 出口 return：返回 'sent'
         return "sent"
     # P5(b): a connector DECLINE is not a lane failure. The connector
     # authorized the destination and refused it; re-sending the same content as
@@ -732,6 +971,7 @@ def _approval_send_outcome(future, timeout: float) -> str:
         # outcome, not an authorization one, and this lane has three verdicts
         # rather than the boolean the shared helper answers.
         logger.warning("Prompt send AMBIGUOUS (lost ack): %s", _raw.get("error"))
+        # ⤷ 出口 return：返回 'ambiguous'
         return "ambiguous"
     if declined_send(result):
         # Both shapes, one classifier: a structured body, or the uniform
@@ -740,11 +980,18 @@ def _approval_send_outcome(future, timeout: float) -> str:
             "Prompt send DECLINED by connector egress guard: %s",
             getattr(result, "error", None),
         )
+        # ⤷ 出口 return：返回 'declined'
         return "declined"
     logger.warning("Prompt send failed: %s", getattr(result, "error", None) or "unknown error")
+    # ⤷ 出口 return：返回 'failed'
     return "failed"
 
 
+# ┌── 函数 def _clarify_send_disposition()
+# │  作用：Decide whether a clarify prompt send aborts the wait; returns the abort sentinel or ``None``.
+# │  参数：fut, session_key: str, clarify_mod
+# │  返回：'str | None'
+# └──────────────────────────────────────────────────────────────
 def _clarify_send_disposition(fut, *, session_key: str, clarify_mod) -> "str | None":
     """Decide whether a clarify prompt send aborts the wait; returns the abort sentinel or ``None``.
 
@@ -762,31 +1009,47 @@ def _clarify_send_disposition(fut, *, session_key: str, clarify_mod) -> "str | N
             "clearing registration"
         )
         clarify_mod.clear_session(session_key)
+        # ⤷ 出口 return：返回 '[clarify prompt could not be delivered: destination refused…
         return "[clarify prompt could not be delivered: destination refused]"
     if outcome == "failed":
         # Undeliverable: clear the registration and return the sentinel so the agent falls back, not hangs.
         logger.warning("Clarify send failed definitively; clearing registration")
         clarify_mod.clear_session(session_key)
+        # ⤷ 出口 return：返回 '[clarify prompt could not be delivered]'
         return "[clarify prompt could not be delivered]"
     if outcome == "ambiguous":
         logger.warning(
             "Clarify prompt send timed out — treating as possibly-delivered "
             "(no teardown; the registration stays armed for a late reply)")
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _clarify_send_then_wait()
+# │  作用：Resolve a clarify prompt: send disposition, then the bounded wait.
+# │  参数：fut, clarify_id: str, session_key: str, clarify_mod
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _clarify_send_then_wait(fut, *, clarify_id: str, session_key: str, clarify_mod) -> str:
     """Resolve a clarify prompt: send disposition, then the bounded wait."""
     abort = _clarify_send_disposition(fut, session_key=session_key, clarify_mod=clarify_mod)
     if abort is not None:
+        # ⤷ 出口 return：返回 abort
         return abort
     timeout = clarify_mod.get_clarify_timeout()
     response = clarify_mod.wait_for_response(clarify_id, timeout=float(timeout))
     if response is None or response == "":
+        # ⤷ 出口 return：返回 f'[user did not respond within {int(timeout / 60)}m]'
         return f"[user did not respond within {int(timeout / 60)}m]"
+    # ⤷ 出口 return：返回 response
     return response
 
 
+# ┌── 函数 def _resolve_progress_thread_id()
+# │  作用：Return thread/root ID that progress/status bubbles should target.
+# │  参数：platform: Any, source_thread_id: Any, event_message_id: Any, reply_in_thread: bool = ...
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _resolve_progress_thread_id(
     platform: Any, source_thread_id: Any, event_message_id: Any, *, reply_in_thread: bool = True
 ) -> Optional[str]:
@@ -800,27 +1063,45 @@ def _resolve_progress_thread_id(
     platform_key = str(getattr(platform, "value", platform) or "").lower()
     if not reply_in_thread:
         if source_thread_id and event_message_id and str(source_thread_id) == str(event_message_id):
+            # ⤷ 出口 return：返回 None
             return None
+        # ⤷ 出口 return：返回 str(source_thread_id) if source_thread_id else None
         return str(source_thread_id) if source_thread_id else None
     if source_thread_id:
+        # ⤷ 出口 return：返回 str(source_thread_id)
         return str(source_thread_id)
     if platform_key in {"slack", "mattermost", "buzz"} and event_message_id:
+        # ⤷ 出口 return：返回 str(event_message_id)
         return str(event_message_id)
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _has_platform_display_override()
+# │  作用：Return True when display.platforms.<platform> explicitly sets setting.
+# │  参数：user_config: dict, platform_key: str, setting: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_platform_display_override(user_config: dict, platform_key: str, setting: str) -> bool:
     """Return True when display.platforms.<platform> explicitly sets setting."""
     display = user_config.get("display") if isinstance(user_config, dict) else None
     if not isinstance(display, dict):
+        # ⤷ 出口 return：返回 False
         return False
     platforms = display.get("platforms")
     if not isinstance(platforms, dict):
+        # ⤷ 出口 return：返回 False
         return False
     platform_cfg = platforms.get(platform_key)
+    # ⤷ 出口 return：返回 isinstance(platform_cfg, dict) and setting in platform_cfg
     return isinstance(platform_cfg, dict) and setting in platform_cfg
 
 
+# ┌── 函数 def _resolve_gateway_display_bool()
+# │  作用：Resolve a boolean display setting with optional platform-only opt-in.
+# │  参数：user_config: dict, platform_key: str, setting: str, default: bool = ..., platform: Any = ..., require_platform_override_for: set[Any] | None = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _resolve_gateway_display_bool(
     user_config: dict, platform_key: str, setting: str, *, default: bool = False,
     platform: Any = None, require_platform_override_for: set[Any] | None = None) -> bool:
@@ -833,32 +1114,45 @@ def _resolve_gateway_display_bool(
     if (
         current_platform in platform_only
         and not _has_platform_display_override(user_config, platform_key, setting)):
+        # ⤷ 出口 return：返回 False
         return False
 
     from gateway.display_config import resolve_display_setting
 
     value = resolve_display_setting(user_config, platform_key, setting, default)
     if isinstance(value, bool):
+        # ⤷ 出口 return：返回 value
         return value
     if isinstance(value, str):
+        # ⤷ 出口 return：返回 value.strip().lower() in {'true', 'yes', '1', 'on'}
         return value.strip().lower() in {"true", "yes", "1", "on"}
     if value is None:
+        # ⤷ 出口 return：返回 bool(default)
         return bool(default)
+    # ⤷ 出口 return：返回 bool(value)
     return bool(value)
 
 
+# ┌── 函数 def _telegramize_command_mentions()
+# │  作用：Rewrite slash-command mentions to Telegram-valid names (lowercase/digits/underscore); no-op elsewhere.
+# │  参数：text: str, platform: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _telegramize_command_mentions(text: str, platform: Any) -> str:
     """Rewrite slash-command mentions to Telegram-valid names (lowercase/digits/underscore); no-op elsewhere."""
     platform_value = getattr(platform, "value", platform)
     if platform_value != "telegram":
+        # ⤷ 出口 return：返回 text
         return text
 
     from hermes_cli.commands_platforms import _sanitize_telegram_name
 
     def _replace(match: re.Match[str]) -> str:
         sanitized = _sanitize_telegram_name(match.group(1))
+        # ⤷ 出口 return：返回 f'/{sanitized}' if sanitized else match.group(0)
         return f"/{sanitized}" if sanitized else match.group(0)
 
+    # ⤷ 出口 return：返回 _TELEGRAM_COMMAND_MENTION_RE.sub(_replace, text)
     return _TELEGRAM_COMMAND_MENTION_RE.sub(_replace, text)
 
 
@@ -874,23 +1168,33 @@ _STARTUP_RESTORE_DRAIN_TIMEOUT_SECS_DEFAULT = 30.0
 _STARTUP_WARMUP_TIMEOUT_SECS_DEFAULT = 20.0
 
 
+# ┌── 函数 def _coerce_gateway_timestamp()
+# │  作用：Best-effort conversion of stored gateway timestamps to epoch seconds.
+# │  参数：value: Any
+# │  返回：Optional[float]
+# └──────────────────────────────────────────────────────────────
 def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
     """Best-effort conversion of stored gateway timestamps to epoch seconds.
 
     Missing/unparseable -> None, so legacy transcripts keep auto-continuing instead of being dropped."""
     if value is None:
+        # ⤷ 出口 return：返回 None
         return None
     if isinstance(value, datetime):
+        # ⤷ 出口 return：返回 value.timestamp()
         return value.timestamp()
     if isinstance(value, bool):  # bool is a subclass of int — skip it
+        # ⤷ 出口 return：返回 None
         return None
     if isinstance(value, (int, float)):
         # Some platform events use milliseconds; Hermes state rows use seconds.
+        # ⤷ 出口 return：返回 float(value) / 1000.0 if float(value) > 10000000000 else flo…
         return float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
     if isinstance(value, str):
         text = value.strip()
         if not text:
             return None
+        # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
         try:
             numeric = float(text)
             return numeric / 1000.0 if numeric > 10_000_000_000 else numeric
@@ -900,32 +1204,56 @@ def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
             return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
         except ValueError:
             return None
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _auto_continue_freshness_window()
+# │  作用：Auto-continue freshness window in seconds (non-positive disables the gate).
+# │  参数：无
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _auto_continue_freshness_window() -> float:
     """Auto-continue freshness window in seconds (non-positive disables the gate).
 
     Thin wrapper over ``gateway.session`` kept so ``gateway.run`` imports/test patches keep working."""
     from gateway.session_lifecycle import auto_continue_freshness_window
+    # ⤷ 出口 return：返回 auto_continue_freshness_window()
     return auto_continue_freshness_window()
 
 
+# ┌── 函数 def _startup_restore_drain_timeout_secs()
+# │  作用：Max seconds ``_finish_startup_restore`` holds the inbound gate for boot auto-resume; <=0 disables.
+# │  参数：无
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _startup_restore_drain_timeout_secs() -> float:
     """Max seconds ``_finish_startup_restore`` holds the inbound gate for boot auto-resume; <=0 disables.
 
     Duplicate-agent safety does NOT depend on it: ``_schedule_resume_pending_sessions`` claims SYNCHRONOUSLY.
     """
+    # ⤷ 出口 return：返回 _float_env('HERMES_STARTUP_RESTORE_DRAIN_TIMEOUT', _STARTUP_…
     return _float_env("HERMES_STARTUP_RESTORE_DRAIN_TIMEOUT", _STARTUP_RESTORE_DRAIN_TIMEOUT_SECS_DEFAULT)
 
 
+# ┌── 函数 def _startup_warmup_timeout_secs()
+# │  作用：Max seconds the boot warm-up (``_warm_turn_prerequisites``) may hold the inbound gate shut.
+# │  参数：无
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _startup_warmup_timeout_secs() -> float:
     """Max seconds the boot warm-up (``_warm_turn_prerequisites``) may hold the inbound gate shut.
 
     On timeout the gate opens and the warm-up finishes in the background. Non-positive disables it."""
+    # ⤷ 出口 return：返回 _float_env('HERMES_STARTUP_WARMUP_TIMEOUT', _STARTUP_WARMUP_…
     return _float_env("HERMES_STARTUP_WARMUP_TIMEOUT", _STARTUP_WARMUP_TIMEOUT_SECS_DEFAULT)
 
 
+# ┌── 函数 def _warm_turn_machinery_sync()
+# │  作用：Synchronously initialize first-turn prerequisites (executor thread); returns the schema count.
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _warm_turn_machinery_sync() -> int:
     """Synchronously initialize first-turn prerequisites (executor thread); returns the schema count.
 
@@ -935,6 +1263,7 @@ def _warm_turn_machinery_sync() -> int:
     import model_tools
 
     tool_defs = model_tools.get_tool_definitions(quiet_mode=True)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from agent.prompt_builder import build_context_files_prompt
 
@@ -950,51 +1279,87 @@ def _warm_turn_machinery_sync() -> int:
         from tools.env_probe import get_environment_probe_line
 
         get_environment_probe_line()
+    # ⤷ 出口 return：返回 len(tool_defs)
     return len(tool_defs)
 
 
+# ┌── 函数 def _as_thread_info()
+# │  作用：*info* as a (thread_id, initial_name) pair, or None if it isn't one.
+# │  参数：info: Any
+# │  返回：Optional[Tuple[str, str]]
+# └──────────────────────────────────────────────────────────────
 def _as_thread_info(info: Any) -> Optional[Tuple[str, str]]:
     """*info* as a (thread_id, initial_name) pair, or None if it isn't one.
 
     The pair crosses the relay connector boundary, so its shape is the connector's word, not ours."""
     if isinstance(info, tuple) and len(info) == 2 and all(isinstance(x, str) for x in info):
+        # ⤷ 出口 return：返回 cast(Tuple[str, str], info)
         return cast(Tuple[str, str], info)
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _float_env()
+# │  作用：Read an env var as float; unset/empty/malformed fall back to ``default`` (never crash the gateway).
+# │  参数：name: str, default: float
+# │  返回：float
+# └──────────────────────────────────────────────────────────────
 def _float_env(name: str, default: float) -> float:
     """Read an env var as float; unset/empty/malformed fall back to ``default`` (never crash the gateway)."""
     raw = os.environ.get(name)
     if raw is None or raw == "":
+        # ⤷ 出口 return：返回 float(default)
         return float(default)
+    # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 float(raw)
         return float(raw)
     except (TypeError, ValueError):
+        # ⤷ 出口 return：返回 float(default)
         return float(default)
 
 
+# ┌── 函数 def _stamp_hygiene_compression_provenance()
+# │  作用：Best-effort activity provenance stamp for hygiene compression transitions.
+# │  参数：agent: Any, desc: str, provenance: ActivityProvenance, debug_label: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _stamp_hygiene_compression_provenance(
     agent: Any, desc: str, provenance: ActivityProvenance, debug_label: str) -> None:
     """Best-effort activity provenance stamp for hygiene compression transitions."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         agent._touch_activity(desc, provenance=provenance)
     except Exception:
         logger.debug(debug_label, exc_info=True)
 
 
+# ┌── 函数 def _is_fresh_gateway_interruption()
+# │  作用：True when an interruption marker is fresh enough to auto-continue (unknown timestamps count as fresh).
+# │  参数：value: Any, now: Optional[float] = ..., window_secs: Optional[float] = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_fresh_gateway_interruption(
     value: Any, *, now: Optional[float] = None, window_secs: Optional[float] = None) -> bool:
     """True when an interruption marker is fresh enough to auto-continue (unknown timestamps count as fresh)."""
     window = float(window_secs) if window_secs is not None else float(_AUTO_CONTINUE_FRESHNESS_SECS_DEFAULT)
     if window <= 0:
+        # ⤷ 出口 return：返回 True
         return True
     timestamp = _coerce_gateway_timestamp(value)
     if timestamp is None:
+        # ⤷ 出口 return：返回 True
         return True
     current = time.time() if now is None else now
+    # ⤷ 出口 return：返回 current - timestamp <= window
     return current - timestamp <= window
 
 
+# ┌── 函数 def build_resume_recovery_note()
+# │  作用：Build the resume-pending recovery system note for an interrupted turn (empty ``message`` = auto-resume).
+# │  参数：reason: Optional[str], message: str = '', interactive: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def build_resume_recovery_note(
     reason: Optional[str], message: str = "", *, interactive: bool = True) -> str:
     """Build the resume-pending recovery system note for an interrupted turn (empty ``message`` = auto-resume).
@@ -1030,6 +1395,7 @@ def build_resume_recovery_note(
         tail_guidance = (
             "Do NOT re-run tool calls whose results already "
             "appear in the history — resume from the first step that has no recorded result.")
+    # ⤷ 出口 return：返回 f'[System note: The previous turn was interrupted by {reason…
     return (
         f"[System note: The previous turn was interrupted by "
         f"{reason_phrase}; the gateway is now back online. "
@@ -1038,6 +1404,11 @@ def build_resume_recovery_note(
         + (f"\n\n{message}" if message else ""))
 
 
+# ┌── 函数 def _prepare_resume_pending_message()
+# │  作用：Return the recovery message and the user text to persist.
+# │  参数：reason: Optional[str], message: Optional[str], interactive: bool = ...
+# │  返回：tuple[str, str]
+# └──────────────────────────────────────────────────────────────
 def _prepare_resume_pending_message(
     reason: Optional[str], message: Optional[str], *, interactive: bool = True) -> tuple[str, str]:
     """Return the recovery message and the user text to persist.
@@ -1053,6 +1424,7 @@ def _prepare_resume_pending_message(
     """
     recovery_message = build_resume_recovery_note(reason, message or "", interactive=interactive)
     persist_message = message if isinstance(message, str) and message.strip() else recovery_message
+    # ⤷ 出口 return：返回 (recovery_message, persist_message)
     return recovery_message, persist_message
 
 
@@ -1076,6 +1448,11 @@ _ASSISTANT_REPLAY_FIELDS: tuple[str, ...] = (
     "finish_reason")
 
 
+# ┌── 函数 def _build_replay_entry()
+# │  作用：Build a replay entry for a non-tool-calling message, preserving ``_ASSISTANT_REPLAY_FIELDS``.
+# │  参数：role: str, content: Any, msg: Dict[str, Any], preserve_timestamp: bool = False
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _build_replay_entry(
     role: str, content: Any, msg: Dict[str, Any], preserve_timestamp: bool = False
 ) -> Dict[str, Any]:
@@ -1111,6 +1488,7 @@ def _build_replay_entry(
             entry[_rkey] = _rval
     if preserve_timestamp and msg.get("timestamp"):
         entry["timestamp"] = msg["timestamp"]
+    # ⤷ 出口 return：返回 entry
     return entry
 
 
@@ -1119,23 +1497,42 @@ _OBSERVED_GROUP_CONTEXT_HEADER = "[Observed Telegram group context - context onl
 _CURRENT_ADDRESSED_MESSAGE_HEADER = "[Current addressed message - answer only this unless it explicitly asks you to use the observed context]"
 
 
+# ┌── 函数 def _uses_telegram_observed_group_context()
+# │  作用：Return True for Telegram group turns that may include observed chatter.
+# │  参数：channel_prompt: Optional[str]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _uses_telegram_observed_group_context(channel_prompt: Optional[str]) -> bool:
     """Return True for Telegram group turns that may include observed chatter.
 
     Observed rows must not replay as ordinary user turns, or a weak wake word makes old chatter look like work.
     """
+    # ⤷ 出口 return：返回 bool(channel_prompt and _TELEGRAM_OBSERVED_CONTEXT_PROMPT_MA…
     return bool(channel_prompt and _TELEGRAM_OBSERVED_CONTEXT_PROMPT_MARKER in channel_prompt)
 
 
+# ┌── 函数 def _csv_or_list_to_set()
+# │  作用：Normalize a config list or comma-separated scalar into a string set.
+# │  参数：raw: Any
+# │  返回：set[str]
+# └──────────────────────────────────────────────────────────────
 def _csv_or_list_to_set(raw: Any) -> set[str]:
     """Normalize a config list or comma-separated scalar into a string set."""
     if raw is None:
+        # ⤷ 出口 return：返回 set()
         return set()
     if isinstance(raw, list):
+        # ⤷ 出口 return：返回 {str(part).strip() for part in raw if str(part).strip()}
         return {str(part).strip() for part in raw if str(part).strip()}
+    # ⤷ 出口 return：返回 {part.strip() for part in str(raw).split(',') if part.strip(…
     return {part.strip() for part in str(raw).split(",") if part.strip()}
 
 
+# ┌── 函数 def _slack_ignored_channels_from_gateway_config()
+# │  作用：Return Slack channels that the generic gateway must never dispatch.
+# │  参数：config: Any, adapter: Any = None
+# │  返回：set[str]
+# └──────────────────────────────────────────────────────────────
 def _slack_ignored_channels_from_gateway_config(config: Any, adapter: Any = None) -> set[str]:
     """Return Slack channels that the generic gateway must never dispatch.
 
@@ -1153,36 +1550,63 @@ def _slack_ignored_channels_from_gateway_config(config: Any, adapter: Any = None
         # (#46925); scoped read so a secondary never inherits the default profile's list (first-writer env).
         from gateway.platforms._shared import platform_gate_env as _platform_gate_env
         raw = _platform_gate_env("SLACK_IGNORED_CHANNELS") or None
+    # ⤷ 出口 return：返回 _csv_or_list_to_set(raw)
     return _csv_or_list_to_set(raw)
 
 
+# ┌── 函数 def _slack_parent_channel_id()
+# │  作用：Return the parent Slack channel from a possibly thread-scoped chat ID.
+# │  参数：chat_id: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _slack_parent_channel_id(chat_id: Any) -> str:
     """Return the parent Slack channel from a possibly thread-scoped chat ID."""
+    # ⤷ 出口 return：返回 str(chat_id).split(':', 1)[0] if chat_id else ''
     return str(chat_id).split(":", 1)[0] if chat_id else ""
 
 
+# ┌── 函数 def _is_slack_ignored_channel()
+# │  作用：Check the generic Slack gateway blacklist for channel or thread IDs (``adapter`` = the source's
+# │  参数：config: Any, chat_id: Any, adapter: Any = None
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_slack_ignored_channel(config: Any, chat_id: Any, adapter: Any = None) -> bool:
     """Check the generic Slack gateway blacklist for channel or thread IDs (``adapter`` = the source's
     routed adapter, whose ``extra`` is authoritative for a secondary profile)."""
     channel_id = _slack_parent_channel_id(chat_id)
     ignored = _slack_ignored_channels_from_gateway_config(config, adapter)
+    # ⤷ 出口 return：返回 bool(channel_id and ('*' in ignored or channel_id in ignored…
     return bool(channel_id and ("*" in ignored or channel_id in ignored))
 
 
+# ┌── 函数 def _message_timestamps_enabled()
+# │  作用：True when gateway.message_timestamps.enabled is opted in (default OFF: changes what the model sees).
+# │  参数：user_config: Optional[dict]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _message_timestamps_enabled(user_config: Optional[dict]) -> bool:
     """True when gateway.message_timestamps.enabled is opted in (default OFF: changes what the model sees)."""
     if not isinstance(user_config, dict):
+        # ⤷ 出口 return：返回 False
         return False
     gw = user_config.get("gateway")
     if not isinstance(gw, dict):
+        # ⤷ 出口 return：返回 False
         return False
     mt = gw.get("message_timestamps")
     if isinstance(mt, dict):
+        # ⤷ 出口 return：返回 bool(mt.get('enabled', False))
         return bool(mt.get("enabled", False))
     # Allow a bare ``message_timestamps: true`` shorthand.
+    # ⤷ 出口 return：返回 bool(mt)
     return bool(mt)
 
 
+# ┌── 函数 def _build_gateway_agent_history()
+# │  作用：Convert stored gateway transcript rows into agent replay messages.
+# │  参数：history: List[Dict[str, Any]], channel_prompt: Optional[str] = ..., inject_timestamps: bool = ...
+# │  返回：tuple[List[Dict[str, Any]], Optional[str]]
+# └──────────────────────────────────────────────────────────────
 def _build_gateway_agent_history(
     history: List[Dict[str, Any]], *, channel_prompt: Optional[str] = None,
     inject_timestamps: bool = False) -> tuple[List[Dict[str, Any]], Optional[str]]:
@@ -1256,9 +1680,15 @@ def _build_gateway_agent_history(
     agent_history = canonicalize_replay_history(agent_history)
 
     observed_context = "\n".join(observed_group_context).strip() or None
+    # ⤷ 出口 return：返回 (agent_history, observed_context)
     return agent_history, observed_context
 
 
+# ┌── 函数 def _select_cached_agent_history()
+# │  作用：Prefer the cached live transcript only when it is longer AND has a real, non-ephemeral unpersisted row.
+# │  参数：persisted_history: List[Dict[str, Any]], live_history: Any
+# │  返回：List[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _select_cached_agent_history(
     persisted_history: List[Dict[str, Any]], live_history: Any) -> List[Dict[str, Any]]:
     """Prefer the cached live transcript only when it is longer AND has a real, non-ephemeral unpersisted row.
@@ -1279,18 +1709,27 @@ def _select_cached_agent_history(
             isinstance(message, dict) and not message.get("_db_persisted")
             and not _is_ephemeral_scaffolding(message) for message in live_history)
         if has_unpersisted_row:
+            # ⤷ 出口 return：返回 list(live_history)
             return list(live_history)
+    # ⤷ 出口 return：返回 persisted_history
     return persisted_history
 
 
+# ┌── 函数 def _wrap_current_message_with_observed_context()
+# │  作用：Prepend observed Telegram context to the API-only current user turn.
+# │  参数：message: Any, observed_context: Optional[str]
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _wrap_current_message_with_observed_context(message: Any, observed_context: Optional[str]) -> Any:
     """Prepend observed Telegram context to the API-only current user turn."""
     if not observed_context:
+        # ⤷ 出口 return：返回 message
         return message
 
     prefix = f"{_OBSERVED_GROUP_CONTEXT_HEADER}\n{observed_context}\n\n{_CURRENT_ADDRESSED_MESSAGE_HEADER}\n"
 
     if isinstance(message, str):
+        # ⤷ 出口 return：返回 f'{prefix}{message}'
         return f"{prefix}{message}"
 
     if isinstance(message, list):
@@ -1298,17 +1737,26 @@ def _wrap_current_message_with_observed_context(message: Any, observed_context: 
         for part in wrapped:
             if isinstance(part, dict) and part.get("type") == "text":
                 part["text"] = f"{prefix}{part.get('text', '')}"
+                # ⤷ 出口 return：返回 wrapped
                 return wrapped
+        # ⤷ 出口 return：返回 [{'type': 'text', 'text': prefix.rstrip()}] + wrapped
         return [{"type": "text", "text": prefix.rstrip()}] + wrapped
 
+    # ⤷ 出口 return：返回 message
     return message
 
 
+# ┌── 函数 def _last_transcript_timestamp()
+# │  作用：Return the ``timestamp`` of the last usable (non-metadata) transcript row, if any.
+# │  参数：history: Optional[List[Dict[str, Any]]]
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _last_transcript_timestamp(history: Optional[List[Dict[str, Any]]]) -> Any:
     """Return the ``timestamp`` of the last usable (non-metadata) transcript row, if any.
 
     ``None`` when the last usable row has no timestamp — callers treat that as "fresh" (legacy rows)."""
     if not history:
+        # ⤷ 出口 return：返回 None
         return None
     for msg in reversed(history):
         if not isinstance(msg, dict):
@@ -1318,8 +1766,11 @@ def _last_transcript_timestamp(history: Optional[List[Dict[str, Any]]]) -> Any:
             continue
         ts = msg.get("timestamp")
         if ts is not None:
+            # ⤷ 出口 return：返回 ts
             return ts
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 None
     return None
 
 
@@ -1335,22 +1786,36 @@ _AUTO_CONTINUE_NOTE_PREFIX = "[System note: Your previous turn"
 _AUTO_CONTINUE_FALLBACK_PREFIX = "[System note: A new message"
 
 
+# ┌── 函数 def _is_auto_continue_noise()
+# │  作用：Return True if this user-message content is a gateway-injected auto-continue note (never replay it).
+# │  参数：content: Any
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_auto_continue_noise(content: Any) -> bool:
     """Return True if this user-message content is a gateway-injected auto-continue note (never replay it)."""
+    # ⤷ 出口 return：返回 isinstance(content, str) and content.startswith((_AUTO_CONTI…
     return isinstance(content, str) and content.startswith(
         (_AUTO_CONTINUE_NOTE_PREFIX, _AUTO_CONTINUE_FALLBACK_PREFIX))
 
 
+# ┌── 函数 def _strip_auto_continue_noise()
+# │  作用：Strip leading persisted auto-continue notes from user text; the trailing real question is preserved.
+# │  参数：content: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _strip_auto_continue_noise(content: Any) -> Any:
     """Strip leading persisted auto-continue notes from user text; the trailing real question is preserved."""
     if not _is_auto_continue_noise(content):
+        # ⤷ 出口 return：返回 content
         return content
     text = str(content)
     while _is_auto_continue_noise(text):
         end = text.find("]")
         if end < 0:
+            # ⤷ 出口 return：返回 ''
             return ""
         text = text[end + 1 :].lstrip()
+    # ⤷ 出口 return：返回 text
     return text
 
 # Tools whose deliverable is a JSON payload with a local-file path field rather than a literal ``MEDIA:`` tag.
@@ -1370,6 +1835,11 @@ _TOOL_MEDIA_RE = re.compile(
 from gateway.media_repair import tool_name_by_call_id as _tool_name_by_call_id  # noqa: E402
 
 
+# ┌── 函数 def _collect_auto_append_media_tags()
+# │  作用：Collect real media tags from current-turn producer-tool results only.
+# │  参数：messages: List[Dict[str, Any]], history_offset: int = 0, history_media_paths: Optional[set] = None
+# │  返回：tuple[List[str], bool]
+# └──────────────────────────────────────────────────────────────
 def _collect_auto_append_media_tags(
     messages: List[Dict[str, Any]], history_offset: int = 0,
     history_media_paths: Optional[set] = None) -> tuple[List[str], bool]:
@@ -1405,6 +1875,7 @@ def _collect_auto_append_media_tags(
         tool_name = tool_name_by_call_id.get(call_id)
         # image_generate emits a JSON path field, not a MEDIA: tag; extract it: deterministic delivery.
         if tool_name == "image_generate" and "MEDIA:" not in content:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 payload = json.loads(content)
             except Exception:
@@ -1427,9 +1898,15 @@ def _collect_auto_append_media_tags(
         if "[[audio_as_voice]]" in content:
             has_voice_directive = True
 
+    # ⤷ 出口 return：返回 (media_tags, has_voice_directive)
     return media_tags, has_voice_directive
 
 
+# ┌── 函数 def _collect_history_media_paths()
+# │  作用：Dedup set of media paths already delivered (JSON-payload and assistant-message shapes alike).
+# │  参数：agent_history: List[Dict[str, Any]]
+# │  返回：set
+# └──────────────────────────────────────────────────────────────
 def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
     """Dedup set of media paths already delivered (JSON-payload and assistant-message shapes alike).
 
@@ -1460,6 +1937,7 @@ def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
             continue
         cid = str(msg.get("tool_call_id") or msg.get("call_id") or "")
         if tool_name_by_call_id.get(cid) == "image_generate":
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 payload = json.loads(content)
             except Exception:
@@ -1470,8 +1948,14 @@ def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
                     if isinstance(jp, str) and jp:
                         paths.add(jp)
                         break
+    # ⤷ 出口 return：返回 paths
     return paths
 
+# ┌── 函数 def _ensure_ssl_certs()
+# │  作用：Set SSL_CERT_FILE when the system hides CA certs from Python (NixOS etc.); must run BEFORE any
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _ensure_ssl_certs() -> None:
     """Set SSL_CERT_FILE when the system hides CA certs from Python (NixOS etc.); must run BEFORE any
     HTTP library is imported. A set-but-missing path breaks every later httpx client: treat as unset."""
@@ -1493,6 +1977,7 @@ def _ensure_ssl_certs() -> None:
             return
 
     # 2. certifi (ships its own Mozilla bundle)
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         import certifi
         os.environ["SSL_CERT_FILE"] = certifi.where()
@@ -1515,32 +2000,67 @@ def _ensure_ssl_certs() -> None:
             os.environ["SSL_CERT_FILE"] = candidate
             return
 
+# ┌── 函数 def _home_target_env_var()
+# │  作用：Home-target env var: built-in ``_HOME_TARGET_ENV_VARS``, plugin registry, then
+# │  参数：platform_name: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _home_target_env_var(platform_name: str) -> str:
     """Home-target env var: built-in ``_HOME_TARGET_ENV_VARS``, plugin registry, then
     ``<PLATFORM>_HOME_CHANNEL``."""
     from cron.scheduler_delivery import _resolve_home_env_var
+    # ⤷ 出口 return：返回 _resolve_home_env_var(platform_name) or f'{platform_name.upp…
     return _resolve_home_env_var(platform_name) or f"{platform_name.upper()}_HOME_CHANNEL"
 
 
+# ┌── 函数 def _home_thread_env_var()
+# │  作用：Return the optional thread/topic env var for a platform home target.
+# │  参数：platform_name: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _home_thread_env_var(platform_name: str) -> str:
     """Return the optional thread/topic env var for a platform home target."""
+    # ⤷ 出口 return：返回 f'{_home_target_env_var(platform_name)}_THREAD_ID'
     return f"{_home_target_env_var(platform_name)}_THREAD_ID"
 
 
+# ┌── 函数 def _restart_notification_pending()
+# │  作用：Return True when a /restart completion marker is waiting to be delivered.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _restart_notification_pending() -> bool:
     """Return True when a /restart completion marker is waiting to be delivered."""
+    # ⤷ 出口 return：返回 (_hermes_home / '.restart_notify.json').exists()
     return (_hermes_home / ".restart_notify.json").exists()
 
 
+# ┌── 函数 def _planned_restart_notification_path()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _planned_restart_notification_path() -> Path:
+    # ⤷ 出口 return：返回 _hermes_home / '.restart_pending.json'
     return _hermes_home / ".restart_pending.json"
 
 
+# ┌── 函数 def _planned_restart_notification_pending()
+# │  作用：Return True when a non-chat planned restart should notify home channels.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _planned_restart_notification_pending() -> bool:
     """Return True when a non-chat planned restart should notify home channels."""
+    # ⤷ 出口 return：返回 _planned_restart_notification_path().exists()
     return _planned_restart_notification_path().exists()
 
 
+# ┌── 函数 def _clear_planned_restart_notification()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _clear_planned_restart_notification() -> None:
     _planned_restart_notification_path().unlink(missing_ok=True)
 
@@ -1561,6 +2081,11 @@ _env_path = _hermes_home / '.env'
 load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
 
 
+# ┌── 函数 def _reload_runtime_env_preserving_config_authority()
+# │  作用：Reload .env per turn for rotated keys while config.yaml stays authoritative for budgets (else a
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reload_runtime_env_preserving_config_authority() -> None:
     """Reload .env per turn for rotated keys while config.yaml stays authoritative for budgets (else a
     stale HERMES_MAX_ITERATIONS wins). Multiplex never reloads .env globally: secrets come from the
@@ -1573,6 +2098,11 @@ def _reload_runtime_env_preserving_config_authority() -> None:
     _bridge_max_turns_from_config(_hermes_home)
 
 
+# ┌── 函数 def _bridge_max_turns_from_config()
+# │  作用：Re-bridge agent.max_turns (+ sessions.*) per turn; managed overlay applies or it reverts.
+# │  参数：home: 'Path'
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bridge_max_turns_from_config(home: "Path") -> None:
     """Re-bridge agent.max_turns (+ sessions.*) per turn; managed overlay applies or it reverts.
     Skipped inside a served secondary's scope: the env slots are the launch profile's and
@@ -1583,6 +2113,7 @@ def _bridge_max_turns_from_config(home: "Path") -> None:
     config_path = home / 'config.yaml'
     if not config_path.exists():
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         cfg = _load_bridge_config(config_path)
     except Exception:
@@ -1591,6 +2122,11 @@ def _bridge_max_turns_from_config(home: "Path") -> None:
     _bridge_section_to_env(cfg.get("sessions", {}), _SESSIONS_ENV_BRIDGE)
 
 
+# ┌── 函数 def _current_max_iterations()
+# │  作用：Return the per-turn iteration budget after runtime env refresh; ``resolve_turn_limit`` maps
+# │  参数：无
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _current_max_iterations() -> int:
     """Return the per-turn iteration budget after runtime env refresh; ``resolve_turn_limit`` maps
     ``agent.max_turns: none``/``unlimited`` (bridged as a string) to the unlimited sentinel, not an
@@ -1602,34 +2138,56 @@ def _current_max_iterations() -> int:
     override = get_hermes_home_override()
     if override:
         config_path = Path(override) / 'config.yaml'
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             cfg = _load_bridge_config(config_path) if config_path.exists() else {}
         except Exception:
             cfg = {}
         agent_cfg = cfg.get("agent")
+        # ⤷ 出口 return：返回 _resolve_turn_limit(agent_cfg.get('max_turns') if isinstance…
         return _resolve_turn_limit(agent_cfg.get("max_turns") if isinstance(agent_cfg, dict) else None)
+    # ⤷ 出口 return：返回 _resolve_turn_limit(os.getenv('HERMES_MAX_ITERATIONS'))
     return _resolve_turn_limit(os.getenv("HERMES_MAX_ITERATIONS"))
 
 
 from contextlib import asynccontextmanager as _asynccontextmanager, contextmanager as _contextmanager, suppress
 
 
+# ┌── 类 class MultiplexConfigError（继承自：RuntimeError）
+# │  说明：Invalid profile multiplexer config: the operator must fix config.yaml, so it propagates to the
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class MultiplexConfigError(RuntimeError):
     """Invalid profile multiplexer config: the operator must fix config.yaml, so it propagates to the
     startup guard instead of being treated as retryable adapter-connect noise."""
 
 
+# ┌── 类 class HygieneTurnHoldExceeded（继承自：Exception）
+# │  说明：Hygiene-compression turn-hold budget elapsed mid-stream. Availability boundary, not a failure:
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class HygieneTurnHoldExceeded(Exception):
     """Hygiene-compression turn-hold budget elapsed mid-stream. Availability boundary, not a failure:
     must NOT take the idle-timeout path (AGENT_COMPRESSION_TIMEOUT, "no output", failure cooldown)."""
 
 
+# ┌── 函数 def _multiplex_profile_homes()
+# │  作用：Return the authoritative profile set for one multiplex gateway config.
+# │  参数：config: object
+# │  返回：list[tuple[str, 'Path']]
+# └──────────────────────────────────────────────────────────────
 def _multiplex_profile_homes(config: object) -> list[tuple[str, "Path"]]:
     """Return the authoritative profile set for one multiplex gateway config."""
     from hermes_cli.profiles import profiles_to_serve
+    # ⤷ 出口 return：返回 list(profiles_to_serve(multiplex=True))
     return list(profiles_to_serve(multiplex=True))
 
 
+# ┌── 函数 def _cron_tick_profile_homes()
+# │  作用：Profile homes the in-process ticker visits under multiplex: the served set PLUS the
+# │  参数：config: object
+# │  返回：list[tuple[str, 'Path']]
+# └──────────────────────────────────────────────────────────────
 def _cron_tick_profile_homes(config: object) -> list[tuple[str, "Path"]]:
     """Profile homes the in-process ticker visits under multiplex: the served set PLUS the
     process-active profile: ``profiles_to_serve`` lists default + every live named profile, but a
@@ -1640,13 +2198,22 @@ def _cron_tick_profile_homes(config: object) -> list[tuple[str, "Path"]]:
     homes = _multiplex_profile_homes(config)
     active = get_active_profile_name() or "default"
     if any(name == active for name, _home in homes):
+        # ⤷ 出口 return：返回 homes
         return homes
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 homes + [(active, get_profile_dir(active))]
         return homes + [(active, get_profile_dir(active))]
     except Exception:
+        # ⤷ 出口 return：返回 homes
         return homes
 
 
+# ┌── 函数 def _enable_multiplex_log_routing()
+# │  作用：Route agent.log/errors.log/gateway.log records to their owning profile (inert single-profile).
+# │  参数：config: object
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _enable_multiplex_log_routing(config: object) -> bool:
     """Route agent.log/errors.log/gateway.log records to their owning profile (inert single-profile).
     ``setup_logging(mode="gateway")`` binds file handlers to the launch home, so under multiplexing
@@ -1657,21 +2224,31 @@ def _enable_multiplex_log_routing(config: object) -> bool:
     (``enable_profile_log_routing`` is a no-op below two homes).
     """
     if not getattr(config, "multiplex_profiles", False):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_logging import enable_profile_log_routing
+        # ⤷ 出口 return：返回 enable_profile_log_routing([home for _name, home in _multipl…
         return enable_profile_log_routing([home for _name, home in _multiplex_profile_homes(config)])
     except Exception:
         logger.debug("could not enable per-profile log routing", exc_info=True)
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _handoff_watch_scopes()
+# │  作用：``(profile_name, home)`` pairs whose ``state.db`` the watcher must poll; ``(None, None)`` = root
+# │  参数：runner: object
+# │  返回：list
+# └──────────────────────────────────────────────────────────────
 def _handoff_watch_scopes(runner: object) -> list:
     """``(profile_name, home)`` pairs whose ``state.db`` the watcher must poll; ``(None, None)`` = root
     poll, always first. ``/handoff`` writes into the store of the profile the CLI ran under; an unscoped
     watcher polls only the ROOT store, so a secondary profile's handoff would never be seen (CLI times
     out). A raising resolver degrades to the root poll rather than silently disabling the watcher."""
     scopes: list = [(None, None)]
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         config = getattr(runner, "config", None)
         if config is not None and getattr(config, "multiplex_profiles", False):
@@ -1681,9 +2258,16 @@ def _handoff_watch_scopes(runner: object) -> list:
                 scopes.append((name, home))
     except Exception:
         logger.debug("Could not resolve multiplex homes for handoff watcher", exc_info=True)
+    # ⤷ 出口 return：返回 scopes
     return scopes
 
 
+# ┌── 异步函数（协程） def _reclaim_stale()
+# │  作用：Fail handoffs left in ``running`` by a gateway that died mid-dispatch (once per store at startup).
+# │  参数：runner: object
+# │  返回：None
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _reclaim_stale(runner: object) -> None:
     """Fail handoffs left in ``running`` by a gateway that died mid-dispatch (once per store at startup).
     ``running`` is only set for one in-process dispatch, so a leftover row belongs to a dead process and
@@ -1691,7 +2275,9 @@ async def _reclaim_stale(runner: object) -> None:
     reclaim = getattr(getattr(runner, "_session_db", None), "reclaim_stale_running_handoffs", None)
     if not callable(reclaim):
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         ids = await reclaim(
             "gateway stopped mid-handoff; state reclaimed at startup. Re-run /handoff to try again.")
     except Exception:
@@ -1703,16 +2289,29 @@ async def _reclaim_stale(runner: object) -> None:
             "gateway: %s", len(ids), ", ".join(str(i) for i in ids))
 
 
+# ┌── 函数 def _terminal_scope_cwd()
+# │  作用：Scope-aware TERMINAL_CWD read for footer/context surfaces. Only an import failure falls back:
+# │  参数：default: str = ''
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _terminal_scope_cwd(default: str = "") -> str:
     """Scope-aware TERMINAL_CWD read for footer/context surfaces. Only an import failure falls back:
     an active refusal scope must raise, not use the launch cwd."""
+    # ⤷ 关键分支 try/except：捕获 ImportError，出错走兜底而不是崩溃。
     try:
         from tools.terminal_scope import terminal_env as _ts_env
     except ImportError:
+        # ⤷ 出口 return：返回 os.environ.get('TERMINAL_CWD', default)
         return os.environ.get("TERMINAL_CWD", default)
+    # ⤷ 出口 return：返回 _ts_env('TERMINAL_CWD', default)
     return _ts_env("TERMINAL_CWD", default)
 
 
+# ┌── 函数 def _load_profile_secret_scope()
+# │  作用：Hydrate and load one profile's secrets under its home override.
+# │  参数：profile_home: 'Path'
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _load_profile_secret_scope(profile_home: "Path") -> dict:
     """Hydrate and load one profile's secrets under its home override."""
     from hermes_constants import set_hermes_home_override, reset_hermes_home_override
@@ -1721,13 +2320,21 @@ def _load_profile_secret_scope(profile_home: "Path") -> dict:
     from hermes_cli.env_loader import hydrate_profile_secret_sources
 
     home_token = set_hermes_home_override(str(profile_home))
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
         hydrate_profile_secret_sources(Path(profile_home))
+        # ⤷ 出口 return：返回 build_profile_secret_scope(Path(profile_home))
         return build_profile_secret_scope(Path(profile_home))
     finally:
         reset_hermes_home_override(home_token)
 
 
+# ┌── 函数 def _profile_runtime_scope()
+# │  作用：Scope config/skills/memory AND credentials to a profile for one turn (multiplexed path only).
+# │  参数：profile_home: 'Path', prepared_secret_scope: Optional[dict] = None, hydrate_secrets: bool = ...
+# │  返回：（未标注类型）
+# │  【语法】带 @_contextmanager 装饰器：调用本函数时，等价于 _profile_runtime_scope = _contextmanager(_profile_runtime_scope)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_contextmanager
 def _profile_runtime_scope(
     profile_home: "Path", prepared_secret_scope: Optional[dict] = None, *,
@@ -1754,21 +2361,37 @@ def _profile_runtime_scope(
     from tools.terminal_scope import install_and_reset_profile_terminal_scope
 
     with install_and_reset_profile_terminal_scope(Path(profile_home)):
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
+            # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
             yield
         finally:
             reset_secret_scope(secret_token)
             reset_hermes_home_override(home_token)
 
 
+# ┌── 异步函数（协程） def _async_profile_runtime_scope()
+# │  作用：Enter a profile scope without loading secret files on the event loop.
+# │  参数：profile_home: 'Path'
+# │  返回：（未标注类型）
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# │  【语法】带 @_asynccontextmanager 装饰器：调用本函数时，等价于 _async_profile_runtime_scope = _asynccontextmanager(_async_profile_runtime_scope)，即先经过一层包装。
+# └──────────────────────────────────────────────────────────────
 @_asynccontextmanager
 async def _async_profile_runtime_scope(profile_home: "Path"):
     """Enter a profile scope without loading secret files on the event loop."""
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     secrets = await asyncio.to_thread(_load_profile_secret_scope, Path(profile_home))
     with _profile_runtime_scope(Path(profile_home), secrets):
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield
 
 
+# ┌── 函数 def load_gateway_config_for_runner()
+# │  作用：Load gateway config for the process-level GatewayRunner. Multiplexed: reload under the default
+# │  参数：无
+# │  返回：'GatewayConfig'
+# └──────────────────────────────────────────────────────────────
 def load_gateway_config_for_runner() -> "GatewayConfig":
     """Load gateway config for the process-level GatewayRunner. Multiplexed: reload under the default
     profile's ``_profile_runtime_scope`` so platform tokens in its ``.env`` resolve via the secret
@@ -1779,19 +2402,31 @@ def load_gateway_config_for_runner() -> "GatewayConfig":
     """
     cfg = load_gateway_config()
     if not getattr(cfg, "multiplex_profiles", False):
+        # ⤷ 出口 return：返回 cfg
         return cfg
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         home = get_hermes_home()
     except Exception:
+        # ⤷ 出口 return：返回 cfg
         return cfg
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         with _profile_runtime_scope(Path(home)):
+            # ⤷ 出口 return：返回 load_gateway_config()
             return load_gateway_config()
     except Exception:
         logger.debug("multiplex default-scope config reload failed; using unscoped load", exc_info=True)
+        # ⤷ 出口 return：返回 cfg
         return cfg
 
 
+# ┌── 异步函数（协程） def _discover_gateway_mcp_tools()
+# │  作用：Run startup MCP discovery for every profile this gateway serves: ``discover_mcp_tools`` reads
+# │  参数：config: object
+# │  返回：None
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _discover_gateway_mcp_tools(config: object) -> None:
     """Run startup MCP discovery for every profile this gateway serves: ``discover_mcp_tools`` reads
     ``mcp_servers`` from ``get_hermes_home()``'s config, so an unscoped call only connects the launch
@@ -1811,25 +2446,35 @@ async def _discover_gateway_mcp_tools(config: object) -> None:
     loop = asyncio.get_running_loop()
     with suppress_interactive_oauth():
         if not getattr(config, "multiplex_profiles", False):
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await loop.run_in_executor(None, copy_context().run, discover_mcp_tools)
             return
         for profile_name, profile_home in _multiplex_profile_homes(config):
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 with _profile_runtime_scope(Path(profile_home)):
+                    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
                     await loop.run_in_executor(None, copy_context().run, discover_mcp_tools)
             except Exception:
                 logger.warning("MCP tool discovery failed for profile '%s'", profile_name, exc_info=True)
 
 
+# ┌── 函数 def _platform_has_bot_credential()
+# │  作用：Return True when a token-authenticated platform has a usable bot credential; platforms not using
+# │  参数：platform: 'Platform', platform_config: 'PlatformConfig'
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _platform_has_bot_credential(platform: "Platform", platform_config: "PlatformConfig") -> bool:
     """Return True when a token-authenticated platform has a usable bot credential; platforms not using
     ``PlatformConfig.token`` (Signal session paths, port-binding HTTP adapters) always return True."""
     from gateway.config import PLATFORM_TOKEN_ENV_NAMES, Platform
     if platform not in PLATFORM_TOKEN_ENV_NAMES:
+        # ⤷ 出口 return：返回 True
         return True
     for attr in ("token", "api_key"):  # some adapters accept api_key as the primary credential
         value = getattr(platform_config, attr, None) or ""
         if isinstance(value, str) and value.strip():
+            # ⤷ 出口 return：返回 True
             return True
     # Matrix also authenticates by password; a token-only check would evict a reconnectable config from
     # the retry queue. Read ONLY extra (build_config() copies env there): env fallback = every config OK.
@@ -1841,8 +2486,10 @@ def _platform_has_bot_credential(platform: "Platform", platform_config: "Platfor
     # ~/.hermes/.env, so an env fallback would report "has credential" for every Matrix config on the box —
     # including the empty-primary multiplex case (#64674) this check exists to evict.
     if platform is not Platform.MATRIX:
+        # ⤷ 出口 return：返回 False
         return False
     extra = getattr(platform_config, "extra", None) or {}
+    # ⤷ 出口 return：返回 all((str(extra.get(key) or '').strip() for key in ('homeserv…
     return all(str(extra.get(key) or "").strip() for key in ("homeserver", "user_id", "password"))
 
 
@@ -1877,6 +2524,11 @@ _DISPLAY_ENV_BRIDGE = {
     "busy_ack_enabled": "HERMES_GATEWAY_BUSY_ACK_ENABLED"}
 
 
+# ┌── 函数 def _bridge_section_to_env()
+# │  作用：Export every present ``mapping`` key of a config section as ``str(value)``.
+# │  参数：section: Any, mapping: Dict[str, str]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bridge_section_to_env(section: Any, mapping: Dict[str, str]) -> None:
     """Export every present ``mapping`` key of a config section as ``str(value)``."""
     if isinstance(section, dict):
@@ -1885,6 +2537,11 @@ def _bridge_section_to_env(section: Any, mapping: Dict[str, str]) -> None:
                 os.environ[env_var] = str(section[cfg_key])
 
 
+# ┌── 函数 def _bridge_max_turns_to_env()
+# │  作用：Bridge ``agent.max_turns`` preserving its raw spelling ("none", "unlimited", "120"); Python None
+# │  参数：agent_cfg: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bridge_max_turns_to_env(agent_cfg: Any) -> None:
     """Bridge ``agent.max_turns`` preserving its raw spelling ("none", "unlimited", "120"); Python None
     (`null` / bare `key:`) clears a stale bridge instead, since str(None) -> "None" would map to the
@@ -1898,6 +2555,11 @@ def _bridge_max_turns_to_env(agent_cfg: Any) -> None:
         del os.environ["HERMES_MAX_ITERATIONS"]
 
 
+# ┌── 函数 def _bridge_terminal_config_to_env()
+# │  作用：Bridge nested ``terminal.*`` config to TERMINAL_* env vars (config.yaml overrides .env here).
+# │  参数：_terminal_cfg: dict
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bridge_terminal_config_to_env(_terminal_cfg: dict) -> None:
     """Bridge nested ``terminal.*`` config to TERMINAL_* env vars (config.yaml overrides .env here)."""
     _terminal_backend = str(
@@ -1951,9 +2613,15 @@ def _bridge_terminal_config_to_env(_terminal_cfg: dict) -> None:
         os.environ[_env_var] = json.dumps(_val) if isinstance(_val, (list, dict)) else str(_val)
 
 
+# ┌── 函数 def _bridge_auxiliary_config_to_env()
+# │  作用：Bridge auxiliary model/endpoint overrides (vision, approval, plugins); compression reads yaml.
+# │  参数：_auxiliary_cfg: dict
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bridge_auxiliary_config_to_env(_auxiliary_cfg: dict) -> None:
     """Bridge auxiliary model/endpoint overrides (vision, approval, plugins); compression reads yaml."""
     _aux_bridged_keys = {"vision", "approval"}
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import get_plugin_auxiliary_tasks
         for _entry in get_plugin_auxiliary_tasks():
@@ -1974,6 +2642,11 @@ def _bridge_auxiliary_config_to_env(_auxiliary_cfg: dict) -> None:
                 os.environ[f"AUXILIARY_{_upper}_{_suffix}"] = _value
 
 
+# ┌── 函数 def _bridge_config_to_env()
+# │  作用：Export config.yaml settings to the env vars os.getenv() consumers read.
+# │  参数：_cfg: dict
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _bridge_config_to_env(_cfg: dict) -> None:
     """Export config.yaml settings to the env vars os.getenv() consumers read."""
     for _key, _val in _cfg.items():  # top-level scalars: fallback only, never override .env
@@ -2019,10 +2692,16 @@ def _bridge_config_to_env(_cfg: dict) -> None:
             os.environ["HERMES_GATEWAY_PLATFORM_CONNECT_TIMEOUT"] = str(_gateway_cfg["platform_connect_timeout"])
 
 
+# ┌── 函数 def _load_bridge_config()
+# │  作用：Effective USER config (no defaults) for the presence-sensitive env bridge: only keys the user
+# │  参数：config_path: Path
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _load_bridge_config(config_path: Path) -> dict:
     """Effective USER config (no defaults) for the presence-sensitive env bridge: only keys the user
     or the managed layer wrote get bridged, else all of DEFAULT_CONFIG would be exported."""
     from hermes_cli.config_effective import load_user_config_effective
+    # ⤷ 出口 return：返回 load_user_config_effective(config_path)
     return load_user_config_effective(config_path)
 
 
@@ -2133,13 +2812,21 @@ from gateway.restart import (
 logger = logging.getLogger(__name__)
 
 
+# ┌── 函数 def _best_effort()
+# │  作用：Call ``fn``; return None on any Exception (debug-logged via ``debug_msg`` ``%s`` if given).
+# │  参数：fn: Callable[[], Any], debug_msg: Optional[str] = None
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _best_effort(fn: Callable[[], Any], debug_msg: Optional[str] = None) -> Any:
     """Call ``fn``; return None on any Exception (debug-logged via ``debug_msg`` ``%s`` if given)."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 fn()
         return fn()
     except Exception as exc:
         if debug_msg:
             logger.debug(debug_msg, exc)
+        # ⤷ 出口 return：返回 None
         return None
 
 
@@ -2156,6 +2843,11 @@ _OWN_POLICY_OPEN_ENV = {
     Platform.WHATSAPP: ("WHATSAPP_DM_POLICY", "WHATSAPP_GROUP_POLICY", "WHATSAPP_ALLOW_ALL_USERS")}
 
 
+# ┌── 函数 def _own_policy_open_startup_violation()
+# │  作用：Return a startup-abort reason when open policy lacks allow-all opt-in.
+# │  参数：config
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _own_policy_open_startup_violation(config) -> Optional[str]:
     """Return a startup-abort reason when open policy lacks allow-all opt-in."""
     for platform, platform_config in getattr(config, "platforms", {}).items():
@@ -2177,7 +2869,9 @@ def _own_policy_open_startup_violation(config) -> Optional[str]:
         if gateway_allow_all or (
                 allow_all_env and _getenv(allow_all_env, "").lower() in {"true", "1", "yes"}):
             continue
+        # ⤷ 出口 return：返回 f'{platform.value}: open policy without allow-all opt-in'
         return f"{platform.value}: open policy without allow-all opt-in"
+    # ⤷ 出口 return：返回 None
     return None
 
 
@@ -2213,6 +2907,11 @@ _CONVERSATION_SCOPED_STATE: tuple = (
     "_pending_turn_sidecar_notes")
 
 
+# ┌── 函数 def _resolve_runtime_agent_kwargs()
+# │  作用：Resolve provider credentials for gateway-created AIAgent instances.
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _resolve_runtime_agent_kwargs() -> dict:
     """Resolve provider credentials for gateway-created AIAgent instances.
     ``resolve_runtime_provider()`` may fall back to env vars; behavioral config is config.yaml only."""
@@ -2220,6 +2919,7 @@ def _resolve_runtime_agent_kwargs() -> dict:
         resolve_runtime_provider, format_runtime_provider_error, _get_model_config)
     from hermes_cli.auth import AuthError, is_rate_limited_auth_error
 
+    # ⤷ 关键分支 try/except：捕获 AuthError、Exception，出错走兜底而不是崩溃。
     try:
         runtime = resolve_runtime_provider()
     except AuthError as auth_exc:
@@ -2232,9 +2932,12 @@ def _resolve_runtime_agent_kwargs() -> dict:
             logger.warning("Primary provider auth failed: %s — trying fallback", auth_exc)
         fb_config = _try_resolve_fallback_provider()
         if fb_config is not None:
+            # ⤷ 出口 return：返回 fb_config
             return fb_config
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(format_runtime_provider_error(auth_exc)) from auth_exc
     except Exception as exc:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(format_runtime_provider_error(exc)) from exc
 
 
@@ -2243,12 +2946,19 @@ def _resolve_runtime_agent_kwargs() -> dict:
         {k: v for k, v in capabilities.items() if isinstance(k, str) and isinstance(v, bool)}
         if isinstance(capabilities, dict) else {})
 
+    # ⤷ 出口 return：返回 {**_runtime_agent_kwargs(runtime), 'capabilities': capabilit…
     return {**_runtime_agent_kwargs(runtime), "capabilities": capabilities}
 
 
+# ┌── 函数 def _runtime_agent_kwargs()
+# │  作用：AIAgent constructor kwargs shared by every runtime-provider resolution.
+# │  参数：runtime: dict
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _runtime_agent_kwargs(runtime: dict) -> dict:
     """AIAgent constructor kwargs shared by every runtime-provider resolution.
     ``request_overrides`` passes through as resolved so the provider's request body reaches each turn."""
+    # ⤷ 出口 return：返回 {'api_key': runtime.get('api_key'), 'base_url': runtime.get(…
     return {
         "api_key": runtime.get("api_key"),
         "base_url": runtime.get("base_url"),
@@ -2261,6 +2971,10 @@ def _runtime_agent_kwargs(runtime: dict) -> dict:
         "request_overrides": runtime.get("request_overrides")}
 
 
+# ┌── 类 class _GatewayModelContext
+# │  说明：Effective gateway model route and context-window resolution.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 @dataclasses.dataclass(frozen=True)
 class _GatewayModelContext:
     """Effective gateway model route and context-window resolution."""
@@ -2272,6 +2986,11 @@ class _GatewayModelContext:
     context_source: str
 
 
+# ┌── 函数 def _resolve_gateway_model_context()
+# │  作用：Resolve the configured gateway route and effective context window. Call off-loop (may block).
+# │  参数：model: Optional[str] = None
+# │  返回：_GatewayModelContext
+# └──────────────────────────────────────────────────────────────
 def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModelContext:
     """Resolve the configured gateway route and effective context window. Call off-loop (may block)."""
     from agent.model_metadata import DEFAULT_FALLBACK_CONTEXT, get_model_context_length
@@ -2280,7 +2999,9 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
     configured_model = configured_provider = configured_base_url = None
 
     def _read_config() -> None:
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal config_context_length, provider, base_url, custom_providers
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal configured_model, configured_provider, configured_base_url
         data = _load_gateway_config()
         if not data:
@@ -2294,6 +3015,7 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
                     config_context_length = int(raw_ctx)
             configured_provider = provider = model_cfg.get("provider") or None
             configured_base_url = base_url = model_cfg.get("base_url") or None
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import get_compatible_custom_providers
             custom_providers = get_compatible_custom_providers(data)
@@ -2301,6 +3023,7 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
             custom_providers = data.get("custom_providers")
 
     def _read_runtime() -> None:
+        # ⤷ nonlocal：声明赋值的是外层函数作用域的变量（闭包常见）。
         nonlocal provider, base_url, api_key
         runtime = _resolve_runtime_agent_kwargs()
         provider = runtime.get("provider") or provider
@@ -2310,6 +3033,7 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
     def _pin_still_applies() -> bool:
         # Drop a configured context_length pin when the effective route no longer matches (or on error).
         from hermes_cli.route_identity import should_clear_context_pin
+        # ⤷ 出口 return：返回 not should_clear_context_pin(configured_model, resolved_mode…
         return not should_clear_context_pin(
             configured_model, resolved_model, configured_base_url, base_url, configured_provider, provider)
 
@@ -2331,56 +3055,90 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
         custom_providers=custom_providers)
     context_source = ("config" if config_context_length is not None
                       else "default" if context_length == DEFAULT_FALLBACK_CONTEXT else "detected")
+    # ⤷ 出口 return：返回 _GatewayModelContext(model=resolved_model, provider=provider…
     return _GatewayModelContext(
         model=resolved_model, provider=provider or "", base_url=base_url or "",
         context_length=context_length, context_source=context_source)
 
 
+# ┌── 函数 def _resolve_runtime_agent_kwargs_for_provider()
+# │  作用：Resolve runtime credentials for a specific provider (e.g. from channel override).
+# │  参数：provider: str
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _resolve_runtime_agent_kwargs_for_provider(provider: str) -> dict:
     """Resolve runtime credentials for a specific provider (e.g. from channel override)."""
     from hermes_cli.runtime_provider import resolve_runtime_provider, format_runtime_provider_error
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         runtime = resolve_runtime_provider(requested=provider)
     except Exception as exc:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise RuntimeError(format_runtime_provider_error(exc)) from exc
+    # ⤷ 出口 return：返回 {**_runtime_agent_kwargs(runtime), 'request_overrides': dict…
     return {
         **_runtime_agent_kwargs(runtime),
         "request_overrides": dict(runtime.get("request_overrides") or {}),
         "capabilities": dict(runtime.get("capabilities") or {})}
 
 
+# ┌── 函数 def _deep_merge_request_overrides()
+# │  作用：Merge request_overrides dicts, deep-merging nested dictionaries.
+# │  参数：base: Optional[dict], override: Optional[dict]
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _deep_merge_request_overrides(base: Optional[dict], override: Optional[dict]) -> dict:
     """Merge request_overrides dicts, deep-merging nested dictionaries."""
     from hermes_cli.config import _deep_merge
     base_dict = dict(base or {})
     override_dict = dict(override or {})
     if not base_dict:
+        # ⤷ 出口 return：返回 override_dict
         return override_dict
     if not override_dict:
+        # ⤷ 出口 return：返回 base_dict
         return base_dict
+    # ⤷ 出口 return：返回 _deep_merge(base_dict, override_dict)
     return _deep_merge(base_dict, override_dict)
 
 
+# ┌── 函数 def _credential_pool_for_provider()
+# │  作用：Return the live credential pool for a provider id (e.g. ``custom:hyper``).
+# │  参数：provider: Optional[str]
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _credential_pool_for_provider(provider: Optional[str]):
     """Return the live credential pool for a provider id (e.g. ``custom:hyper``)."""
     if not provider or not str(provider).strip():
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 _resolve_runtime_agent_kwargs_for_provider(str(provider).str…
         return _resolve_runtime_agent_kwargs_for_provider(str(provider).strip()).get("credential_pool")
     except Exception:
         logger.debug("Failed to resolve credential pool for provider=%s", provider, exc_info=True)
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _try_resolve_fallback_provider()
+# │  作用：Attempt to resolve credentials from the fallback_model/fallback_providers config.
+# │  参数：无
+# │  返回：dict | None
+# └──────────────────────────────────────────────────────────────
 def _try_resolve_fallback_provider() -> dict | None:
     """Attempt to resolve credentials from the fallback_model/fallback_providers config."""
     from hermes_cli.runtime_provider import resolve_runtime_provider
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         cfg = _load_gateway_config()
         fb_list = get_fallback_chain(cfg)
         if not fb_list:
+            # ⤷ 出口 return：返回 None
             return None
         for entry in fb_list:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.fallback_config import effective_runtime_provider, resolve_entry_api_key
                 runtime = resolve_runtime_provider(
@@ -2396,50 +3154,95 @@ def _try_resolve_fallback_provider() -> dict | None:
                     # logged as "openrouter", contradicting the operator's config (#32790).
                     "Fallback provider resolved: %s model=%s",
                     entry.get("provider") or runtime.get("provider"), entry.get("model"))
+                # ⤷ 出口 return：返回 {**_runtime_agent_kwargs(runtime), 'model': entry.get('model…
                 return {**_runtime_agent_kwargs(runtime), "model": entry.get("model")}
             except Exception as fb_exc:
                 logger.debug("Fallback entry %s failed: %s", entry.get("provider"), fb_exc)
                 continue
     except Exception:
         pass
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _event_media_type_at()
+# │  作用：Per-attachment MIME at *index*; "" when the adapter set only a message-level type.
+# │  参数：event, index: int
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _event_media_type_at(event, index: int) -> str:
     """Per-attachment MIME at *index*; "" when the adapter set only a message-level type."""
     media_types = getattr(event, "media_types", None) or []
+    # ⤷ 出口 return：返回 media_types[index] if index < len(media_types) else ''
     return media_types[index] if index < len(media_types) else ""
 
 
+# ┌── 函数 def _event_media_kind_is()
+# │  作用：Per-attachment MIME first, message-level type only when unknown (else a document uploaded
+# │  参数：event, index: int, mime_prefix: str, fallback_types: frozenset
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _event_media_kind_is(event, index: int, mime_prefix: str, fallback_types: frozenset) -> bool:
     """Per-attachment MIME first, message-level type only when unknown (else a document uploaded
     alongside an image is base64'd as vision and the provider 400s)."""
     mtype = _event_media_type_at(event, index)
     if mtype:
+        # ⤷ 出口 return：返回 mtype.startswith(mime_prefix)
         return mtype.startswith(mime_prefix)
+    # ⤷ 出口 return：返回 getattr(event, 'message_type', None) in fallback_types
     return getattr(event, "message_type", None) in fallback_types
 
 
+# ┌── 函数 def _event_media_is_image()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：event, index: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _event_media_is_image(event, index: int) -> bool:
+    # ⤷ 出口 return：返回 _event_media_kind_is(event, index, 'image/', frozenset({Mess…
     return _event_media_kind_is(event, index, "image/", frozenset({MessageType.PHOTO}))
 
 
+# ┌── 函数 def _event_media_is_audio()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：event, index: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _event_media_is_audio(event, index: int) -> bool:
+    # ⤷ 出口 return：返回 _event_media_kind_is(event, index, 'audio/', frozenset({Mess…
     return _event_media_kind_is(event, index, "audio/", frozenset({MessageType.VOICE, MessageType.AUDIO}))
 
 
+# ┌── 函数 def _event_media_is_stt_input()
+# │  作用：True when an audio attachment should enter the automatic STT pipeline.
+# │  参数：event, index: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _event_media_is_stt_input(event, index: int) -> bool:
     """True when an audio attachment should enter the automatic STT pipeline."""
     message_type = getattr(event, "message_type", None)
     if message_type in {MessageType.AUDIO, MessageType.DOCUMENT}:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 message_type == MessageType.VOICE or _event_media_type_at(ev…
     return message_type == MessageType.VOICE or _event_media_type_at(event, index).startswith("audio/")
 
 
+# ┌── 函数 def _event_media_is_video()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：event, index: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _event_media_is_video(event, index: int) -> bool:
+    # ⤷ 出口 return：返回 _event_media_kind_is(event, index, 'video/', frozenset({Mess…
     return _event_media_kind_is(event, index, "video/", frozenset({MessageType.VIDEO}))
 
 
+# ┌── 函数 def _build_media_placeholder()
+# │  作用：Text placeholder for media-only events (later replaced by vision enrichment).
+# │  参数：event
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _build_media_placeholder(event) -> str:
     """Text placeholder for media-only events (later replaced by vision enrichment).
     Queued media is dequeued via .text only, so a caption-less event would otherwise be lost."""
@@ -2454,23 +3257,32 @@ def _build_media_placeholder(event) -> str:
             parts.append(f"[User sent a video: {url}]")
         else:
             parts.append(f"[User sent a file: {url}]")
+    # ⤷ 出口 return：返回 '\n'.join(parts)
     return "\n".join(parts)
 
 
+# ┌── 函数 def _build_document_context_note()
+# │  作用：Context note prepended to a user turn when they attach a document.
+# │  参数：display_name: str, agent_path: str, mtype: str, content_inlined: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _build_document_context_note(
     display_name: str, agent_path: str, mtype: str, *, content_inlined: bool = True) -> str:
     """Context note prepended to a user turn when they attach a document.
     ``content_inlined=False`` = cached without content, so tell the agent to read it. Binary docs must
     say *extract* the text; "ask the user" made it punt."""
     if mtype.startswith("text/") and content_inlined:
+        # ⤷ 出口 return：返回 f"[The user sent a text document: '{display_name}'. Its cont…
         return (
             f"[The user sent a text document: '{display_name}'. Its content has been included below. "
             f"The file is also saved at: {agent_path}]")
     if mtype.startswith("text/"):
+        # ⤷ 出口 return：返回 f"[The user sent a text document: '{display_name}'. It is sa…
         return (
             f"[The user sent a text document: '{display_name}'. It is saved at: {agent_path}. "
             f"Its content is not inlined here. Read the cached file yourself before answering "
             f"when the user's request involves its contents.]")
+    # ⤷ 出口 return：返回 f"[The user sent a document: '{display_name}'. It is saved a…
     return (
         f"[The user sent a document: '{display_name}'. It is saved at: {agent_path}. "
         f"Its text is not inlined here (it's a binary format such as PDF or DOCX). "
@@ -2479,19 +3291,33 @@ def _build_document_context_note(
         f"of asking the user to paste the contents.]")
 
 
+# ┌── 函数 def _format_duration()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：seconds: float
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _format_duration(seconds: float) -> str:
     total = max(0, int(round(seconds)))
     hours, rem = divmod(total, 3600)
     minutes, secs = divmod(rem, 60)
     if hours:
+        # ⤷ 出口 return：返回 f'{hours}:{minutes:02d}:{secs:02d}'
         return f"{hours}:{minutes:02d}:{secs:02d}"
+    # ⤷ 出口 return：返回 f'{minutes}:{secs:02d}'
     return f"{minutes}:{secs:02d}"
 
 
+# ┌── 异步函数（协程） def _probe_audio_duration()
+# │  作用：Best-effort duration probe. Returns formatted MM:SS / HH:MM:SS, or None on failure.
+# │  参数：path: str
+# │  返回：Optional[str]
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _probe_audio_duration(path: str) -> Optional[str]:
     """Best-effort duration probe. Returns formatted MM:SS / HH:MM:SS, or None on failure."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".wav":
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             def _wav_duration() -> float:
                 import wave
@@ -2499,17 +3325,21 @@ async def _probe_audio_duration(path: str) -> Optional[str]:
                     frames = wf.getnframes()
                     rate = wf.getframerate() or 1
                     return frames / float(rate)
+            # ⤷ 出口 return：返回 _format_duration(await asyncio.to_thread(_wav_duration))
             return _format_duration(await asyncio.to_thread(_wav_duration))
         except Exception:
             pass
     if ext in (".ogg", ".opus", ".oga"):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             def _ogg_duration() -> float:
                 from mutagen.oggopus import OggOpus
                 return float(OggOpus(path).info.length)
+            # ⤷ 出口 return：返回 _format_duration(await asyncio.to_thread(_ogg_duration))
             return _format_duration(await asyncio.to_thread(_ogg_duration))
         except Exception:
             pass
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -2521,12 +3351,19 @@ async def _probe_audio_duration(path: str) -> Optional[str]:
     except Exception:
         pass
 
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _dequeue_pending_event()
+# │  作用：Consume and return the pending event; media metadata is kept so follow-ups re-enter preprocessing.
+# │  参数：adapter, session_key: str
+# │  返回：MessageEvent | None
+# └──────────────────────────────────────────────────────────────
 def _dequeue_pending_event(adapter, session_key: str) -> MessageEvent | None:
     """Consume and return the pending event; media metadata is kept so follow-ups re-enter preprocessing.
     """
+    # ⤷ 出口 return：返回 adapter.get_pending_message(session_key)
     return adapter.get_pending_message(session_key)
 
 
@@ -2539,6 +3376,11 @@ _INTERRUPT_REASON_GATEWAY_SHUTDOWN = "Gateway shutting down"
 _INTERRUPT_REASON_GATEWAY_RESTART = "Gateway restarting"
 
 
+# ┌── 函数 def _reap_gateway_turn_processes()
+# │  作用：Reap only background processes created by one abandoned turn.
+# │  参数：task_id: str, process_baseline, source: str, is_still_current: Optional[Callable[[], bool]] = ...
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _reap_gateway_turn_processes(
     task_id: str, process_baseline, *, source: str,
     is_still_current: Optional[Callable[[], bool]] = None) -> int:
@@ -2547,13 +3389,16 @@ def _reap_gateway_turn_processes(
     ``is_still_current`` lets the caller bail instead of killing it (that turn owns its own baseline)."""
     if not task_id:
         # Blank task_id (sessionless callers) would match and kill every unrelated empty-task process.
+        # ⤷ 出口 return：返回 0
         return 0
     if is_still_current is not None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             if not is_still_current():
                 logger.debug(
                     "Skipping reap for turn %s (%s): a newer turn already "
                     "claimed this session; it owns its own baseline.", task_id, source)
+                # ⤷ 出口 return：返回 0
                 return 0
         except Exception:
             logger.debug(
@@ -2561,17 +3406,20 @@ def _reap_gateway_turn_processes(
                 task_id, source, exc_info=True)
 
     from tools.process_registry import process_registry
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         killed = process_registry.kill_started_since(task_id, process_baseline, source=source)
     except Exception:
         # Detached daemon thread: an uncaught exception would only reach threading.excepthook.
         logger.warning(
             "Failed to reap background processes for turn %s (%s)", task_id, source, exc_info=True)
+        # ⤷ 出口 return：返回 0
         return 0
     if killed:
         logger.warning(
             "Reaped %d background process(es) created by abandoned turn %s (%s)",
             killed, task_id, source)
+    # ⤷ 出口 return：返回 killed
     return killed
 
 
@@ -2580,10 +3428,16 @@ _TURN_STACK_DUMP_FRAME_MARKERS = (
     "finalize_turn", "end_turn", "run_in_session")
 
 
+# ┌── 函数 def _dump_wedged_turn_stacks()
+# │  作用：Log the stack of every thread that looks like turn work, at reap time.
+# │  参数：task_id: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _dump_wedged_turn_stacks(task_id: str) -> None:
     """Log the stack of every thread that looks like turn work, at reap time.
     The hard interrupt frees the wedged worker before a profiler can attach, so dump BEFORE it.
     Best-effort, bounded (turn-machinery threads only, capped output), never raises."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         frames = sys._current_frames()
         names = {t.ident: t.name for t in threading.enumerate()}
@@ -2612,6 +3466,11 @@ def _dump_wedged_turn_stacks(task_id: str) -> None:
         logger.debug("Wedged-turn stack dump failed", exc_info=True)
 
 
+# ┌── 函数 def _abandon_timed_out_gateway_turn()
+# │  作用：Interrupt one timed-out turn and reap only processes it created.
+# │  参数：agent_holder, task_id: str, process_baseline, worker_done: threading.Event, timeout_fired: threading.Event, cleanup_lock: threading.Lock, is_still_current: Optional[Callable[[], bool]] = ...
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _abandon_timed_out_gateway_turn(
     *, agent_holder, task_id: str, process_baseline, worker_done: threading.Event,
     timeout_fired: threading.Event, cleanup_lock: threading.Lock,
@@ -2619,6 +3478,7 @@ def _abandon_timed_out_gateway_turn(
     """Interrupt one timed-out turn and reap only processes it created."""
     with cleanup_lock:
         if worker_done.is_set() or timeout_fired.is_set():
+            # ⤷ 出口 return：返回 False
             return False
         timeout_fired.set()
 
@@ -2627,11 +3487,13 @@ def _abandon_timed_out_gateway_turn(
 
     agent = agent_holder[0] if agent_holder else None
     if agent is not None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             request_hard_interrupt(agent, _INTERRUPT_REASON_TIMEOUT)
         except Exception:
             logger.debug("Timed-out agent interrupt failed", exc_info=True)
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         _reap_gateway_turn_processes(
             task_id, process_baseline, source="gateway_turn_timeout",
@@ -2639,9 +3501,15 @@ def _abandon_timed_out_gateway_turn(
     except Exception:
         logger.warning(
             "Failed to reap background processes for timed-out turn %s", task_id, exc_info=True)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _watch_gateway_turn_inactivity()
+# │  作用：Thread watchdog that remains runnable when gateway asyncio is starved.
+# │  参数：agent_holder, task_id: str, process_baseline, timeout: float, worker_done: threading.Event, timeout_fired: threading.Event, cleanup_lock: threading.Lock, poll_interval: float = ...  …共 9 个
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _watch_gateway_turn_inactivity(
     *, agent_holder, task_id: str, process_baseline, timeout: float, worker_done: threading.Event,
     timeout_fired: threading.Event, cleanup_lock: threading.Lock, poll_interval: float = 5.0,
@@ -2651,6 +3519,7 @@ def _watch_gateway_turn_inactivity(
         agent = agent_holder[0] if agent_holder else None
         if agent is None or not hasattr(agent, "get_activity_summary"):
             continue
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             idle_seconds = float(agent.get_activity_summary().get("seconds_since_activity", 0.0))
         except Exception:
@@ -2671,13 +3540,25 @@ _CONTROL_INTERRUPT_MESSAGES = frozenset({
     _INTERRUPT_REASON_GATEWAY_RESTART.lower()})
 
 
+# ┌── 函数 def _is_control_interrupt_message()
+# │  作用：Return True when an interrupt message is internal control flow.
+# │  参数：message: Optional[str]
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_control_interrupt_message(message: Optional[str]) -> bool:
     """Return True when an interrupt message is internal control flow."""
     if not message:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 ' '.join(str(message).strip().split()).lower() in _CONTROL_I…
     return " ".join(str(message).strip().split()).lower() in _CONTROL_INTERRUPT_MESSAGES
 
 
+# ┌── 函数 def _strip_response_attachments_for_direct_send()
+# │  作用：Return the visible text portion of a response before direct send().
+# │  参数：response: str, adapter
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _strip_response_attachments_for_direct_send(response: str, adapter) -> str:
     """Return the visible text portion of a response before direct send().
     Only explicit ``MEDIA:`` attachments are stripped; bare paths/URLs stay visible. No broad regex after
@@ -2687,21 +3568,31 @@ def _strip_response_attachments_for_direct_send(response: str, adapter) -> str:
     and ordinary image URLs visible because the post-stream uploader intentionally ignores them (#20834).
     """
     _, cleaned = adapter.extract_media(response)
+    # ⤷ 出口 return：返回 cleaned.replace('[[audio_as_voice]]', '').replace('[[as_docu…
     return cleaned.replace("[[audio_as_voice]]", "").replace("[[as_document]]", "").strip()
 
 
+# ┌── 函数 def _skill_slug_from_frontmatter()
+# │  作用：Derive ``(slug, declared_name)`` from a SKILL.md; ``(None, None)`` if unreadable or no ``name:``.
+# │  参数：skill_md: Path
+# │  返回：tuple[str | None, str | None]
+# └──────────────────────────────────────────────────────────────
 def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None]:
     """Derive ``(slug, declared_name)`` from a SKILL.md; ``(None, None)`` if unreadable or no ``name:``.
     Matches ``scan_skill_commands``: the slug comes from frontmatter ``name:``, NOT the directory."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         content = skill_md.read_text(encoding="utf-8", errors="replace")
     except Exception:
+        # ⤷ 出口 return：返回 (None, None)
         return None, None
     content = content.lstrip("\ufeff")  # tolerate UTF-8 BOM (Windows editors)
     if not content.startswith("---"):
+        # ⤷ 出口 return：返回 (None, None)
         return None, None
     end = content.find("\n---", 3)
     if end < 0:
+        # ⤷ 出口 return：返回 (None, None)
         return None, None
     declared_name: str | None = None
     for line in content[3:end].splitlines():
@@ -2713,17 +3604,25 @@ def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None
             declared_name = raw.strip()
             break
     if not declared_name:
+        # ⤷ 出口 return：返回 (None, None)
         return None, None
     slug = declared_name.lower().replace(" ", "-").replace("_", "-")
     # Mirrors _SKILL_INVALID_CHARS / _SKILL_MULTI_HYPHEN from skill_commands
     slug = re.sub(r"[^a-z0-9-]", "", slug)
     slug = re.sub(r"-{2,}", "-", slug).strip("-")
+    # ⤷ 出口 return：返回 (slug or None, declared_name)
     return (slug or None), declared_name
 
 
+# ┌── 函数 def _check_unavailable_skill()
+# │  作用：Hint when a command matches a skill that is disabled or optional-install only; else None.
+# │  参数：command_name: str
+# │  返回：str | None
+# └──────────────────────────────────────────────────────────────
 def _check_unavailable_skill(command_name: str) -> str | None:
     """Hint when a command matches a skill that is disabled or optional-install only; else None."""
     normalized = command_name.lower().replace("_", "-")
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.skills_tool import _get_disabled_skill_names
         from agent.skill_utils import get_all_skills_dirs, is_excluded_skill_path
@@ -2740,6 +3639,7 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                     continue
                 # disabled is keyed by the declared frontmatter name (what skills.disabled stores).
                 if slug == normalized and declared_name in disabled:
+                    # ⤷ 出口 return：返回 f'The **{command_name}** skill is installed but disabled.\nE…
                     return (
                         f"The **{command_name}** skill is installed but disabled.\n"
                         f"Enable it with: `hermes skills config`")
@@ -2758,31 +3658,56 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 # Install path: official/<category>/<name>
                 rel = skill_md.parent.relative_to(optional_dir)
                 install_path = f"official/{'/'.join(rel.parts)}"
+                # ⤷ 出口 return：返回 f'The **{command_name}** skill is available but not installe…
                 return (
                     f"The **{command_name}** skill is available but not installed.\n"
                     f"Install it with: `hermes skills install {install_path}`")
     except Exception:
         pass
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _platform_config_key()
+# │  作用：Map a Platform enum to its config.yaml key (LOCAL→"cli", rest→enum value).
+# │  参数：platform: 'Platform'
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _platform_config_key(platform: "Platform") -> str:
     """Map a Platform enum to its config.yaml key (LOCAL→"cli", rest→enum value)."""
+    # ⤷ 出口 return：返回 'cli' if platform == Platform.LOCAL else platform.value
     return "cli" if platform == Platform.LOCAL else platform.value
 
 
+# ┌── 函数 def _teams_pipeline_plugin_enabled()
+# │  作用：Return True when the standalone Teams pipeline plugin is enabled.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _teams_pipeline_plugin_enabled() -> bool:
     """Return True when the standalone Teams pipeline plugin is enabled."""
     enabled = cfg_get(_load_gateway_config(), "plugins", "enabled", default=[])
+    # ⤷ 出口 return：返回 isinstance(enabled, list) and ('teams_pipeline' in enabled o…
     return isinstance(enabled, list) and ("teams_pipeline" in enabled or "teams-pipeline" in enabled)
 
 
+# ┌── 函数 def _gateway_config_home()
+# │  作用：Return the Hermes home that gateway config reads should use.
+# │  参数：无
+# │  返回：Path
+# └──────────────────────────────────────────────────────────────
 def _gateway_config_home() -> Path:
     """Return the Hermes home that gateway config reads should use."""
     override = get_hermes_home_override()
+    # ⤷ 出口 return：返回 Path(override) if override else _hermes_home
     return Path(override) if override else _hermes_home
 
 
+# ┌── 函数 def _load_gateway_config()
+# │  作用：The effective user config.yaml (managed overlay, ``${VAR}`` expansion, model-key canon; no
+# │  参数：config_path: 'Path | None' = None
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _load_gateway_config(config_path: "Path | None" = None) -> dict:
     """The effective user config.yaml (managed overlay, ``${VAR}`` expansion, model-key canon; no
     DEFAULT_CONFIG merge) — ``{}`` on any error (fail-open). Defaults to the active gateway home
@@ -2790,14 +3715,22 @@ def _load_gateway_config(config_path: "Path | None" = None) -> dict:
     """
     if config_path is None:
         config_path = _gateway_config_home() / 'config.yaml'
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config_effective import load_user_config_effective
+        # ⤷ 出口 return：返回 load_user_config_effective(config_path)
         return load_user_config_effective(config_path)
     except Exception:
         logger.debug("Could not load gateway config from %s", config_path, exc_info=True)
+        # ⤷ 出口 return：返回 {}
         return {}
 
 
+# ┌── 函数 def _checkpoint_agent_kwargs()
+# │  作用：Translate gateway checkpoint config into ``AIAgent`` constructor args.
+# │  参数：config: dict | None
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _checkpoint_agent_kwargs(config: dict | None) -> dict:
     """Translate gateway checkpoint config into ``AIAgent`` constructor args.
     Gateway bypasses ``load_config()``, so defaults are here; legacy ``checkpoints: true`` works."""
@@ -2808,6 +3741,7 @@ def _checkpoint_agent_kwargs(config: dict | None) -> dict:
         cp_cfg = {}
     from hermes_cli.config import DEFAULT_CONFIG
     defaults = DEFAULT_CONFIG["checkpoints"]
+    # ⤷ 出口 return：返回 {'checkpoints_enabled': cp_cfg.get('enabled', defaults['enab…
     return {
         "checkpoints_enabled": cp_cfg.get("enabled", defaults["enabled"]),
         "checkpoint_max_snapshots": cp_cfg.get("max_snapshots", defaults["max_snapshots"]),
@@ -2815,61 +3749,98 @@ def _checkpoint_agent_kwargs(config: dict | None) -> dict:
         "checkpoint_max_file_size_mb": cp_cfg.get("max_file_size_mb", defaults["max_file_size_mb"])}
 
 
+# ┌── 函数 def _resolve_gateway_model()
+# │  作用：Read model from config.yaml (single source of truth), else temporary AIAgents (e.g. /compress)
+# │  参数：config: dict | None = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _resolve_gateway_model(config: dict | None = None) -> str:
     """Read model from config.yaml (single source of truth), else temporary AIAgents (e.g. /compress)
     use the hardcoded default, which fails under openai-codex."""
     cfg = config if config is not None else _load_gateway_config()
     model_cfg = cfg.get("model", {})
     if isinstance(model_cfg, str):
+        # ⤷ 出口 return：返回 model_cfg
         return model_cfg
     elif isinstance(model_cfg, dict):
+        # ⤷ 出口 return：返回 model_cfg.get('default') or model_cfg.get('model') or ''
         return model_cfg.get("default") or model_cfg.get("model") or ""
+    # ⤷ 出口 return：返回 ''
     return ""
 
 
+# ┌── 函数 def _channel_override_lookup_keys()
+# │  作用：Ordered, de-duplicated ``channel_overrides`` lookup keys (matches ``resolve_channel_prompt``:
+# │  参数：chat_id: str, thread_id: Optional[str] = ..., parent_id: Optional[str] = ...
+# │  返回：list[str]
+# └──────────────────────────────────────────────────────────────
 def _channel_override_lookup_keys(
     chat_id: str, *, thread_id: Optional[str] = None, parent_id: Optional[str] = None) -> list[str]:
     """Ordered, de-duplicated ``channel_overrides`` lookup keys (matches ``resolve_channel_prompt``:
     exact id first, then parent — Discord threads inherit parent overrides)."""
+    # ⤷ 出口 return：返回 list(dict.fromkeys((str(key) for key in (chat_id, thread_id,…
     return list(dict.fromkeys(str(key) for key in (chat_id, thread_id, parent_id) if key))
 
 
+# ┌── 函数 def _get_channel_override()
+# │  作用：Per-channel override via chat_id, then thread_id, then parent_id; None if absent.
+# │  参数：config: GatewayConfig, platform: Platform, chat_id: str, thread_id: Optional[str] = ..., parent_id: Optional[str] = ...
+# │  返回：Optional[ChannelOverride]
+# └──────────────────────────────────────────────────────────────
 def _get_channel_override(
     config: GatewayConfig, platform: Platform, chat_id: str, *, thread_id: Optional[str] = None,
     parent_id: Optional[str] = None) -> Optional[ChannelOverride]:
     """Per-channel override via chat_id, then thread_id, then parent_id; None if absent."""
     platforms = getattr(config, "platforms", None)
     if not platforms:
+        # ⤷ 出口 return：返回 None
         return None
     platform_config = platforms.get(platform)
     if not platform_config or not platform_config.channel_overrides:
+        # ⤷ 出口 return：返回 None
         return None
     overrides = platform_config.channel_overrides
     for key in _channel_override_lookup_keys(chat_id, thread_id=thread_id, parent_id=parent_id):
         ov = overrides.get(key)
         if ov is not None:
+            # ⤷ 出口 return：返回 ov
             return ov
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _resolve_hermes_bin()
+# │  作用：Hermes update command argv: ``hermes`` on PATH, else ``python -m hermes_cli.main``, else None.
+# │  参数：无
+# │  返回：Optional[list[str]]
+# └──────────────────────────────────────────────────────────────
 def _resolve_hermes_bin() -> Optional[list[str]]:
     """Hermes update command argv: ``hermes`` on PATH, else ``python -m hermes_cli.main``, else None."""
     import shutil
     hermes_bin = shutil.which("hermes")
     if hermes_bin:
+        # ⤷ 出口 return：返回 [hermes_bin]
         return [hermes_bin]
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import importlib.util
         if importlib.util.find_spec("hermes_cli") is not None:
+            # ⤷ 出口 return：返回 [sys.executable, '-m', 'hermes_cli.main']
             return [sys.executable, "-m", "hermes_cli.main"]
     except Exception:
         pass
+    # ⤷ 出口 return：返回 None
     return None
 
 
 _PROFILE_ID_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
+# ┌── 函数 def _parse_session_key()
+# │  作用：Parse a session key (``agent:{ns}:{platform}:{chat_type}:{chat_id}[:{extra}...]``).
+# │  参数：session_key: str
+# │  返回：'dict | None'
+# └──────────────────────────────────────────────────────────────
 def _parse_session_key(session_key: str) -> "dict | None":
     """Parse a session key (``agent:{ns}:{platform}:{chat_type}:{chat_id}[:{extra}...]``).
 
@@ -2891,18 +3862,31 @@ def _parse_session_key(session_key: str) -> "dict | None":
             result["profile"] = profile_from_session_key_namespace(parts[1])
         if len(parts) > 5 and parts[3] in {"dm", "thread"}:
             result["thread_id"] = parts[5]
+        # ⤷ 出口 return：返回 result
         return result
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _shorten_command_for_display()
+# │  作用：Collapse a shell command onto one line and cap its length for display.
+# │  参数：command: str, limit: int = 80
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _shorten_command_for_display(command: str, limit: int = 80) -> str:
     """Collapse a shell command onto one line and cap its length for display."""
     one_line = " ".join((command or "").split())
     if len(one_line) > limit:
         one_line = one_line[: limit - 1] + "…"
+    # ⤷ 出口 return：返回 one_line
     return one_line
 
 
+# ┌── 函数 def _format_concise_process_notification()
+# │  作用：One-line completion message for ``concise`` display mode; failure appends a short output tail.
+# │  参数：session_id: str, command: str, exit_code, output: str, duration_seconds = None
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _format_concise_process_notification(
     session_id: str, command: str, exit_code, output: str, duration_seconds=None) -> str:
     """One-line completion message for ``concise`` display mode; failure appends a short output tail."""
@@ -2930,9 +3914,15 @@ def _format_concise_process_notification(
             tail = tail[-500:]
         if tail:
             text += f"\n```\n{tail}\n```"
+    # ⤷ 出口 return：返回 text
     return text
 
 
+# ┌── 函数 def _format_gateway_process_notification()
+# │  作用：Format a watch pattern event from completion_queue into a [IMPORTANT:] message.
+# │  参数：evt: dict
+# │  返回：'str | None'
+# └──────────────────────────────────────────────────────────────
 def _format_gateway_process_notification(evt: dict) -> "str | None":
     """Format a watch pattern event from completion_queue into a [IMPORTANT:] message."""
     evt_type = evt.get("type", "completion")
@@ -2941,6 +3931,7 @@ def _format_gateway_process_notification(evt: dict) -> "str | None":
 
     # watch_disabled / overflow events carry their summary in `message` (process_registry formatter).
     if evt_type in ("watch_disabled", "watch_overflow_tripped", "watch_overflow_released"):
+        # ⤷ 出口 return：返回 f"[IMPORTANT: {evt.get('message', '')}]"
         return f"[IMPORTANT: {evt.get('message', '')}]"
 
     if evt_type == "watch_match":
@@ -2954,21 +3945,30 @@ def _format_gateway_process_notification(evt: dict) -> "str | None":
         if _sup:
             text += f"\n({_sup} earlier matches were suppressed by rate limit)"
         text += "]"
+        # ⤷ 出口 return：返回 text
         return text
 
     if evt_type == "async_delegation":
         from tools.process_registry_notifications import format_process_notification
+        # ⤷ 出口 return：返回 format_process_notification(evt)
         return format_process_notification(evt)
 
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _drain_gateway_watch_events()
+# │  作用：Drain gateway-owned watch events without spinning on requeued events.
+# │  参数：completion_queue
+# │  返回：'list[dict]'
+# └──────────────────────────────────────────────────────────────
 def _drain_gateway_watch_events(completion_queue) -> "list[dict]":
     """Drain gateway-owned watch events without spinning on requeued events.
     Foreign events requeued inside ``while not queue.empty()`` never terminate: detach, then requeue."""
     watch_events: list[dict] = []
     requeue: list[dict] = []
     while not completion_queue.empty():
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             evt = completion_queue.get_nowait()
         except Exception:
@@ -2982,6 +3982,7 @@ def _drain_gateway_watch_events(completion_queue) -> "list[dict]":
         # else: process completion events are handled by the watcher task
     for evt in requeue:
         completion_queue.put(evt)
+    # ⤷ 出口 return：返回 watch_events
     return watch_events
 
 
@@ -2990,6 +3991,11 @@ import weakref as _weakref
 _gateway_runner_ref: _weakref.ref = lambda: None
 
 
+# ┌── 函数 def _normalize_empty_agent_response()
+# │  作用：Normalize empty/None agent responses into user-facing messages.
+# │  参数：agent_result: dict, response: str, history_len: int = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _normalize_empty_agent_response(
     agent_result: dict, response: str, *, history_len: int = 0) -> str:
     """Normalize empty/None agent responses into user-facing messages.
@@ -3009,6 +4015,7 @@ def _normalize_empty_agent_response(
     """
     is_overflow = is_context_overflow_failure_result(agent_result, history_len)
     if response and not (is_overflow and _looks_like_gateway_provider_error(response)):
+        # ⤷ 出口 return：返回 response
         return response
     if agent_result.get("failed"):
         # ``error`` can be an EXPLICIT None (bypasses dict.get default) -> would render "failed: None".
@@ -3030,6 +4037,7 @@ def _normalize_empty_agent_response(
             return (
                 "⚠️ Session too large for the model's context window.\n"
                 "Use /compact to compress the conversation, or /reset to start fresh.")
+        # ⤷ 出口 return：返回 f'The request failed: {str(error_detail)[:300]}\nTry again o…
         return (
             f"The request failed: {str(error_detail)[:300]}\n"
             "Try again or use /reset to start a fresh session.")
@@ -3052,6 +4060,7 @@ def _normalize_empty_agent_response(
             return (
                 "⚠️ Your message was interrupted before processing started "
                 "(likely by a recent /stop). Please send it again.")
+        # ⤷ 出口 return：返回 response
         return response
     if api_calls > 0:
         # Hidden-reasoning-only retry exhaustion: the loop's sentinel text ("Codex response remained
@@ -3063,60 +4072,94 @@ def _normalize_empty_agent_response(
         if agent_result.get("partial"):
             err = agent_result.get("error", "processing incomplete")
             return f"⚠️ Processing stopped: {str(err)[:200]}. Try again."
+        # ⤷ 出口 return：返回 '⚠️ Processing completed but no response was generated. This…
         return (
             "⚠️ Processing completed but no response was generated. "
             "This may be a transient error — try sending your message again.")
 
     # api_calls == 0, not failed/interrupted: agent never ran (post-/stop race); don't drop silently.
     if api_calls == 0 and not agent_result.get("partial"):
+        # ⤷ 出口 return：返回 "⚠️ Your message wasn't processed (the previous turn was sti…
         return (
             "⚠️ Your message wasn't processed (the previous turn was still "
             "being cleaned up). Please send it again.")
 
+    # ⤷ 出口 return：返回 response
     return response
 
 
+# ┌── 函数 def _is_gateway_hidden_reasoning_incomplete_turn()
+# │  作用：Detect retry-exhausted turns with hidden reasoning but no visible answer.
+# │  参数：agent_result: dict
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_gateway_hidden_reasoning_incomplete_turn(agent_result: dict) -> bool:
     """Detect retry-exhausted turns with hidden reasoning but no visible answer.
     The loop returns the retry-exhaustion sentinel as BOTH ``final_response`` and ``error``, so a
     non-empty ``final_response`` proves nothing; any text other than the sentinel is a real answer."""
     if (not isinstance(agent_result, dict) or agent_result.get("failed")
             or agent_result.get("interrupted") or not agent_result.get("partial")):
+        # ⤷ 出口 return：返回 False
         return False
     error_text = str(agent_result.get("error", "") or "").strip()
     if "remained incomplete after" not in error_text.lower():
+        # ⤷ 出口 return：返回 False
         return False
     final_response = str(agent_result.get("final_response") or "").strip()
+    # ⤷ 出口 return：返回 not final_response or final_response == error_text
     return not final_response or final_response == error_text
 
 
+# ┌── 函数 def _should_clear_resume_pending_after_turn()
+# │  作用：True only when a gateway turn really completed successfully.
+# │  参数：agent_result: dict
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _should_clear_resume_pending_after_turn(agent_result: dict) -> bool:
     """True only when a gateway turn really completed successfully.
     ``resume_pending`` is a durable restart-recovery marker; a soft interrupt can look like a normal
     empty result, and clearing then loses the signal."""
     if not isinstance(agent_result, dict) or agent_result.get("interrupted"):
+        # ⤷ 出口 return：返回 False
         return False
     if agent_result.get("failed") or agent_result.get("partial") or agent_result.get("error"):
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 agent_result.get('completed') is not False
     return agent_result.get("completed") is not False
 
 
+# ┌── 函数 def _preserve_queued_followup_history_offset()
+# │  作用：Carry the outer history offset through queued follow-up drains.
+# │  参数：current_result: dict, followup_result: dict
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _preserve_queued_followup_history_offset(
     current_result: dict, followup_result: dict) -> dict:
     """Carry the outer history offset through queued follow-up drains.
     Each recursive ``_run_agent()`` advances ``history_offset``; uncorrected, the outer persistence
     step sees only the *last* queued turn as "new" and drops earlier ones."""
     if not isinstance(followup_result, dict) or not isinstance(current_result, dict):
+        # ⤷ 出口 return：返回 followup_result
         return followup_result
     current_offset = current_result.get("history_offset")
     followup_offset = followup_result.get("history_offset")
     if not isinstance(current_offset, int):
+        # ⤷ 出口 return：返回 followup_result
         return followup_result
     if isinstance(followup_offset, int) and followup_offset <= current_offset:
+        # ⤷ 出口 return：返回 followup_result
         return followup_result
+    # ⤷ 出口 return：返回 {**followup_result, 'history_offset': current_offset}
     return {**followup_result, "history_offset": current_offset}
 
 
+# ┌── 异步函数（协程） def _dispose_unused_adapter()
+# │  作用：Best-effort dispose for an adapter that never made it onto ``self.adapters`` (may be ``None``).
+# │  参数：adapter: 'BasePlatformAdapter | None'
+# │  返回：None
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _dispose_unused_adapter(adapter: "BasePlatformAdapter | None") -> None:
     """Best-effort dispose for an adapter that never made it onto ``self.adapters`` (may be ``None``).
     Nothing else calls ``disconnect()`` on it, so ``__init__`` resources (e.g. SQLite fds) would leak
@@ -3134,7 +4177,9 @@ async def _dispose_unused_adapter(adapter: "BasePlatformAdapter | None") -> None
     """
     if adapter is None:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await adapter.disconnect()
     except Exception:
         # Half-constructed adapters may raise; must not abort the watcher (CancelledError propagates).
@@ -3151,20 +4196,34 @@ _RECONNECT_BACKOFF_CAP = 300
 _RECONNECT_ATTENTION_AFTER_SECONDS = _float_env("HERMES_RECONNECT_ATTENTION_AFTER_SECONDS", 7200)
 
 
+# ┌── 函数 def _reconnect_backoff()
+# │  作用：Exponential reconnect backoff: 30s, 60s, 120s, ... capped at 5 min.
+# │  参数：attempt: int
+# │  返回：int
+# └──────────────────────────────────────────────────────────────
 def _reconnect_backoff(attempt: int) -> int:
     """Exponential reconnect backoff: 30s, 60s, 120s, ... capped at 5 min."""
+    # ⤷ 出口 return：返回 min(30 * 2 ** (attempt - 1), _RECONNECT_BACKOFF_CAP)
     return min(30 * (2 ** (attempt - 1)), _RECONNECT_BACKOFF_CAP)
 
 
+# ┌── 函数 def _reconnect_needs_attention()
+# │  作用：True when a reconnect-queue entry has waited long enough for NEEDS_ATTENTION.
+# │  参数：info: dict, now: float
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _reconnect_needs_attention(info: dict, now: float) -> bool:
     """True when a reconnect-queue entry has waited long enough for NEEDS_ATTENTION.
     ``queued_at`` is re-stamped on each (re)entry, so only *continuous* failure escalates."""
     if _RECONNECT_ATTENTION_AFTER_SECONDS <= 0:
+        # ⤷ 出口 return：返回 False
         return False  # escalation disabled
     queued_at = info.get("queued_at")
     if queued_at is None:
         info["queued_at"] = now
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 出口 return：返回 now - queued_at >= _RECONNECT_ATTENTION_AFTER_SECONDS
     return (now - queued_at) >= _RECONNECT_ATTENTION_AFTER_SECONDS
 
 
@@ -3179,8 +4238,14 @@ _AUTO_RESET_CONTEXT_NOTES = {
 }
 
 
+# ┌── 函数 def _write_runtime_status_quiet()
+# │  作用：Best-effort ``gateway_state.json`` write; status persistence must never abort the caller.
+# │  参数：**fields
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _write_runtime_status_quiet(**fields: Any) -> None:
     """Best-effort ``gateway_state.json`` write; status persistence must never abort the caller."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.status import write_runtime_status
         write_runtime_status(**fields)
@@ -3188,12 +4253,19 @@ def _write_runtime_status_quiet(**fields: Any) -> None:
         pass
 
 
+# ┌── 函数 def _command_origin_for_source()
+# │  作用：Delivery origin for a shared CLI/gateway command so its job replies to this chat/thread.
+# │  参数：source: Any
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _command_origin_for_source(source: Any) -> Optional[dict]:
     """Delivery origin for a shared CLI/gateway command so its job replies to this chat/thread."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         platform = getattr(source.platform, "value", None) or str(getattr(source, "platform", "") or "")
         chat_id = getattr(source, "chat_id", None)
         if platform and chat_id:
+            # ⤷ 出口 return：返回 {'platform': platform, 'chat_id': str(chat_id), 'chat_name':…
             return {
                 "platform": platform,
                 "chat_id": str(chat_id),
@@ -3201,13 +4273,20 @@ def _command_origin_for_source(source: Any) -> Optional[dict]:
                 "thread_id": getattr(source, "thread_id", None)}
     except Exception:
         pass
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _builtin_adapter_import()
+# │  作用：Lazy-import ``(adapter_cls, requirements_ok)`` from ``gateway.platforms.<module>``.
+# │  参数：module: str, adapter_name: str, requirement: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
     """Lazy-import ``(adapter_cls, requirements_ok)`` from ``gateway.platforms.<module>``."""
     import importlib
     mod = importlib.import_module(f"gateway.platforms.{module}")
+    # ⤷ 出口 return：返回 (getattr(mod, adapter_name), getattr(mod, requirement))
     return getattr(mod, adapter_name), getattr(mod, requirement)
 
 
@@ -3233,24 +4312,38 @@ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
                        "Yuanbao: websockets not installed. Run: pip install websockets")}
 
 
+# ┌── 函数 def _instantiate_builtin_adapter()
+# │  作用：Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown.
+# │  参数：platform: Platform, config: Any
+# │  返回：Optional[BasePlatformAdapter]
+# └──────────────────────────────────────────────────────────────
 def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[BasePlatformAdapter]:
     """Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown."""
     spec = _BUILTIN_ADAPTERS.get(platform)
     if spec is None:
+        # ⤷ 出口 return：返回 None
         return None
     module, adapter_name, requirement, warning = spec
     adapter_cls, requirements_ok = _builtin_adapter_import(module, adapter_name, requirement)
     if not (requirements_ok() if callable(requirements_ok) else requirements_ok):
         logger.warning(warning)
+        # ⤷ 出口 return：返回 None
         return None
     if platform == Platform.SIGNAL:
         from gateway.platforms.signal import validate_signal_config
         if not validate_signal_config(config):
             logger.warning("Signal: SIGNAL_HTTP_URL or SIGNAL_ACCOUNT not configured")
+            # ⤷ 出口 return：返回 None
             return None
+    # ⤷ 出口 return：返回 adapter_cls(config)
     return adapter_cls(config)
 
 
+# ┌── 类 class GatewayRunner（继承自：GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin, GatewayVoiceMixin, GatewayAdapterLifecycleMixin, GatewayTopicThreadsMixin, GatewayTurnMixin, GatewayShutdownMixin, GatewayBusySessionMixin, GatewayConfigLoadersMixin, GatewayStartupMixin, GatewaySessionWatchersMixin, GatewayNotificationsMixin, GatewayInboundMixin, GatewayGoalsMixin, GatewayAgentCacheMixin, GatewayProfileReconcileMixin）
+# │  说明：Main gateway controller: manages adapter lifecycles, routes messages to/from the agent.
+# │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
+# │  成员：共 47 个方法；对外可用 2 个；含魔术方法 __init__
+# └──────────────────────────────────────────────────────────────
 class GatewayRunner(
     GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin,
     GatewayVoiceMixin, GatewayAdapterLifecycleMixin, GatewayTopicThreadsMixin, GatewayTurnMixin,
@@ -3304,14 +4397,25 @@ class GatewayRunner(
     _pending_approvals = legacy_dict_property("_pending_approvals")
     _update_prompt_pending = legacy_dict_property("_update_prompt_pending")
 
+    # ┌── 函数 def _sessions_map()
+    # │  作用：Per-session state map; lazily created so bare ``object.__new__`` test runners work.
+    # │  参数：self
+    # │  返回：Dict[str, 'SessionState']
+    # └──────────────────────────────────────────────────────────────
     def _sessions_map(self) -> Dict[str, "SessionState"]:
         """Per-session state map; lazily created so bare ``object.__new__`` test runners work."""
         sessions = self.__dict__.get("_sessions")
         if sessions is None:
             sessions = {}
             self.__dict__["_sessions"] = sessions
+        # ⤷ 出口 return：返回 sessions
         return sessions
 
+    # ┌── 函数 def _session_state()
+    # │  作用：Get-or-create the :class:`SessionState` for ``session_key``.
+    # │  参数：self, session_key: str
+    # │  返回：'SessionState'
+    # └──────────────────────────────────────────────────────────────
     def _session_state(self, session_key: str) -> "SessionState":
         """Get-or-create the :class:`SessionState` for ``session_key``."""
         sessions = self._sessions_map()
@@ -3319,20 +4423,39 @@ class GatewayRunner(
         if state is None:
             state = SessionState()
             sessions[session_key] = state
+        # ⤷ 出口 return：返回 state
         return state
 
+    # ┌── 函数 def _peek_session_state()
+    # │  作用：Return the SessionState for ``session_key`` without creating one.
+    # │  参数：self, session_key: str
+    # │  返回：Optional['SessionState']
+    # └──────────────────────────────────────────────────────────────
     def _peek_session_state(self, session_key: str) -> Optional["SessionState"]:
         """Return the SessionState for ``session_key`` without creating one."""
         sessions = self.__dict__.get("_sessions")
+        # ⤷ 出口 return：返回 sessions.get(session_key) if sessions else None
         return sessions.get(session_key) if sessions else None
 
+    # ┌── 函数 def _is_session_running()
+    # │  作用：True when the session holds a running-turn slot (agent or sentinel).
+    # │  参数：self, session_key: str
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_session_running(self, session_key: str) -> bool:
         """True when the session holds a running-turn slot (agent or sentinel)."""
         state = self._peek_session_state(session_key)
+        # ⤷ 出口 return：返回 state is not None and state.turn.agent is not None
         return state is not None and state.turn.agent is not None
 
+    # ┌── 函数 def _running_agent_items()
+    # │  作用：(session_key, agent) pairs for sessions with a running turn (incl. pending sentinels).
+    # │  参数：self
+    # │  返回：List[tuple]
+    # └──────────────────────────────────────────────────────────────
     def _running_agent_items(self) -> List[tuple]:
         """(session_key, agent) pairs for sessions with a running turn (incl. pending sentinels)."""
+        # ⤷ 出口 return：返回 [(key, state.turn.agent) for key, state in self._sessions_ma…
         return [(key, state.turn.agent) for key, state in self._sessions_map().items()
                 if state.turn.agent is not None]
     # Loop-liveness / watchdog handles; class-level defaults so partially constructed test runners work.
@@ -3346,7 +4469,13 @@ class GatewayRunner(
     _platform_lock_takeover_on_start: bool = False
     _reconnect_watcher_task: Optional["asyncio.Task"] = None
 
+    # ┌── 函数 def __init__()
+    # │  作用：魔术方法 __init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self, config: Optional[GatewayConfig] = None
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def __init__(self, config: Optional[GatewayConfig] = None):
+        # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
         global _gateway_runner_ref
         # With multiplex_profiles on, load under the default profile secret scope so bot tokens in its
         # .env resolve as secondary profiles' do; explicit config= injection (tests) is left untouched.
@@ -3354,6 +4483,7 @@ class GatewayRunner(
         self.config = config if config is not None else load_gateway_config_for_runner()
         # Multiplexer flag flips agent.secret_scope.get_secret() to fail-closed on unscoped credential
         # reads, so a missed migration crashes loudly instead of leaking a cross-profile value.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from agent.secret_scope import set_multiplex_active
             set_multiplex_active(bool(getattr(self.config, "multiplex_profiles", False)))
@@ -3377,6 +4507,11 @@ class GatewayRunner(
         self._init_session_db()
         self._init_registries_and_clocks()
 
+    # ┌── 函数 def _init_runtime_settings()
+    # │  作用：Load ephemeral per-call config (prefill, reasoning, busy modes, timeouts, routing).
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_runtime_settings(self) -> None:
         """Load ephemeral per-call config (prefill, reasoning, busy modes, timeouts, routing)."""
         self._prefill_messages = self._load_prefill_messages()
@@ -3395,6 +4530,11 @@ class GatewayRunner(
         self._provider_routing = self._load_provider_routing()
         self._fallback_model = self._load_fallback_model()
 
+    # ┌── 函数 def _init_session_store()
+    # │  作用：Build the SessionStore (with process-registry reset guard), its async facade and the router.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_session_store(self) -> None:
         """Build the SessionStore (with process-registry reset guard), its async facade and the router."""
         from tools.process_registry import process_registry
@@ -3406,6 +4546,11 @@ class GatewayRunner(
         self._async_session_store = AsyncSessionStore(self.session_store)
         self.delivery_router = DeliveryRouter(self.config)
 
+    # ┌── 函数 def _init_lifecycle_state()
+    # │  作用：Initialise run/exit/restart flags, per-session state, and completion-delivery bookkeeping.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_lifecycle_state(self) -> None:
         """Initialise run/exit/restart flags, per-session state, and completion-delivery bookkeeping."""
         self._running = self._exit_cleanly = self._exit_with_failure = self._draining = False
@@ -3486,6 +4631,11 @@ class GatewayRunner(
         self._completion_notification_batch_window = 0.1
         self._completion_notification_batches_stopping = False
 
+    # ┌── 函数 def _init_runtime_caches()
+    # │  作用：Agent cache, profile identity, Teams runtime, failed-platform tracking, slash-confirm counter.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_runtime_caches(self) -> None:
         """Agent cache, profile identity, Teams runtime, failed-platform tracking, slash-confirm counter."""
         # AIAgent per session preserves prompt caching (fresh agent per message ~10x cost on Anthropic).
@@ -3507,6 +4657,11 @@ class GatewayRunner(
         import itertools
         self._slash_confirm_counter = itertools.count(1)
 
+    # ┌── 函数 def _init_startup_checks()
+    # │  作用：Ensure tirith is installed and warn when manual approvals have no automated assessor.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_startup_checks(self) -> None:
         """Ensure tirith is installed and warn when manual approvals have no automated assessor."""
         def _ensure_tirith() -> None:
@@ -3517,6 +4672,7 @@ class GatewayRunner(
 
         # Manual approvals with no automated assessor (tirith off AND no auxiliary.approval) fail closed
         # on unattended gateways — surface it so operators knowingly enable one.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import load_config as _load_full_config
             # Startup heads-up (#30882): a gateway in manual approval mode with no automated risk assessor
@@ -3539,6 +4695,11 @@ class GatewayRunner(
         except Exception:
             logger.debug("approvals.mode startup check skipped", exc_info=True)
 
+    # ┌── 函数 def _init_session_db()
+    # │  作用：Open the session DB for the active scope and run opportunistic state.db / checkpoint maintenance.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_session_db(self) -> None:
         """Open the session DB for the active scope and run opportunistic state.db / checkpoint maintenance."""
         # Session DB is a property caching one AsyncSessionDB per path (a handle bound here would pin the
@@ -3553,6 +4714,7 @@ class GatewayRunner(
         from gateway.session_db_recovery import RecoverableHandleCache
         self._session_db_handle_cache = RecoverableHandleCache(
             handles=self._session_db_handles, lock=self._session_db_handles_lock)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             self._open_session_db_for_active_scope(raise_on_error=True)
         except Exception as e:
@@ -3567,6 +4729,7 @@ class GatewayRunner(
         # flow but nothing is persisted, and the user has no indication until they try /resume and find
         # nothing (#88235).
         if self._session_db is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.config import load_config as _load_full_config
                 _sess_cfg = (_load_full_config().get("sessions") or {})
@@ -3587,6 +4750,7 @@ class GatewayRunner(
                 logger.debug("state.db auto-maintenance skipped: %s", exc)
 
         # Stale checkpoint repo cleanup; opt-in via checkpoints.auto_prune, idempotent via .last_prune.
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.config import load_config as _load_full_config
             _ckpt_cfg = (_load_full_config().get("checkpoints") or {})
@@ -3602,6 +4766,11 @@ class GatewayRunner(
         except Exception as exc:
             logger.debug("checkpoint auto-maintenance skipped: %s", exc)
 
+    # ┌── 函数 def _init_registries_and_clocks()
+    # │  作用：Pairing stores, hook registry, voice modes, background-task set, liveness and idle clocks.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_registries_and_clocks(self) -> None:
         """Pairing stores, hook registry, voice modes, background-task set, liveness and idle clocks."""
         # ``pairing_store``: global/default store (CLI, callers without profile context); ``pairing_stores``:
@@ -3632,6 +4801,11 @@ class GatewayRunner(
         self._scale_to_zero_cooldown_until: float = 0.0
         self._scale_to_zero_no_suspend_logged: bool = False
 
+    # ┌── 函数 def _open_session_db_for_active_scope()
+    # │  作用：AsyncSessionDB for the active profile scope, resolved per access (not in ``__init__``) since
+    # │  参数：self, raise_on_error: bool = False
+    # │  返回：Any
+    # └──────────────────────────────────────────────────────────────
     def _open_session_db_for_active_scope(self, raise_on_error: bool = False) -> Any:
         """AsyncSessionDB for the active profile scope, resolved per access (not in ``__init__``) since
         ``SessionDB()`` reads the context-local HERMES_HOME; one handle cached per path. Construction
@@ -3675,34 +4849,59 @@ class GatewayRunner(
                 wrapper = AsyncSessionDB(borrowed)
                 # close_all_session_db_handles() must not close what the store owns (its sweep runs first).
                 wrapper.__dict__["_hermes_borrowed_handle"] = True
+                # ⤷ 出口 return：返回 wrapper
                 return wrapper
             if store is not None:
                 # Store handle unavailable: opening our own would resurrect the duplicate borrowed away.
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise RuntimeError("SessionStore SQLite handle unavailable")
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
+                # ⤷ 出口 return：返回 AsyncSessionDB(acquire())
                 return AsyncSessionDB(acquire())
             except Exception as exc:
                 logger.warning("SQLite session store not available: %s", exc)
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
 
         def _recovered() -> None:
             self._session_db_init_error = None
             logger.info("SQLite session store recovered")
 
+        # ⤷ 出口 return：返回 cache.get(path, _open, raise_on_error=raise_on_error, on_rec…
         return cache.get(path, _open, raise_on_error=raise_on_error, on_recovered=_recovered)
 
+    # ┌── 函数 def _session_db()
+    # │  作用：The AsyncSessionDB for the active profile scope, or a pinned override (assigning
+    # │  参数：self
+    # │  返回：Any
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def _session_db(self) -> Any:
         """The AsyncSessionDB for the active profile scope, or a pinned override (assigning
         ``runner._session_db`` pins it for every later read — tests install fakes/None this way)."""
         if self._session_db_pinned is not _SESSION_DB_UNPINNED:
+            # ⤷ 出口 return：返回 self._session_db_pinned
             return self._session_db_pinned
+        # ⤷ 出口 return：返回 self._open_session_db_for_active_scope()
         return self._open_session_db_for_active_scope()
 
+    # ┌── 函数 def _session_db()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, value
+    # │  返回：None
+    # │  【语法】带 @setter 装饰器：调用本函数时，等价于 _session_db = setter(_session_db)，即先经过一层包装。
+    # └──────────────────────────────────────────────────────────────
     @_session_db.setter
     def _session_db(self, value) -> None:
         self._session_db_pinned = value
 
+    # ┌── 函数 def close_all_session_db_handles()
+    # │  作用：Close every per-profile AsyncSessionDB this runner opened.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def close_all_session_db_handles(self) -> None:
         """Close every per-profile AsyncSessionDB this runner opened.
 
@@ -3720,6 +4919,7 @@ class GatewayRunner(
             # Shared instances no-op on close() (the registry owns the lifecycle). Release the refcount
             # instead (#90837).
             from hermes_state_registry import release_or_close
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 release_or_close(inner)
             except Exception as exc:
@@ -3727,6 +4927,11 @@ class GatewayRunner(
 
         self._session_db_handle_cache.close_all(_close)
 
+    # ┌── 函数 def _wire_teams_pipeline_runtime()
+    # │  作用：Bind the Teams meeting pipeline runtime to Graph webhook ingress (no-op if adapter/plugin off).
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _wire_teams_pipeline_runtime(self) -> None:
         """Bind the Teams meeting pipeline runtime to Graph webhook ingress (no-op if adapter/plugin off)."""
         if Platform.MSGRAPH_WEBHOOK not in self.adapters:
@@ -3734,11 +4939,13 @@ class GatewayRunner(
         if not _teams_pipeline_plugin_enabled():
             logger.debug("Teams pipeline plugin is disabled; skipping runtime wiring")
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from plugins.teams_pipeline.runtime import bind_gateway_runtime
         except Exception as exc:
             logger.warning("Teams pipeline runtime import failed: %s", exc)
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             bound = bind_gateway_runtime(self)
         except Exception as exc:
@@ -3750,6 +4957,11 @@ class GatewayRunner(
             logger.warning(
                 "Teams pipeline runtime unavailable: %s", self._teams_pipeline_runtime_error)
 
+    # ┌── 函数 def _warn_if_docker_media_delivery_is_risky()
+    # │  作用：Warn when Docker-backed gateways lack an explicit export mount: MEDIA delivery runs in the
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _warn_if_docker_media_delivery_is_risky(self) -> None:
         """Warn when Docker-backed gateways lack an explicit export mount: MEDIA delivery runs in the
         gateway process, so model-emitted paths like `/output/report.txt` must be host-readable."""
@@ -3763,6 +4975,7 @@ class GatewayRunner(
         raw_volumes = os.getenv("TERMINAL_DOCKER_VOLUMES", "").strip()
         volumes: List[str] = []
         if raw_volumes:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 parsed = json.loads(raw_volumes)
                 if isinstance(parsed, list):
@@ -3787,12 +5000,19 @@ class GatewayRunner(
     exit_reason = property(lambda self: self._exit_reason)
     exit_code = property(lambda self: self._exit_code)
 
+    # ┌── 函数 def _session_key_for_source()
+    # │  作用：Resolve the current session key for a source, honoring gateway config when available.
+    # │  参数：self, source: SessionSource
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _session_key_for_source(self, source: SessionSource) -> str:
         """Resolve the current session key for a source, honoring gateway config when available."""
         if hasattr(self, "session_store") and self.session_store is not None:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 session_key = self.session_store._generate_session_key(source)
                 if isinstance(session_key, str) and session_key:
+                    # ⤷ 出口 return：返回 session_key
                     return session_key
             except Exception:
                 pass
@@ -3804,11 +5024,13 @@ class GatewayRunner(
             if source.profile:
                 _profile = source.profile
             else:
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     from hermes_cli.profiles import get_active_profile_name
                     _profile = get_active_profile_name() or "default"
                 except Exception:
                     _profile = None
+        # ⤷ 出口 return：返回 build_session_key(source, group_sessions_per_user=getattr(co…
         return build_session_key(
             source, group_sessions_per_user=getattr(config, "group_sessions_per_user", True),
             thread_sessions_per_user=getattr(config, "thread_sessions_per_user", False),
@@ -3818,6 +5040,11 @@ class GatewayRunner(
     _TELEGRAM_GENERAL_TOPIC_IDS = frozenset({"", "1"})
     _TELEGRAM_LOBBY_REMINDER_COOLDOWN_S = 30.0
 
+    # ┌── 函数 def _normalize_source_for_session_key()
+    # │  作用：Apply Telegram DM topic recovery to a source for session-key purposes. Always derive override
+    # │  参数：self, source: SessionSource
+    # │  返回：SessionSource
+    # └──────────────────────────────────────────────────────────────
     def _normalize_source_for_session_key(self, source: SessionSource) -> SessionSource:
         """Apply Telegram DM topic recovery to a source for session-key purposes. Always derive override
         storage keys from the result: ``_handle_message_with_agent`` rewrites ``thread_id`` before
@@ -3831,30 +5058,65 @@ class GatewayRunner(
         turn reads, and the override is silently dropped on Telegram forum topics and after compression
         session splits (#30479).
         """
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             recovered = self._recover_telegram_topic_thread_id(source)
         except Exception:
+            # ⤷ 出口 return：返回 source
             return source
+        # ⤷ 出口 return：返回 source if recovered is None else dataclasses.replace(source,…
         return source if recovered is None else dataclasses.replace(source, thread_id=recovered)
 
+    # ┌── 函数 def _resolve_session_key_or_none()
+    # │  作用：``session_key`` if given, else the key for ``source`` (None when it cannot be derived).
+    # │  参数：self, source, session_key: Optional[str]
+    # │  返回：Optional[str]
+    # └──────────────────────────────────────────────────────────────
     def _resolve_session_key_or_none(self, source, session_key: Optional[str]) -> Optional[str]:
         """``session_key`` if given, else the key for ``source`` (None when it cannot be derived)."""
         if session_key or source is None:
+            # ⤷ 出口 return：返回 session_key
             return session_key
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ 出口 return：返回 self._session_key_for_source(source)
             return self._session_key_for_source(source)
         except Exception:
+            # ⤷ 出口 return：返回 None
             return None
 
+    # ┌── 函数 def _running_agent_count()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：int
+    # └──────────────────────────────────────────────────────────────
     def _running_agent_count(self) -> int:
+        # ⤷ 出口 return：返回 len(self._running_agents)
         return len(self._running_agents)
 
+    # ┌── 函数 def _status_action_label()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _status_action_label(self) -> str:
+        # ⤷ 出口 return：返回 'restart' if self._restart_requested else 'shutdown'
         return "restart" if self._restart_requested else "shutdown"
 
+    # ┌── 函数 def _status_action_gerund()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _status_action_gerund(self) -> str:
+        # ⤷ 出口 return：返回 'restarting' if self._restart_requested else 'shutting down'
         return "restarting" if self._restart_requested else "shutting down"
 
+    # ┌── 函数 def _update_runtime_status()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, gateway_state: Optional[str] = None, exit_reason: Optional[str] = None
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _update_runtime_status(self, gateway_state: Optional[str] = None, exit_reason: Optional[str] = None) -> None:
         # ``active_work`` names each unit only while draining — that is when an observer (``hermes
         # update``) needs to know WHAT holds the gateway open; a per-turn write would be wasted I/O.
@@ -3864,19 +5126,36 @@ class GatewayRunner(
             restart_requested=self._restart_requested, active_agents=self._active_work_count(),
             active_work=active_work)
 
+    # ┌── 函数 def _persist_active_agents()
+    # │  作用：Persist the live in-flight agent count to ``gateway_state.json`` at every turn boundary.
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _persist_active_agents(self) -> None:
         """Persist the live in-flight agent count to ``gateway_state.json`` at every turn boundary.
         Passes ONLY ``active_agents`` so the read-merge-write keeps lifecycle state (gateway_state=None
         would clobber it). Best-effort: a failed write must never disrupt a turn."""
         _write_runtime_status_quiet(active_agents=self._active_work_count())
 
+    # ┌── 函数 def _running_agent_ids()
+    # │  作用：``id()`` of every agent mid-turn — identity-keyed so the lookup is O(1) and independent of
+    # │  参数：self
+    # │  返回：set
+    # └──────────────────────────────────────────────────────────────
     def _running_agent_ids(self) -> set:
         """``id()`` of every agent mid-turn — identity-keyed so the lookup is O(1) and independent of
         ``AIAgent.__eq__`` (MagicMock overrides it in tests)."""
+        # ⤷ 出口 return：返回 {id(a) for _, a in self._running_agent_items() if a is not N…
         return {id(a) for _, a in self._running_agent_items()
                 if a is not None and a is not _AGENT_PENDING_SENTINEL}
 
+    # ┌── 函数 def _snapshot_running_agents()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self
+    # │  返回：Dict[str, Any]
+    # └──────────────────────────────────────────────────────────────
     def _snapshot_running_agents(self) -> Dict[str, Any]:
+        # ⤷ 出口 return：返回 {k: a for k, a in self._running_agent_items() if a is not _A…
         return {k: a for k, a in self._running_agent_items() if a is not _AGENT_PENDING_SENTINEL}
 
     # ---- Tunables consumed by the run_* mixins (kept on the class: tests and plugins patch them) ----
@@ -3885,6 +5164,9 @@ class GatewayRunner(
     # a stuck agent + rapid-fire user must not grow the overflow list unboundedly.
     _BUSY_QUEUE_MAX_PENDING = 32
 
+    # ┌── 类 class _BusySteerOutcome
+    # │  成员：共 0 个方法；全部是下划线开头的内部方法
+    # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
     class _BusySteerOutcome:
         effective_mode: str
@@ -3924,14 +5206,27 @@ class GatewayRunner(
         "codex-runtime": "Agent is running — wait or /stop first, then change runtime.",
         "moa": "Agent is running — wait or /stop first, then run /moa."}
 
+    # ┌── 函数 def _active_profile_name()
+    # │  作用：Return the profile name this gateway represents.
+    # │  参数：self
+    # │  返回：str
+    # └──────────────────────────────────────────────────────────────
     def _active_profile_name(self) -> str:
         """Return the profile name this gateway represents."""
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from hermes_cli.profiles import get_active_profile_name
+            # ⤷ 出口 return：返回 get_active_profile_name() or 'default'
             return get_active_profile_name() or "default"
         except Exception:
+            # ⤷ 出口 return：返回 'default'
             return "default"
 
+    # ┌── 函数 def _is_user_authorized_for_source()
+    # │  作用：Authorize under the live transport's profile, not the routed runtime (which need not copy the
+    # │  参数：self, source: SessionSource, allow_adapter_delegation: bool = ...
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _is_user_authorized_for_source(
         self, source: SessionSource, *, allow_adapter_delegation: bool = True) -> bool:
         """Authorize under the live transport's profile, not the routed runtime (which need not copy the
@@ -3939,23 +5234,44 @@ class GatewayRunner(
         def _check() -> bool:
             # Keep the one-argument seam used by plugins/tests; pass the keyword only when disabling.
             if allow_adapter_delegation:
+                # ⤷ 出口 return：返回 self._is_user_authorized(source)
                 return self._is_user_authorized(source)
+            # ⤷ 出口 return：返回 self._is_user_authorized(source, allow_adapter_delegation=Fa…
             return self._is_user_authorized(source, allow_adapter_delegation=False)
 
+        # ⤷ 出口 return：返回 self._under_authorization_profile(source, _check)
         return self._under_authorization_profile(source, _check)
 
+    # ┌── 函数 def _admit_bot_message_for_source()
+    # │  作用：Count a bot message under the profile that authorized it, so the guard's peek, count and
+    # │  参数：self, source: SessionSource
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _admit_bot_message_for_source(self, source: SessionSource) -> bool:
         """Count a bot message under the profile that authorized it, so the guard's peek, count and
         config all read the transport profile's ``gateway.bot_loop_guard``."""
+        # ⤷ 出口 return：返回 self._under_authorization_profile(source, lambda: self._admi…
         return self._under_authorization_profile(source, lambda: self._admit_bot_message(source))
 
+    # ┌── 函数 def _under_authorization_profile()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, source: SessionSource, check
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _under_authorization_profile(self, source: SessionSource, check):
         authorization_home = self._authorization_home_for_source(source)
         if authorization_home is None:
+            # ⤷ 出口 return：返回 check()
             return check()
         with _profile_runtime_scope(Path(authorization_home)):
+            # ⤷ 出口 return：返回 check()
             return check()
 
+    # ┌── 函数 def _cache_session_source()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, session_key: str, source
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _cache_session_source(self, session_key: str, source) -> None:
         if not session_key or source is None:
             return
@@ -3963,11 +5279,13 @@ class GatewayRunner(
         if cached_sources is None:
             cached_sources = OrderedDict()
             self._session_sources = cached_sources
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             cached_sources[session_key] = dataclasses.replace(source)
         except Exception:
             logger.debug("Failed to cache live session source for %s", session_key, exc_info=True)
             return
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             cached_sources.move_to_end(session_key)
             max_size = getattr(self, "_session_sources_max", 512)
@@ -3976,6 +5294,12 @@ class GatewayRunner(
         except Exception:
             pass
 
+    # ┌── 函数 def async_session_store()
+    # │  作用：Return the single async facade for this runner's SessionStore.
+    # │  参数：self
+    # │  返回：AsyncSessionStore
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def async_session_store(self) -> AsyncSessionStore:
         """Return the single async facade for this runner's SessionStore."""
@@ -3983,18 +5307,30 @@ class GatewayRunner(
         if facade is None or facade._store is not self.session_store:
             facade = AsyncSessionStore(self.session_store)
             self._async_session_store = facade
+        # ⤷ 出口 return：返回 facade
         return facade
 
+    # ┌── 函数 def _get_cached_session_source()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, session_key: str
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _get_cached_session_source(self, session_key: str):
         cached_sources = getattr(self, "_session_sources", None) if session_key else None
         if not cached_sources:
+            # ⤷ 出口 return：返回 None
             return None
         source = cached_sources.get(session_key)
         if source is not None:
             with suppress(Exception):
                 cached_sources.move_to_end(session_key)
+        # ⤷ 出口 return：返回 source
         return source
 
+    # ┌── 类 class _HygieneSettings
+    # │  说明：Resolved session-hygiene configuration for one inbound turn.
+    # │  成员：共 0 个方法；全部是下划线开头的内部方法
+    # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
     class _HygieneSettings:
         """Resolved session-hygiene configuration for one inbound turn."""
@@ -4012,6 +5348,10 @@ class GatewayRunner(
         api_key: Optional[str]
         data: Any
 
+    # ┌── 类 class _HygieneAttempt
+    # │  说明：One detached hygiene compression attempt. ``cleanup_deferred`` is shared mutable state: wait
+    # │  成员：共 0 个方法；全部是下划线开头的内部方法
+    # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
     class _HygieneAttempt:
         """One detached hygiene compression attempt. ``cleanup_deferred`` is shared mutable state: wait
@@ -4024,6 +5364,11 @@ class GatewayRunner(
         cleanup_deferred: bool = False
         history: Any = None
 
+    # ┌── 函数 def _thread_metadata_for_source()
+    # │  作用：Build the metadata dict platforms need for thread-aware replies.
+    # │  参数：self, source, reply_to_message_id: Optional[str] = None
+    # │  返回：Optional[Dict[str, Any]]
+    # └──────────────────────────────────────────────────────────────
     def _thread_metadata_for_source(
         self, source, reply_to_message_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Build the metadata dict platforms need for thread-aware replies."""
@@ -4060,14 +5405,21 @@ class GatewayRunner(
         if profile and metadata is not None:
             metadata = dict(metadata)
             metadata["hermes_profile"] = profile
+        # ⤷ 出口 return：返回 metadata
         return metadata
 
+    # ┌── 函数 def _thread_metadata_for_target()
+    # │  作用：Build thread metadata for synthetic sends that only have routing state.
+    # │  参数：self, platform: Optional[Platform], chat_id: Optional[str], thread_id: Optional[str], chat_type: Optional[str] = ..., reply_to_message_id: Optional[str] = ..., adapter: Optional[Any] = ...
+    # │  返回：Optional[Dict[str, Any]]
+    # └──────────────────────────────────────────────────────────────
     def _thread_metadata_for_target(
         self, platform: Optional[Platform], chat_id: Optional[str], thread_id: Optional[str], *,
         chat_type: Optional[str] = None, reply_to_message_id: Optional[str] = None,
         adapter: Optional[Any] = None) -> Optional[Dict[str, Any]]:
         """Build thread metadata for synthetic sends that only have routing state."""
         if thread_id is None:
+            # ⤷ 出口 return：返回 None
             return None
         metadata: Dict[str, Any] = {"thread_id": thread_id}
         if self._is_telegram_dm_topic_target(
@@ -4082,28 +5434,40 @@ class GatewayRunner(
         if platform == Platform.SLACK and reply_to_message_id is not None:
             # Slack's reply_in_thread=false path uses message_id to tell real threads from synthetic keys.
             metadata["message_id"] = str(reply_to_message_id)
+        # ⤷ 出口 return：返回 metadata
         return metadata
 
+    # ┌── 函数 def _is_telegram_dm_topic_target()
+    # │  作用：Return True when a target is a Telegram private DM topic lane.
+    # │  参数：platform: Optional[Platform], chat_id: Optional[str], thread_id: Optional[str], chat_type: Optional[str] = ..., adapter: Optional[Any] = ...
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _is_telegram_dm_topic_target(
         platform: Optional[Platform], chat_id: Optional[str], thread_id: Optional[str], *,
         chat_type: Optional[str] = None, adapter: Optional[Any] = None) -> bool:
         """Return True when a target is a Telegram private DM topic lane."""
         if platform != Platform.TELEGRAM or thread_id is None:
+            # ⤷ 出口 return：返回 False
             return False
         if chat_type == "dm":
+            # ⤷ 出口 return：返回 True
             return True
         # Resolve the lookup on the CLASS, not the instance: getattr() on a MagicMock auto-creates callable
         # children, so an instance lookup would report a DM topic for every test double. Only a dict counts.
         if adapter is not None and chat_id:
             get_dm_topic_info = getattr(type(adapter), "_get_dm_topic_info", None)
             if callable(get_dm_topic_info):
+                # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
                 try:
                     topic_info = get_dm_topic_info(adapter, str(chat_id), str(thread_id))
                 except Exception:
                     logger.debug("Failed to inspect Telegram DM topic metadata", exc_info=True)
                 else:
+                    # ⤷ 出口 return：返回 isinstance(topic_info, dict)
                     return isinstance(topic_info, dict)
+        # ⤷ 出口 return：返回 False
         return False
 
     _reply_anchor_for_event = staticmethod(_reply_anchor_for_event)
@@ -4116,6 +5480,11 @@ class GatewayRunner(
         Platform.FEISHU, Platform.WECOM, Platform.WECOM_CALLBACK, Platform.WEIXIN, Platform.BLUEBUBBLES, Platform.QQBOT, Platform.LOCAL,
     })
 
+    # ┌── 函数 def _set_session_env()
+    # │  作用：Set session context variables (contextvars, not os.environ, so concurrent messages can't
+    # │  参数：self, context: SessionContext
+    # │  返回：list
+    # └──────────────────────────────────────────────────────────────
     def _set_session_env(self, context: SessionContext) -> list:
         """Set session context variables (contextvars, not os.environ, so concurrent messages can't
         overwrite each other). Returns reset tokens for ``_clear_session_env`` in a ``finally``."""
@@ -4124,6 +5493,7 @@ class GatewayRunner(
         # True keeps CLI/unknown paths working; stateless adapters (api_server) declare False.
         _adapter = (getattr(self, "adapters", None) or {}).get(context.source.platform)
         _async_delivery = getattr(_adapter, "supports_async_delivery", True)
+        # ⤷ 出口 return：返回 set_session_vars(platform=context.source.platform.value, cha…
         return set_session_vars(
             platform=context.source.platform.value,
             chat_id=context.source.chat_id,
@@ -4141,17 +5511,35 @@ class GatewayRunner(
             async_delivery=_async_delivery,
             cron_session="")
 
+    # ┌── 函数 def _clear_session_env()
+    # │  作用：Restore session context variables to their pre-handler values.
+    # │  参数：self, tokens: list
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _clear_session_env(self, tokens: list) -> None:
         """Restore session context variables to their pre-handler values."""
         from gateway.session_context import clear_session_vars
         clear_session_vars(tokens)
 
+    # ┌── 异步函数（协程） def _run_in_executor_with_context()
+    # │  作用：Run blocking work in the thread pool while preserving session contextvars.
+    # │  参数：self, func, *args
+    # │  返回：（未标注类型）
+    # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+    # └──────────────────────────────────────────────────────────────
     async def _run_in_executor_with_context(self, func, *args):
         """Run blocking work in the thread pool while preserving session contextvars."""
         loop = asyncio.get_running_loop()
         ctx = copy_context()
+        # ⤷ 出口 return：返回 await loop.run_in_executor(self._get_executor(), ctx.run, fu…
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         return await loop.run_in_executor(self._get_executor(), ctx.run, func, *args)
 
+    # ┌── 函数 def _get_executor()
+    # │  作用：Return the gateway-owned executor for blocking agent work.
+    # │  参数：self
+    # │  返回：concurrent.futures.ThreadPoolExecutor
+    # └──────────────────────────────────────────────────────────────
     def _get_executor(self) -> concurrent.futures.ThreadPoolExecutor:
         """Return the gateway-owned executor for blocking agent work."""
         lock = getattr(self, "_executor_lock", None)
@@ -4160,14 +5548,21 @@ class GatewayRunner(
             self._executor_lock = lock
         with lock:
             if getattr(self, "_executor_closing", False):
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise RuntimeError("Gateway is shutting down; executor unavailable")
             executor = getattr(self, "_executor", None)
             if executor is None or getattr(executor, "_shutdown", False):
                 executor = concurrent.futures.ThreadPoolExecutor(
                     max_workers=10, thread_name_prefix="hermes-gateway")
                 self._executor = executor
+            # ⤷ 出口 return：返回 executor
             return executor
 
+    # ┌── 函数 def _shutdown_executor()
+    # │  作用：Stop the gateway-owned executor; returns the number of worker threads still running.
+    # │  参数：self, drain_timeout: float = 0.0
+    # │  返回：int
+    # └──────────────────────────────────────────────────────────────
     def _shutdown_executor(self, drain_timeout: float = 0.0) -> int:
         """Stop the gateway-owned executor; returns the number of worker threads still running.
         ``drain_timeout=0`` is fire-and-forget; shutdown passes a bounded budget so blocking DB work
@@ -4175,13 +5570,16 @@ class GatewayRunner(
         a ``run_in_executor`` awaitable does not stop its thread, so running workers are joined."""
         lock = getattr(self, "_executor_lock", None)
         if lock is None:
+            # ⤷ 出口 return：返回 0
             return 0
         with lock:
             self._executor_closing = True
             executor = getattr(self, "_executor", None)
             self._executor = None
         if executor is None:
+            # ⤷ 出口 return：返回 0
             return 0
+        # ⤷ 关键分支 try/except：捕获 TypeError，出错走兜底而不是崩溃。
         try:
             executor.shutdown(wait=False, cancel_futures=True)
         except TypeError:
@@ -4195,6 +5593,7 @@ class GatewayRunner(
             if remaining <= 0:
                 break
             worker.join(remaining)
+        # ⤷ 出口 return：返回 sum((1 for worker in workers if worker.is_alive()))
         return sum(1 for worker in workers if worker.is_alive())
 
     # (section, key) config values baked into the agent at construction: a change MUST invalidate the
@@ -4218,6 +5617,12 @@ class GatewayRunner(
         ("memory", "provider"), ("checkpoints", "enabled"), ("checkpoints", "max_snapshots"),
         ("checkpoints", "max_total_size_mb"), ("checkpoints", "max_file_size_mb"))
 
+    # ┌── 函数 def _init_cached_agent_for_turn()
+    # │  作用：Reset per-turn state on a cached agent before a new turn starts.
+    # │  参数：agent: Any, interrupt_depth: int
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _init_cached_agent_for_turn(agent: Any, interrupt_depth: int) -> None:
         """Reset per-turn state on a cached agent before a new turn starts.
@@ -4241,6 +5646,11 @@ class GatewayRunner(
                 agent._last_flushed_db_idx = 0
         agent._api_call_count = 0
 
+    # ┌── 函数 def _profile_name_for_source()
+    # │  作用：Resolve the profile name for an inbound source via configured routes (most specific wins).
+    # │  参数：self, source: SessionSource, adapter_profile: Optional[str] = None
+    # │  返回：Optional[str]
+    # └──────────────────────────────────────────────────────────────
     def _profile_name_for_source(
         self, source: SessionSource, adapter_profile: Optional[str] = None,
     ) -> Optional[str]:
@@ -4252,9 +5662,11 @@ class GatewayRunner(
         ``bot_profile`` apply (#104933)."""
         config = getattr(self, "config", None)
         if not getattr(config, "multiplex_profiles", False):
+            # ⤷ 出口 return：返回 None
             return None
         routes = getattr(config, "profile_routes", None)
         if not routes:
+            # ⤷ 出口 return：返回 None
             return None
         if adapter_profile is None:
             # Sources built outside ``build_source`` may still carry the receiving adapter as provenance.
@@ -4262,6 +5674,7 @@ class GatewayRunner(
             if isinstance(owner, tuple):
                 adapter_profile = owner[1]
         from gateway.profile_routing import ProfileRouteRejected, match_profile_route
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             matched = match_profile_route(
                 routes, platform=source.platform.value, guild_id=getattr(source, "guild_id", None),
@@ -4273,6 +5686,7 @@ class GatewayRunner(
                 source.platform, source.chat_id, exc_info=True)
             return None
         if matched:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 served = {name for name, _home in _multiplex_profile_homes(config)}
             except Exception as exc:
@@ -4285,13 +5699,20 @@ class GatewayRunner(
                     "Rejecting profile route %r: target profile %r is not served",
                     matched.name, matched.profile)
                 raise ProfileRouteRejected(matched.name)
+            # ⤷ 出口 return：返回 matched.profile
             return matched.profile
         logger.debug(
             "No profile route matched: platform=%s chat_id=%s thread_id=%s parent_chat_id=%s",
             source.platform.value, source.chat_id,
             getattr(source, "thread_id", None), getattr(source, "parent_chat_id", None))
+        # ⤷ 出口 return：返回 None
         return None
 
+    # ┌── 函数 def _resolve_profile_home_for_source()
+    # │  作用：Resolve which profile's HERMES_HOME serves this source: ``source.profile``, then
+    # │  参数：self, source: SessionSource
+    # │  返回：'Path'
+    # └──────────────────────────────────────────────────────────────
     def _resolve_profile_home_for_source(self, source: SessionSource) -> "Path":
         """Resolve which profile's HERMES_HOME serves this source: ``source.profile``, then
         ``_profile_name_for_source`` (sources bypassing ``build_source``), then the active profile."""
@@ -4299,6 +5720,7 @@ class GatewayRunner(
         from hermes_cli.profiles import get_active_profile_name, get_profile_dir, profile_exists
         from hermes_constants import get_hermes_home
         explicit_profile = None  # explicitly requested (source or routing) vs. default fallback
+        # ⤷ 关键分支 try/except：捕获 ProfileRouteRejected、Exception，出错走兜底而不是崩溃。
         try:
             name = (source.profile or "").strip() or self._profile_name_for_source(source)
             explicit_profile = name or None
@@ -4311,9 +5733,12 @@ class GatewayRunner(
                     "falling back to global HERMES_HOME",
                     explicit_profile, source.platform.value, source.chat_id,
                     getattr(source, "guild_id", None))
+                # ⤷ 出口 return：返回 get_hermes_home()
                 return get_hermes_home()
+            # ⤷ 出口 return：返回 profile_dir
             return profile_dir
         except ProfileRouteRejected:
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         except Exception:
             logger.warning(
@@ -4321,8 +5746,13 @@ class GatewayRunner(
                 "falling back to global HERMES_HOME: %s",
                 source.platform.value, source.chat_id, getattr(source, "guild_id", None),
                 explicit_profile or "(no profile)", exc_info=True)
+            # ⤷ 出口 return：返回 get_hermes_home()
             return get_hermes_home()
 
+    # ┌── 类 class _RunAgentDisplay
+    # │  说明：Per-turn display / progress settings resolved by ``_run_agent_display_settings``.
+    # │  成员：共 0 个方法；全部是下划线开头的内部方法
+    # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
     class _RunAgentDisplay:
         """Per-turn display / progress settings resolved by ``_run_agent_display_settings``."""
@@ -4345,6 +5775,10 @@ class GatewayRunner(
         needs_progress_queue: Any = None
         _generic_status_phrase: Any = None
 
+    # ┌── 类 class _RunAgentWorker
+    # │  说明：Executor future + inactivity-watchdog handles for one ``_run_agent_inner`` turn.
+    # │  成员：共 0 个方法；全部是下划线开头的内部方法
+    # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
     class _RunAgentWorker:
         """Executor future + inactivity-watchdog handles for one ``_run_agent_inner`` turn."""
@@ -4359,6 +5793,11 @@ class GatewayRunner(
         is_current: Any = None
 
 
+# ┌── 函数 def _run_planned_stop_watcher()
+# │  作用：Poll for the planned-stop marker and trigger graceful shutdown (Windows lacks
+# │  参数：stop_event: threading.Event, runner, loop: asyncio.AbstractEventLoop, shutdown_handler, poll_interval: float = ...
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _run_planned_stop_watcher(
     stop_event: threading.Event, runner, loop: asyncio.AbstractEventLoop, shutdown_handler, *,
     poll_interval: float = 0.5) -> None:
@@ -4376,6 +5815,7 @@ def _run_planned_stop_watcher(
         _get_planned_stop_marker_path, planned_stop_marker_targets_self)
     marker_path = _get_planned_stop_marker_path()
     while not stop_event.is_set():
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             if (
                 marker_path.exists()
@@ -4404,15 +5844,26 @@ def _run_planned_stop_watcher(
         stop_event.wait(poll_interval)
 
 
+# ┌── 函数 def _housekeeping_chore()
+# │  作用：Run one housekeeping chore; failures log at debug (a persistent failure such as a broken
+# │  参数：label: str, fn, *args, **kwargs
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_chore(label: str, fn, *args, **kwargs) -> None:
     """Run one housekeeping chore; failures log at debug (a persistent failure such as a broken
     import after a partial update would otherwise warn every tick forever) and never stop the loop."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         fn(*args, **kwargs)
     except Exception as exc:
         logger.debug("%s error: %s", label, exc)
 
 
+# ┌── 函数 def _housekeeping_channel_directory()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：adapters, loop
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_channel_directory(adapters, loop) -> None:
     from gateway.channel_directory import build_channel_directory
     if loop is not None:
@@ -4425,6 +5876,11 @@ def _housekeeping_channel_directory(adapters, loop) -> None:
             fut.result(timeout=30)
 
 
+# ┌── 函数 def _housekeeping_media_caches()
+# │  作用：Every platform media cache prunes on the same hourly cadence (24h max age).
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_media_caches() -> None:
     """Every platform media cache prunes on the same hourly cadence (24h max age)."""
     from gateway.platforms.base import (
@@ -4448,6 +5904,11 @@ def _housekeeping_media_caches() -> None:
         _housekeeping_chore(f"{cache_name} cache cleanup", _one)
 
 
+# ┌── 函数 def _housekeeping_paste_sweep()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_paste_sweep() -> None:
     from hermes_cli.debug import _sweep_expired_pastes
     deleted, remaining = _sweep_expired_pastes()
@@ -4455,6 +5916,11 @@ def _housekeeping_paste_sweep() -> None:
         logger.info("Paste sweep: deleted %d expired paste(s), %d pending", deleted, remaining)
 
 
+# ┌── 函数 def _housekeeping_misfire_catch_up()
+# │  作用：External cron providers only: fire jobs whose time passed with no external fire delivered (dead
+# │  参数：cron_provider, adapters, loop
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_misfire_catch_up(cron_provider, adapters, loop) -> None:
     """External cron providers only: fire jobs whose time passed with no external fire delivered (dead
     loopback hop). No-op for the built-in ticker; enforces misfire_grace_minutes; CAS claim de-dupes."""
@@ -4464,24 +5930,44 @@ def _housekeeping_misfire_catch_up(cron_provider, adapters, loop) -> None:
         logger.info("Misfire catch-up: fired %d overdue job(s)", caught_up)
 
 
+# ┌── 函数 def _housekeeping_curator()
+# │  作用：maybe_run_curator() is gated by config.interval_hours (7 days default); this is the poll.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_curator() -> None:
     """maybe_run_curator() is gated by config.interval_hours (7 days default); this is the poll."""
     from agent.curator import maybe_run_curator
     maybe_run_curator(idle_for_seconds=float("inf"), on_summary=lambda msg: logger.info("curator: %s", msg))
 
 
+# ┌── 函数 def _housekeeping_skill_sync()
+# │  作用：Inert unless the access gate is open and a sync base URL is configured.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_skill_sync() -> None:
     """Inert unless the access gate is open and a sync base URL is configured."""
     from tools.skills_sync_client import maybe_pull_skills
     maybe_pull_skills()
 
 
+# ┌── 函数 def _housekeeping_org_skill_sync()
+# │  作用：Gated on real org membership (the token must carry an org role): solo accounts never reach the network.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_org_skill_sync() -> None:
     """Gated on real org membership (the token must carry an org role): solo accounts never reach the network."""
     from tools.skills_sync_client_org import maybe_pull_org_skills
     maybe_pull_org_skills()
 
 
+# ┌── 函数 def _housekeeping_auto_archive()
+# │  作用：Stale-session auto-archive on a live timer (the startup hook fires once); maybe_auto_archive()
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_auto_archive() -> None:
     """Stale-session auto-archive on a live timer (the startup hook fires once); maybe_auto_archive()
     is gated by sessions.min_interval_hours. Opens its own SessionDB — SQLite connections are thread-bound."""
@@ -4490,6 +5976,7 @@ def _housekeeping_auto_archive() -> None:
     _sess_cfg = (_load_full_config().get("sessions") or {})
     if _sess_cfg.get("auto_archive", False):
         _adb = acquire()
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             _adb.maybe_auto_archive(
                 idle_days=float(_sess_cfg.get("auto_archive_days", 3)),
@@ -4498,6 +5985,11 @@ def _housekeeping_auto_archive() -> None:
             release_or_close(_adb)
 
 
+# ┌── 函数 def _housekeeping_deferred_fts_retry()
+# │  作用：A SessionDB opened while another process held the rebuild lock fails closed onto the LIKE fallback
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_deferred_fts_retry() -> None:
     """A SessionDB opened while another process held the rebuild lock fails closed onto the LIKE fallback
     and the gateway stays up for days. Non-blocking, rate-limited inside SessionDB; no-op when not stale."""
@@ -4514,12 +6006,22 @@ def _housekeeping_deferred_fts_retry() -> None:
                     getattr(_sdb, "db_path", "state.db"))
 
 
+# ┌── 函数 def _housekeeping_memory_trim()
+# │  作用：Messaging-gateway counterpart to the TUI idle reaper; config-gated and rate-limited inside.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _housekeeping_memory_trim() -> None:
     """Messaging-gateway counterpart to the TUI idle reaper; config-gated and rate-limited inside."""
     from hermes_cli.mem_trim import trim_memory
     trim_memory(reason="messaging gateway housekeeping")
 
 
+# ┌── 函数 def _drain_restart_safe_cron_deliveries()
+# │  作用：Drain each profile's worker queue through its matching live adapters. A credential-less satellite
+# │  参数：adapters, loop, runner = None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _drain_restart_safe_cron_deliveries(adapters, loop, runner=None) -> None:
     """Drain each profile's worker queue through its matching live adapters. A credential-less satellite
     profile (empty adapter map) drains through the primary's adapters routed by its own profile routes."""
@@ -4545,6 +6047,11 @@ def _drain_restart_safe_cron_deliveries(adapters, loop, runner=None) -> None:
             cron_scheduler.drain_delivery_queue(profile_adapters, loop)
 
 
+# ┌── 函数 def _start_gateway_housekeeping()
+# │  作用：Background thread for gateway-only periodic chores (NOT cron). Separate from the cron trigger
+# │  参数：stop_event: threading.Event, adapters = None, loop = None, interval: int = 60, cron_provider = None, runner = None, cron_thread = None
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _start_gateway_housekeeping(
     stop_event: threading.Event, adapters=None, loop=None, interval: int = 60, cron_provider=None, runner=None,
     cron_thread=None,
@@ -4589,6 +6096,11 @@ def _start_gateway_housekeeping(
     logger.info("Gateway housekeeping stopped")
 
 
+# ┌── 函数 def _start_cron_ticker()
+# │  作用：DEPRECATED shim — runs ONLY the built-in in-process cron tick loop; the trigger now lives behind
+# │  参数：stop_event: threading.Event, adapters = None, loop = None, interval: int = 60
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, interval: int = 60):
     """DEPRECATED shim — runs ONLY the built-in in-process cron tick loop; the trigger now lives behind
     the ``CronScheduler`` provider and housekeeping in ``_start_gateway_housekeeping``."""
@@ -4596,8 +6108,14 @@ def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, in
     InProcessCronScheduler().start(stop_event, adapters=adapters, loop=loop, interval=interval)
 
 
+# ┌── 函数 def _stop_cron_provider()
+# │  作用：Stop a cron provider without letting it choose the gateway exit code.
+# │  参数：provider
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _stop_cron_provider(provider) -> None:
     """Stop a cron provider without letting it choose the gateway exit code."""
+    # ⤷ 关键分支 try/except：捕获 SystemExit、Exception，出错走兜底而不是崩溃。
     try:
         provider.stop()
     except SystemExit as exc:
@@ -4614,6 +6132,12 @@ _CRON_SHUTDOWN_DRAIN_TIMEOUT = 65.0
 _HOUSEKEEPING_SHUTDOWN_DRAIN_TIMEOUT = 35.0
 
 
+# ┌── 异步函数（协程） def _await_thread_exit()
+# │  作用：Wait for a daemon thread to exit WITHOUT blocking the event loop; True if it exited in time.
+# │  参数：thread: Optional[threading.Thread], timeout: float, poll: float = 0.1
+# │  返回：bool
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _await_thread_exit(
     thread: Optional[threading.Thread], timeout: float, poll: float = 0.1) -> bool:
     """Wait for a daemon thread to exit WITHOUT blocking the event loop; True if it exited in time.
@@ -4623,13 +6147,22 @@ async def _await_thread_exit(
     See #58818.
     """
     if thread is None:
+        # ⤷ 出口 return：返回 True
         return True
     deadline = asyncio.get_running_loop().time() + max(0.0, timeout)
     while thread.is_alive() and asyncio.get_running_loop().time() < deadline:
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await asyncio.sleep(poll)
+    # ⤷ 出口 return：返回 not thread.is_alive()
     return not thread.is_alive()
 
 
+# ┌── 异步函数（协程） def _shutdown_mcp_servers_nonblocking()
+# │  作用：Close MCP servers off-loop with a bounded wait; True when done within ``timeout``.
+# │  参数：timeout: float = 5.0
+# │  返回：bool
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _shutdown_mcp_servers_nonblocking(timeout: float = 5.0) -> bool:
     """Close MCP servers off-loop with a bounded wait; True when done within ``timeout``.
     ``shutdown_mcp_servers()`` can block ~15s; on the loop thread short-grace supervisors (s6 3s)
@@ -4639,6 +6172,7 @@ async def _shutdown_mcp_servers_nonblocking(timeout: float = 5.0) -> bool:
     See #82874.
     """
     def _do() -> None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             from tools.mcp_tool_lifecycle import shutdown_mcp_servers
             shutdown_mcp_servers()
@@ -4647,33 +6181,52 @@ async def _shutdown_mcp_servers_nonblocking(timeout: float = 5.0) -> bool:
 
     thread = threading.Thread(target=_do, name="mcp-shutdown", daemon=True)
     thread.start()
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     done = await _await_thread_exit(thread, timeout=timeout)
     if not done:
         logger.warning(
             "MCP shutdown did not finish within %.1fs; continuing gateway "
             "teardown (background thread will be reaped at process exit)", timeout)
+    # ⤷ 出口 return：返回 done
     return done
 
 
+# ┌── 函数 def _shutdown_gateway_health_export()
+# │  作用：Idempotently drain and detach Gateway Health OTLP export.
+# │  参数：runner: Any
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _shutdown_gateway_health_export(runner: Any) -> None:
     """Idempotently drain and detach Gateway Health OTLP export."""
     runtime = getattr(runner, "_gateway_health_export_runtime", None)
     if runtime is None:
         return
     runner._gateway_health_export_runtime = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         runtime.shutdown()
     except Exception:
         logger.debug("gateway health OTLP export shutdown failed", exc_info=True)
 
 
+# ┌── 函数 def _gateway_stderr_formatter()
+# │  作用：Return the redacting formatter used by the gateway stderr stream.
+# │  参数：无
+# │  返回：logging.Formatter
+# └──────────────────────────────────────────────────────────────
 def _gateway_stderr_formatter() -> logging.Formatter:
     """Return the redacting formatter used by the gateway stderr stream."""
     from agent.redact import RedactingFormatter
+    # ⤷ 出口 return：返回 RedactingFormatter('%(asctime)s %(levelname)s %(name)s: %(me…
     return RedactingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 # ownership guard inserted below (PR #93084)
+# ┌── 函数 def _replace_target_belongs_to_other_profile()
+# │  作用：Return True when ``--replace`` must refuse to signal ``existing_pid``.
+# │  参数：existing_pid: int
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
     """Return True when ``--replace`` must refuse to signal ``existing_pid``.
     A poisoned/stale PID record can point at another profile's LIVE gateway (cross-profile SIGTERM
@@ -4697,6 +6250,7 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
     # at worst spares one process this sweep, while a validation false-negative would kill a live gateway.
     # The validated probe is still consulted for the runtime-status fallback PID it can surface when no
     # pidfile exists.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.status import (
             _get_pid_path, _get_process_hermes_home, _get_process_start_time, _pid_from_record,
@@ -4705,17 +6259,21 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
 
         def refuse(msg: str, *args, level=logging.WARNING) -> bool:
             logger.log(level, "Refusing --replace: " + msg, *args)
+            # ⤷ 出口 return：返回 True
             return True
 
         # Bound claim: the record must name THIS pid with THIS live start time, else it proves nothing.
         record = _read_pid_record(_get_pid_path())
         if not isinstance(record, dict) or not _record_looks_like_gateway(record):
+            # ⤷ 出口 return：返回 refuse('no valid gateway pid record to prove ownership of PI…
             return refuse("no valid gateway pid record to prove ownership of PID %s.", existing_pid)
         record_pid = _pid_from_record(record)
         if record_pid != existing_pid:
+            # ⤷ 出口 return：返回 refuse('pid record names %s, not target %s.', record_pid, ex…
             return refuse("pid record names %s, not target %s.", record_pid, existing_pid)
         recorded_start = record.get("start_time")
         if not isinstance(recorded_start, int) or isinstance(recorded_start, bool):
+            # ⤷ 出口 return：返回 True
             return True
         if _get_process_start_time(existing_pid) != recorded_start:
             return refuse("pid record start-time does not match the live process %s (stale/PID-reuse record).",
@@ -4733,6 +6291,7 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
         if live_cmdline and _looks_like_profile_conflict_from_cmdline(live_cmdline, our_home):
             return refuse("target PID %s command line explicitly advertises a different profile than "
                           "HERMES_HOME %s.", existing_pid, our_home, level=logging.ERROR)
+        # ⤷ 出口 return：返回 False
         return False
     except Exception:
         # Destructive action + unknown ownership => fail closed.
@@ -4741,12 +6300,18 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
         return True
 
 
+# ┌── 函数 def _looks_like_profile_conflict_from_cmdline()
+# │  作用：Token-exact contradiction check between a target argv and our home (authority is the pid record).
+# │  参数：command: str, our_home
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _looks_like_profile_conflict_from_cmdline(command: str, our_home) -> bool:
     """Token-exact contradiction check between a target argv and our home (authority is the pid record).
     Substring matching is not identity: ``--profile timothy`` must NOT read as profile ``tim``. Returns
     False whenever the argv does not clearly contradict our home."""
     from gateway.status import _profile_name_for_home
     profile_name = _profile_name_for_home(our_home)
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:
         tokens = shlex.split(command)
     except ValueError:
@@ -4765,6 +6330,7 @@ def _looks_like_profile_conflict_from_cmdline(command: str, our_home) -> bool:
             if tok.startswith(flag + "="):
                 values.append(tok[len(flag) + 1:])
             i += 1
+        # ⤷ 出口 return：返回 values[-1] if values else None
         return values[-1] if values else None
 
     def _env_home_value() -> Optional[str]:
@@ -4773,9 +6339,11 @@ def _looks_like_profile_conflict_from_cmdline(command: str, our_home) -> bool:
         for tok in reversed(tokens):
             if tok.startswith(prefix):
                 return tok[len(prefix):]
+        # ⤷ 出口 return：返回 None
         return None
 
     def _norm(path: str) -> str:
+        # ⤷ 出口 return：返回 os.path.normcase(os.path.normpath(path))
         return os.path.normcase(os.path.normpath(path))
 
     for flag in ("--profile", "-p"):
@@ -4785,13 +6353,21 @@ def _looks_like_profile_conflict_from_cmdline(command: str, our_home) -> bool:
         # Named-profile home: a DIFFERENT explicit profile contradicts it (legacy default argv never carried
         # profile flags). Default/root home: ANY explicit named-profile flag contradicts it.
         if profile_name is None or profile_name == "default" or value != profile_name:
+            # ⤷ 出口 return：返回 True
             return True
     home_value = _flag_value("--hermes-home") or _env_home_value()
+    # ⤷ 出口 return：返回 bool(home_value is not None and _norm(home_value) != _norm(s…
     return bool(home_value is not None and _norm(home_value) != _norm(str(our_home)))
 
 
+# ┌── 函数 def _clear_takeover_marker_quiet()
+# │  作用：Best-effort: the marker is scoped to one target; a stale one would grief an unrelated shutdown.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _clear_takeover_marker_quiet() -> None:
     """Best-effort: the marker is scoped to one target; a stale one would grief an unrelated shutdown."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.status import clear_takeover_marker
         clear_takeover_marker()
@@ -4799,17 +6375,32 @@ def _clear_takeover_marker_quiet() -> None:
         pass
 
 
+# ┌── 异步函数（协程） def _wait_for_pid_exit()
+# │  作用：Poll for process exit without blocking the loop (a blocking sleep freezes signal handlers and
+# │  参数：pid: int, attempts: int, delay: float
+# │  返回：bool
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _wait_for_pid_exit(pid: int, attempts: int, delay: float) -> bool:
     """Poll for process exit without blocking the loop (a blocking sleep freezes signal handlers and
     health checks). ``os.kill(pid, 0)`` on Windows is NOT a no-op — use the handle-based check."""
     from gateway.status import _pid_exists
     for _ in range(attempts):
         if not _pid_exists(pid):
+            # ⤷ 出口 return：返回 True
             return True
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await asyncio.sleep(delay)
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 异步函数（协程） def _start_gateway_replace_existing_instance()
+# │  作用：Handle a live gateway PID under this HERMES_HOME: replace it (``--replace``) or refuse.
+# │  参数：existing_pid: int, replace: bool
+# │  返回：bool
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _start_gateway_replace_existing_instance(existing_pid: int, replace: bool) -> bool:
     """Handle a live gateway PID under this HERMES_HOME: replace it (``--replace``) or refuse.
     Returns False when startup must abort (refused, permission denied, target still alive)."""
@@ -4839,17 +6430,20 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
     existing_start_time = get_process_start_time(existing_pid)
     logger.info("Replacing existing gateway instance (PID %d) with --replace.", existing_pid)
     # Takeover marker: target exits 0 on our SIGTERM (exit 1 → systemd Restart=on-failure flap loop).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.status import write_takeover_marker
         write_takeover_marker(existing_pid)
     except Exception as e:
         logger.debug("Could not write takeover marker: %s", e)
     # Snapshot children BEFORE signalling: reparented orphans are invisible yet hold scoped token locks.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.status import _snapshot_gateway_children
         _old_gateway_children = _snapshot_gateway_children(existing_pid)
     except Exception:
         _old_gateway_children = []
+    # ⤷ 关键分支 try/except：捕获 ProcessLookupError、(PermissionError, OSError)，出错走兜底而不是崩溃。
     try:
         terminate_pid(existing_pid, force=False)
     except ProcessLookupError:
@@ -4876,6 +6470,7 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
             _clear_takeover_marker_quiet()
             return False
     # Reap orphaned children (POSIX; mirrors Windows taskkill /T) so they stop holding scoped token locks.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.status import reap_gateway_children
         reap_gateway_children(_old_gateway_children, parent_pid=existing_pid)
@@ -4888,6 +6483,7 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
     # The old process may not have consumed the marker (SIGKILL'd before its handler read it).
     _clear_takeover_marker_quiet()
     # Stopped (Ctrl+Z) processes don't release scoped locks on exit; stale lock files block the new gateway.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.status import release_all_scoped_locks
         _released = release_all_scoped_locks(owner_pid=existing_pid, owner_start_time=existing_start_time)
@@ -4895,9 +6491,15 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
             logger.info("Released %d stale scoped lock(s) from old gateway.", _released)
     except Exception:
         pass
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def _start_gateway_configure_logging()
+# │  作用：Sync bundled skills, set up file logging + startup security audit, and the -v/-q stderr handler.
+# │  参数：verbosity: Optional[int]
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _start_gateway_configure_logging(verbosity: Optional[int]) -> None:
     """Sync bundled skills, set up file logging + startup security audit, and the -v/-q stderr handler."""
     def _sync_skills() -> None:
@@ -4916,6 +6518,7 @@ def _start_gateway_configure_logging(verbosity: Optional[int]) -> None:
 
         def _raw_cfg():
             from hermes_cli.config import read_raw_config
+            # ⤷ 出口 return：返回 read_raw_config()
             return read_raw_config()
 
         log_startup_security_warnings(hermes_home=_hermes_home, config=_best_effort(_raw_cfg))
@@ -4934,22 +6537,30 @@ def _start_gateway_configure_logging(verbosity: Optional[int]) -> None:
             root.setLevel(_stderr_level)
 
 
+# ┌── 函数 def _start_gateway_make_shutdown_signal_handler()
+# │  作用：Build the SIGINT/SIGTERM handler; ``_signal_initiated_shutdown[0]`` records an unplanned signal.
+# │  参数：runner, _signal_initiated_shutdown: list
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _start_gateway_make_shutdown_signal_handler(runner, _signal_initiated_shutdown: list):
     """Build the SIGINT/SIGTERM handler; ``_signal_initiated_shutdown[0]`` records an unplanned signal."""
     def shutdown_signal_handler(received_signal=None):
         # Planned --replace takeover (sibling marked this PID): exit 0 so systemd won't revive us.
         def _takeover() -> bool:
             from gateway.status import consume_takeover_marker_for_self
+            # ⤷ 出口 return：返回 consume_takeover_marker_for_self()
             return consume_takeover_marker_for_self()
 
         # Planned stop: CLI marks first, else its SIGTERM looks like an external kill. SIGINT = Ctrl+C.
         def _planned_stop() -> bool:
             from gateway.status import consume_planned_stop_marker_for_self
+            # ⤷ 出口 return：返回 consume_planned_stop_marker_for_self()
             return consume_planned_stop_marker_for_self()
 
         # Fast (<10ms) sync snapshot: stdlib + /proc, no subprocesses (`ps aux` here once blocked ~3s).
         def _snapshot():
             from gateway.shutdown_forensics import snapshot_shutdown_context
+            # ⤷ 出口 return：返回 snapshot_shutdown_context(received_signal)
             return snapshot_shutdown_context(received_signal)
 
         planned_takeover = bool(_best_effort(_takeover, "Takeover marker check failed: %s"))
@@ -4984,9 +6595,15 @@ def _start_gateway_make_shutdown_signal_handler(runner, _signal_initiated_shutdo
             _best_effort(_log_context, "format_context_for_log failed: %s")
             _best_effort(_diagnostic, "spawn_async_diagnostic failed: %s")
         asyncio.create_task(runner.stop())
+    # ⤷ 出口 return：返回 shutdown_signal_handler
     return shutdown_signal_handler
 
 
+# ┌── 函数 def _start_gateway_claim_pid_file()
+# │  作用：Claim the runtime lock + PID file (O_EXCL winner is the authoritative gateway). False = lost.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _start_gateway_claim_pid_file() -> bool:
     """Claim the runtime lock + PID file (O_EXCL winner is the authoritative gateway). False = lost."""
     import atexit
@@ -4997,25 +6614,37 @@ def _start_gateway_claim_pid_file() -> bool:
     if _current_pid is not None and _current_pid != os.getpid():
         logger.error("Another gateway instance (PID %d) started during our startup. "
                      "Exiting to avoid double-running.", _current_pid)
+        # ⤷ 出口 return：返回 False
         return False
     if not acquire_gateway_runtime_lock():
         logger.error("Gateway runtime lock is already held by another instance. Exiting.")
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 FileExistsError，出错走兜底而不是崩溃。
     try:
         write_pid_file()
     except FileExistsError:
         release_gateway_runtime_lock()
         logger.error("PID file race lost to another gateway instance. Exiting.")
+        # ⤷ 出口 return：返回 False
         return False
     atexit.register(remove_pid_file)
     atexit.register(release_gateway_runtime_lock)
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 异步函数（协程） def _start_gateway_start_control_socket()
+# │  作用：Start the gateway control socket (identify/status/pause-for-update); None when unavailable.
+# │  参数：runner
+# │  返回：（未标注类型）
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _start_gateway_start_control_socket(runner):
     """Start the gateway control socket (identify/status/pause-for-update); None when unavailable."""
     import atexit
     _control_server = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Started immediately after the PID-file claim: winning that O_EXCL race is the moment this process
         # becomes the authoritative gateway for its HERMES_HOME, so from here on "does a socket answer?" is
@@ -5032,6 +6661,7 @@ async def _start_gateway_start_control_socket(runner):
         _main_loop = asyncio.get_running_loop()
 
         def _pause_for_update_handler() -> dict:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 from hermes_cli.gateway import _get_restart_drain_timeout
                 _drain = float(_get_restart_drain_timeout())
@@ -5041,6 +6671,7 @@ async def _start_gateway_start_control_socket(runner):
             _done = threading.Event()
 
             def _request() -> None:
+                # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
                 try:
                     accepted_box.append(runner.request_restart(detached=False, via_service=True))
                 finally:
@@ -5049,6 +6680,7 @@ async def _start_gateway_start_control_socket(runner):
             _main_loop.call_soon_threadsafe(_request)
             _done.wait(timeout=5.0)
             accepted = bool(accepted_box and accepted_box[0])
+            # ⤷ 出口 return：返回 {'pausing': accepted, 'already_stopping': not accepted, 'pid…
             return {
                 "pausing": accepted, "already_stopping": not accepted,
                 "pid": os.getpid(), "drain_timeout": _drain}
@@ -5061,6 +6693,7 @@ async def _start_gateway_start_control_socket(runner):
                 return {"multiplex": False, "served_profiles": runner.served_profile_names()}
             future = asyncio.run_coroutine_threadsafe(
                 runner.reconcile_served_profiles(reason="control-socket"), _main_loop)
+            # ⤷ 关键分支 try/except：捕获 concurrent.futures.TimeoutError，出错走兜底而不是崩溃。
             try:
                 # Bounded: a token-less create reconciles in milliseconds; a credential-add whose adapter
                 # connect outlasts this keeps running and the caller sees ``pending`` (not an error).
@@ -5078,9 +6711,15 @@ async def _start_gateway_start_control_socket(runner):
     except Exception as _cs_exc:
         logger.debug("Control socket startup failed (non-fatal): %s", _cs_exc)
         _control_server = None
+    # ⤷ 出口 return：返回 _control_server
     return _control_server
 
 
+# ┌── 函数 def _start_gateway_start_cron_and_housekeeping()
+# │  作用：Start the cron scheduler thread + gateway housekeeping thread; returns
+# │  参数：runner
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _start_gateway_start_cron_and_housekeeping(runner):
     """Start the cron scheduler thread + gateway housekeeping thread; returns
     ``(cron_stop, cron_provider, cron_thread, housekeeping_thread)``."""
@@ -5096,6 +6735,7 @@ def _start_gateway_start_cron_and_housekeeping(runner):
     # Multiplex: tell the ticker which profile homes to tick (else secondary profiles' jobs never
     # run, #69377), including a ``--profile <name>`` multiplexer's OWN store.
     if isinstance(cron_provider, InProcessCronScheduler) and multiplex_cron:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             profile_homes = _cron_tick_profile_homes(runner.config)
             if profile_homes:
@@ -5127,6 +6767,7 @@ def _start_gateway_start_cron_and_housekeeping(runner):
     # External providers fire over loopback HTTP to THIS process's api_server; if it never came up (usually
     # API_SERVER_KEY missing) every fire fails while manual runs work — misread as a job bug. Say it ONCE.
     if not isinstance(cron_provider, InProcessCronScheduler):
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             _has_api_server = Platform.API_SERVER in (runner.adapters or {})
         except Exception:
@@ -5149,9 +6790,16 @@ def _start_gateway_start_cron_and_housekeeping(runner):
                 "cron_provider": cron_provider, "runner": runner, "cron_thread": cron_thread},
         daemon=True, name="gateway-housekeeping")
     housekeeping_thread.start()
+    # ⤷ 出口 return：返回 (cron_stop, cron_provider, cron_thread, housekeeping_thread)
     return cron_stop, cron_provider, cron_thread, housekeeping_thread
 
 
+# ┌── 异步函数（协程） def _start_gateway_shutdown_tail()
+# │  作用：Post-``wait_for_shutdown`` teardown; returns the process exit verdict (True = exit 0).
+# │  参数：runner, _control_server, cron_stop: threading.Event, cron_provider, cron_thread: Any, housekeeping_thread: threading.Thread, _planned_stop_watcher_stop: threading.Event, _planned_stop_watcher_thread: threading.Thread  …共 9 个
+# │  返回：bool
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def _start_gateway_shutdown_tail(
     runner, _control_server, cron_stop: threading.Event, cron_provider,
     cron_thread: Any, housekeeping_thread: threading.Thread,
@@ -5161,7 +6809,9 @@ async def _start_gateway_shutdown_tail(
     # Control socket first: once shutdown begins we are no longer a truthful "serving here" answer and a
     # successor must be able to bind. Early-exit paths rely on the atexit cleanup_files hook instead.
     if _control_server is not None:
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
+            # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
             await _control_server.stop()
         except Exception:
             logger.debug("Control socket stop failed (non-fatal)", exc_info=True)
@@ -5181,9 +6831,11 @@ async def _start_gateway_shutdown_tail(
     # finishes before we tear down.
     cron_stop.set()
     _stop_cron_provider(cron_provider)
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     if not await _await_thread_exit(cron_thread, timeout=_CRON_SHUTDOWN_DRAIN_TIMEOUT):
         logger.warning("Cron ticker did not exit within %.0fs of shutdown — an in-flight "
                        "delivery may have been dropped.", _CRON_SHUTDOWN_DRAIN_TIMEOUT)
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     await _await_thread_exit(housekeeping_thread, timeout=_HOUSEKEEPING_SHUTDOWN_DRAIN_TIMEOUT)
 
     # Stop the planned-stop watcher (daemon=True so this is belt-and-suspenders).
@@ -5191,13 +6843,21 @@ async def _start_gateway_shutdown_tail(
     _planned_stop_watcher_thread.join(timeout=2)
 
     with suppress(Exception):
+        # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
         await _shutdown_mcp_servers_nonblocking()
 
     # The failure verdict comes AFTER the cooperative teardown: returning early here leaked the
     # cron ticker + housekeeping threads (and open MCP connections) for embedded callers (#12175).
+    # ⤷ 出口 return：返回 _resolve_gateway_exit_verdict(runner, _signal_initiated_shut…
     return _resolve_gateway_exit_verdict(runner, _signal_initiated_shutdown[0])
 
 
+# ┌── 异步函数（协程） def start_gateway()
+# │  作用：Start the gateway and run until interrupted; False if it failed to start (non-zero exit so
+# │  参数：config: Optional[GatewayConfig] = None, replace: bool = False, verbosity: Optional[int] = 0
+# │  返回：bool
+# │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
+# └──────────────────────────────────────────────────────────────
 async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = False, verbosity: Optional[int] = 0) -> bool:
     """Start the gateway and run until interrupted; False if it failed to start (non-zero exit so
     systemd can auto-restart). ``replace`` kills any existing instance first (avoids restart-loop deadlocks)."""
@@ -5216,6 +6876,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     existing_pid = get_running_pid()
     if (existing_pid is not None and existing_pid != os.getpid()
             and not await _start_gateway_replace_existing_instance(existing_pid, replace)):
+        # ⤷ 出口 return：返回 False
         return False
 
     _start_gateway_configure_logging(verbosity)
@@ -5279,9 +6940,11 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
     # PID file BEFORE adapters: of two concurrent `run --replace`, only the O_EXCL winner opens sockets.
     if not _start_gateway_claim_pid_file():
+        # ⤷ 出口 return：返回 False
         return False
 
     # Right after the PID claim (which makes us authoritative); non-fatal — consumers fall back to scan.
+    # ⤷ await：在这里让出控制权等异步结果回来，期间不阻塞整个线程。
     _control_server = await _start_gateway_start_control_socket(runner)
 
     def _lifecycle_record_startup() -> None:
@@ -5299,6 +6962,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     _ensure_windows_gateway_venv_imports()
 
     # discover_mcp_tools() blocks up to 120s; on the loop thread it would freeze platform heartbeats.
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # MCP tool discovery — run in an executor so the asyncio event loop stays responsive even when a
         # configured MCP server is slow or unreachable.  discover_mcp_tools() uses a blocking 120s wait
@@ -5308,6 +6972,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     except Exception as e:
         logger.debug("MCP tool discovery failed: %s", e)
 
+    # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
     try:
         success = await runner.start()
     except BaseException:
@@ -5350,24 +7015,37 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
     await runner.wait_for_shutdown()
 
+    # ⤷ 出口 return：返回 await _start_gateway_shutdown_tail(runner, _control_server, …
     return await _start_gateway_shutdown_tail(
         runner, _control_server, cron_stop, cron_provider, cron_thread, housekeeping_thread,
         _planned_stop_watcher_stop, _planned_stop_watcher_thread, _signal_initiated_shutdown)
 
 
+# ┌── 函数 def _guard_corrupt_user_config()
+# │  作用：Fail closed when the active profile's config.yaml cannot be parsed: nobody can repair it on this
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _guard_corrupt_user_config() -> None:
     """Fail closed when the active profile's config.yaml cannot be parsed: nobody can repair it on this
     surface, and defaults would let provider auto-detection adopt ``.env`` credentials the config never
     named. Same policy and escape hatch (``HERMES_IGNORE_USER_CONFIG=1``) as ``hermes_cli/main.py``."""
     from hermes_cli.config import InvalidUserConfigError, require_parseable_user_config
 
+    # ⤷ 关键分支 try/except：捕获 InvalidUserConfigError，出错走兜底而不是崩溃。
     try:
         require_parseable_user_config()
     except InvalidUserConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise SystemExit(2) from exc
 
 
+# ┌── 函数 def main()
+# │  作用：CLI entry point for the gateway.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def main():
     """CLI entry point for the gateway."""
     # Before any config-dependent startup (watchdog, DB opens, provider resolution).
@@ -5412,6 +7090,7 @@ def main():
 
     # start_gateway() completes teardown before returning/raising SystemExit; force-exit after so a
     # wedged non-daemon worker can't block Py_FinalizeEx's join. SystemExit caught so EVERY path exits.
+    # ⤷ 关键分支 try/except：捕获 SystemExit，出错走兜底而不是崩溃。
     try:
         # start_gateway() performs the full graceful teardown (adapters disconnected, sessions saved +
         # flushed, SQLite closed, cron/MCP stopped, PID file + runtime lock released) before it returns OR
@@ -5431,6 +7110,11 @@ def main():
     _exit_after_graceful_shutdown(exit_code)
 
 
+# ┌── 函数 def _exit_after_graceful_shutdown()
+# │  作用：Flush stdio, release the PID file + runtime lock, then hard-exit.
+# │  参数：exit_code: int
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _exit_after_graceful_shutdown(exit_code: int) -> None:
     """Flush stdio, release the PID file + runtime lock, then hard-exit.
     ``os._exit`` (not ``sys.exit``): SystemExit runs ``Py_FinalizeEx``, which joins every non-daemon
@@ -5475,6 +7159,10 @@ def _exit_after_graceful_shutdown(exit_code: int) -> None:
     os._exit(exit_code)
 
 
+# ┌── 程序入口
+# │  【语法】if __name__ == "__main__"：只有被 `python 这个文件.py` 直接运行时才执行，
+# │  被 import 时不执行。这是 Python 脚本的标准入口写法。
+# └──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     main()
 
@@ -5540,12 +7228,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

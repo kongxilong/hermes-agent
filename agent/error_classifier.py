@@ -4,6 +4,30 @@ A priority-ordered pipeline maps an API exception to a ``ClassifiedError``
 whose recovery hints (retry, rotate credential, fallback, compress, abort) the
 retry loop in run_agent.py consults instead of re-matching strings itself.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：agent/error_classifier.py（约 1062 行）
+# 地位：API 错误的「分类器」——决定出错后该重试、换凭证、换模型还是放弃。
+#
+# 解决什么问题：
+#   大模型 API 的错误五花八门（401 没权限、402 没充钱、429 限流、5xx 服务端炸了、
+#   context_length_exceeded 上下文超长 ...）。如果到处写 if 'rate limit' in msg，代码会烂掉。
+#   所以这里做一条「按优先级排列的分类流水线」，把异常归类成 ClassifiedError。
+#
+# 核心产物：class ClassifiedError（@dataclass）
+#   里面带着恢复建议（recovery hints）：retry（重试）/ rotate credential（换凭证）/
+#   fallback（换备用模型）/ compress（压缩上下文）/ abort（放弃）。
+#   对话循环直接看这些建议决定下一步，不再自己匹配错误字符串。
+#
+# 分类流水线（从 classify_api_error 开始看）：
+#   _plugin_verdict → _provider_special_cases → _by_error_code → _by_message
+#   → _by_transport → _by_status（_status_403 / _status_404 / _status_429 / _status_5xx）
+#   前面命中就返回，不再往后走。
+#
+# enum FailoverReason：定义了一整套「故障转移原因」的枚举，是很好的错误分类词汇表。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -23,6 +47,10 @@ PROVIDER_STREAM_NON_JSON_ERROR_CODE = "provider_stream_non_json_data"
 
 # ── Error taxonomy ──────────────────────────────────────────────────────
 
+# ┌── 类 class FailoverReason（继承自：enum.Enum）
+# │  说明：Why an API call failed — determines recovery strategy.
+# │  成员：共 0 个方法；全部是下划线开头的内部方法
+# └──────────────────────────────────────────────────────────────
 class FailoverReason(enum.Enum):
     """Why an API call failed — determines recovery strategy."""
     auth = "auth"                        # Transient auth (401/403) — refresh/rotate
@@ -54,6 +82,10 @@ class FailoverReason(enum.Enum):
     unknown = "unknown"                  # Unclassifiable — retry with backoff
 
 
+# ┌── 类 class ClassifiedError
+# │  说明：Structured classification of an API error with recovery hints.
+# │  成员：共 2 个方法；对外可用 2 个
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class ClassifiedError:
     """Structured classification of an API error with recovery hints."""
@@ -71,13 +103,27 @@ class ClassifiedError:
     should_rotate_credential: bool = False
     should_fallback: bool = False
 
+    # ┌── 函数 def is_auth()
+    # │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+    # │  参数：self
+    # │  返回：bool
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def is_auth(self) -> bool:
+        # ⤷ 出口 return：返回 self.reason in {FailoverReason.auth, FailoverReason.auth_per…
         return self.reason in {FailoverReason.auth, FailoverReason.auth_permanent}
 
+    # ┌── 函数 def billing_unverified()
+    # │  作用：True when a ``billing`` verdict rests on an ambiguous body (#82154).
+    # │  参数：self
+    # │  返回：bool
+    # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
+    # └──────────────────────────────────────────────────────────────
     @property
     def billing_unverified(self) -> bool:
         """True when a ``billing`` verdict rests on an ambiguous body (#82154)."""
+        # ⤷ 出口 return：返回 bool(self.error_context.get('billing_unverified'))
         return bool(self.error_context.get("billing_unverified"))
 
 
@@ -379,7 +425,13 @@ _SSL_TRANSIENT_PATTERNS = (
 Verdict = Dict[str, Any]
 
 
+# ┌── 函数 def _v()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：reason: FailoverReason, **hints
+# │  返回：Verdict
+# └──────────────────────────────────────────────────────────────
 def _v(reason: FailoverReason, **hints: Any) -> Verdict:
+    # ⤷ 出口 return：返回 {'reason': reason, **hints}
     return {"reason": reason, **hints}
 
 
@@ -411,19 +463,32 @@ _V_MALFORMED_TOOL_ARGS = _v(_R.format_error, retryable=False, should_fallback=Fa
 _REASONING_MANDATORY_PATTERN = "reasoning is mandatory"
 
 
+# ┌── 函数 def _billing_hints()
+# │  作用：Billing verdict carrying the #82154 ambiguity marker when applicable.
+# │  参数：error_msg: str
+# │  返回：Verdict
+# └──────────────────────────────────────────────────────────────
 def _billing_hints(error_msg: str) -> Verdict:
     """Billing verdict carrying the #82154 ambiguity marker when applicable."""
     ctx: Dict[str, Any] = {}
     if any(p in error_msg for p in _UNVERIFIED_BILLING_PATTERNS):
         ctx = {"billing_unverified": True, "possible_content_filter": True}
+    # ⤷ 出口 return：返回 {**_V_BILLING, 'error_context': ctx}
     return {**_V_BILLING, "error_context": ctx}
 
 
+# ┌── 函数 def _first_match()
+# │  作用：Verdict of the first rule whose pattern list hits ``error_msg``.
+# │  参数：error_msg: str, rules: Sequence[tuple[Sequence[str], Any]]
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _first_match(error_msg: str, rules: Sequence[tuple[Sequence[str], Any]]) -> Optional[Verdict]:
     """Verdict of the first rule whose pattern list hits ``error_msg``."""
     for patterns, verdict in rules:
         if any(p in error_msg for p in patterns):
+            # ⤷ 出口 return：返回 verdict(error_msg) if callable(verdict) else verdict
             return verdict(error_msg) if callable(verdict) else verdict
+    # ⤷ 出口 return：返回 None
     return None
 
 
@@ -491,6 +556,10 @@ _400_VALIDATION_PATTERNS = tuple(p for p in _REQUEST_VALIDATION_PATTERNS if p !=
 
 # ── Classification pipeline ─────────────────────────────────────────────
 
+# ┌── 类 class _Ctx
+# │  说明：Everything the classifier stages need about one failed call.
+# │  成员：共 2 个方法；对外可用 1 个；含魔术方法 __post_init__
+# └──────────────────────────────────────────────────────────────
 @dataclass
 class _Ctx:
     """Everything the classifier stages need about one failed call."""
@@ -505,6 +574,11 @@ class _Ctx:
     context_length: int
     num_messages: int
 
+    # ┌── 函数 def __post_init__()
+    # │  作用：魔术方法 __post_init__（Python 在特定场景自动调用，见下方说明）
+    # │  参数：self
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def __post_init__(self) -> None:
         self.error_type = type(self.error).__name__
         self.error_code = _extract_error_code(self.body)
@@ -513,17 +587,29 @@ class _Ctx:
         self.provider_slug = (self.provider or "").strip().lower()
         self.model_slug = (self.model or "").strip().lower()
 
+    # ┌── 函数 def large_session()
+    # │  作用：Absolute thresholds only proxy for smaller context windows.
+    # │  参数：self, frac: float, tokens: int, messages: int
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def large_session(self, frac: float, tokens: int, messages: int) -> bool:
         """Absolute thresholds only proxy for smaller context windows."""
+        # ⤷ 出口 return：返回 self.approx_tokens > self.context_length * frac or (self.con…
         return self.approx_tokens > self.context_length * frac or (
             self.context_length <= 256000 and (self.approx_tokens > tokens or self.num_messages > messages)
         )
 
 
+# ┌── 函数 def _plugin_verdict()
+# │  作用：First valid plugin classification (runs before the built-in pipeline so a
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _plugin_verdict(c: _Ctx) -> Optional[Verdict]:
     """First valid plugin classification (runs before the built-in pipeline so a
     provider plugin can add or correct verdicts). invoke_hook isolates callback
     failures; this guard only covers import/dispatch failure."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.plugins import get_plugin_error_classification
         verdict = get_plugin_error_classification(
@@ -533,13 +619,20 @@ def _plugin_verdict(c: _Ctx) -> Optional[Verdict]:
         )
     except Exception as exc:
         logger.debug("Plugin error classification unavailable: %s", exc)
+        # ⤷ 出口 return：返回 None
         return None
     if verdict is not None:
         logger.info("API error classified by plugin hook: %s (provider=%s, status=%s)",
                     verdict["reason"].value, c.provider, c.status_code)
+    # ⤷ 出口 return：返回 verdict
     return verdict
 
 
+# ┌── 函数 def _nous_welcome_tier()
+# │  作用：The Nous inference gateway's welcome-tier (free tier) refusals, read from the structured body.
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _nous_welcome_tier(c: _Ctx) -> Optional[Verdict]:
     """The Nous inference gateway's welcome-tier (free tier) refusals, read from the structured body.
 
@@ -556,31 +649,44 @@ def _nous_welcome_tier(c: _Ctx) -> Optional[Verdict]:
     if status == 429:
         refusal = parse_welcome_refusal(c.body)
         if refusal is None:
+            # ⤷ 出口 return：返回 None
             return None
         ctx = {"welcome_refusal": refusal}
         if refusal["reason"] in WELCOME_TIER_GATE_REASONS:
+            # ⤷ 出口 return：返回 _v(_R.model_not_found, retryable=False, should_fallback=True…
             return _v(_R.model_not_found, retryable=False, should_fallback=True, error_context=ctx)
         if refusal["retry_after"] > 0:
             ctx["reset_at"] = time.time() + refusal["retry_after"]
+        # ⤷ 出口 return：返回 _v(_R.rate_limit, should_fallback=True, error_context=ctx)
         return _v(_R.rate_limit, should_fallback=True, error_context=ctx)
     kind = welcome_route_refusal(status, c.msg)
     if kind is None:
+        # ⤷ 出口 return：返回 None
         return None
     ctx = {"welcome_route": kind}
     if status == 403:
+        # ⤷ 出口 return：返回 _v(_R.auth_permanent, retryable=False, should_fallback=True,…
         return _v(_R.auth_permanent, retryable=False, should_fallback=True, error_context=ctx)
+    # ⤷ 出口 return：返回 _v(_R.format_error, retryable=False, should_fallback=True, e…
     return _v(_R.format_error, retryable=False, should_fallback=True, error_context=ctx)
 
 
+# ┌── 函数 def _provider_special_cases()
+# │  作用：Highest-priority provider-specific shapes that a status code would misroute.
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _provider_special_cases(c: _Ctx) -> Optional[Verdict]:
     """Highest-priority provider-specific shapes that a status code would misroute."""
     msg, status = c.msg, c.status_code
     welcome = _nous_welcome_tier(c)
     if welcome is not None:
+        # ⤷ 出口 return：返回 welcome
         return welcome
     # Safety refusal before status classification so a 400 block isn't downgraded
     # to format_error and a status-less block isn't left retryable (#18028).
     if any(p in msg for p in _CONTENT_POLICY_BLOCKED_PATTERNS):
+        # ⤷ 出口 return：返回 _V_CONTENT_BLOCKED
         return _V_CONTENT_BLOCKED
     # ChatGPT Codex masks a rejected encrypted-reasoning replay behind the same bare
     # ``invalid_prompt: Request blocked.`` it uses for real blocks (#92353). Exact envelope
@@ -588,13 +694,16 @@ def _provider_special_cases(c: _Ctx) -> Optional[Verdict]:
     # extra thing it buys is turn_recovery's replay strip, which still requires cached
     # ``codex_reasoning_items`` — a genuine block with nothing to strip behaves as before.
     if _is_codex_masked_replay_rejection(c):
+        # ⤷ 出口 return：返回 _v(_R.invalid_encrypted_content, **_ABORT_FALLBACK)
         return _v(_R.invalid_encrypted_content, **_ABORT_FALLBACK)
     # Anthropic thinking-block 400s (signature mismatch after transcript
     # mutation). Not gated on provider — OpenRouter proxies Anthropic errors.
     if status == 400 and "thinking" in msg and any(p in msg for p in _THINKING_MUTATION_WORDS):
+        # ⤷ 出口 return：返回 _v(_R.thinking_signature)
         return _v(_R.thinking_signature)
     # Anthropic long-context tier gate (429 "extra usage" + "long context").
     if status == 429 and "extra usage" in msg and "long context" in msg:
+        # ⤷ 出口 return：返回 _v(_R.long_context_tier, should_compress=True)
         return _v(_R.long_context_tier, should_compress=True)
     # Anthropic OAuth rejects the 1M beta header; run_agent retries without it.
     if status == 400 and "long context beta" in msg and "not yet available" in msg:
@@ -612,38 +721,65 @@ def _provider_special_cases(c: _Ctx) -> Optional[Verdict]:
     # pattern list, would otherwise burn max_retries as ``unknown``.
     if "do not have an active grok subscription" in msg or ("out of available resources" in msg and "grok" in msg):
         return _V_AUTH_FALLBACK
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _moa_special_cases()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _moa_special_cases(c: _Ctx) -> Optional[Verdict]:
     # Local MoA streaming adapter-shape bugs are not a provider outage; falling
     # back would silently replace the MoA route with a single model (#55933).
     if c.provider_slug == "moa" and any(s in str(c.error) for s in _MOA_ADAPTER_SHAPE_BUGS):
+        # ⤷ 出口 return：返回 _v(_R.format_error, retryable=False)
         return _v(_R.format_error, retryable=False)
     # Persisted MoA preset name that was renamed/deleted — deterministic config error.
     from agent.errors import MoAPresetNotFoundError
+    # ⤷ 出口 return：返回 _v(_R.model_not_found, retryable=False) if isinstance(c.erro…
     return _v(_R.model_not_found, retryable=False) if isinstance(c.error, MoAPresetNotFoundError) else None
 
 
+# ┌── 函数 def _by_error_code()
+# │  作用：Structured error codes from the response body.
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _by_error_code(c: _Ctx) -> Optional[Verdict]:
     """Structured error codes from the response body."""
     # Request-validation failure as plain-text ``event: error`` SSE data behind
     # HTTP 200: retrying cannot succeed, a configured fallback still may.
     if c.code == PROVIDER_STREAM_NON_JSON_ERROR_CODE and "request validation failed:" in c.msg:
+        # ⤷ 出口 return：返回 _V_FORMAT_ERROR
         return _V_FORMAT_ERROR
+    # ⤷ 出口 return：返回 _ERROR_CODE_VERDICTS.get(c.code)
     return _ERROR_CODE_VERDICTS.get(c.code)
 
 
+# ┌── 函数 def _by_message()
+# │  作用：Message patterns when no status code settled it; status-less usage
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _by_message(c: _Ctx) -> Optional[Verdict]:
     """Message patterns when no status code settled it; status-less usage
     limits get the same disambiguation as 402."""
     head = _first_match(c.msg, _MESSAGE_HEAD_RULES)
     if head is not None:
+        # ⤷ 出口 return：返回 head
         return head
     usage_limit = any(p in c.msg for p in _USAGE_LIMIT_PATTERNS)
+    # ⤷ 出口 return：返回 _classify_402(c.msg, dict) if usage_limit else _first_match(…
     return _classify_402(c.msg, dict) if usage_limit else _first_match(c.msg, _MESSAGE_TAIL_RULES)
 
 
+# ┌── 函数 def _by_transport()
+# │  作用：SSL, disconnect, circuit-breaker and transport-type heuristics, in that order.
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _by_transport(c: _Ctx) -> Optional[Verdict]:
     """SSL, disconnect, circuit-breaker and transport-type heuristics, in that order."""
     msg = c.msg
@@ -651,6 +787,7 @@ def _by_transport(c: _Ctx) -> Optional[Verdict]:
     # alert → retry, before disconnects so a flaky handshake never compresses.
     ssl = _first_match(msg, ((_SSL_CERT_VERIFY_PATTERNS, _V_SSL_CERT), (_SSL_TRANSIENT_PATTERNS, _V_TIMEOUT)))
     if ssl is not None:
+        # ⤷ 出口 return：返回 ssl
         return ssl
     # Disconnect + large session → probable overflow rejection, not a hiccup.
     if any(p in msg for p in _SERVER_DISCONNECT_PATTERNS) and not c.status_code:
@@ -668,22 +805,33 @@ def _by_transport(c: _Ctx) -> Optional[Verdict]:
         # context compression. Reclassify as timeout. (Part 1 of Fixes #52310.)
         from agent.reasoning_timeouts import get_reasoning_stale_timeout_floor
         if get_reasoning_stale_timeout_floor(c.model) is not None:
+            # ⤷ 出口 return：返回 _V_TIMEOUT
             return _V_TIMEOUT
+        # ⤷ 出口 return：返回 _V_CONTEXT_OVERFLOW if c.large_session(0.6, 120000, 200) els…
         return _V_CONTEXT_OVERFLOW if c.large_session(0.6, 120000, 200) else _V_TIMEOUT
     # Stale-call circuit breaker (_check_stale_giveup RuntimeError before any
     # network call): as ``unknown`` it would burn every retry instantly.
     if c.error_type == "RuntimeError" and "consecutive stale attempts" in msg and "aborting this call" in msg:
+        # ⤷ 出口 return：返回 _v(_R.timeout, **_ABORT_FALLBACK)
         return _v(_R.timeout, **_ABORT_FALLBACK)
     transport = c.error_type in _TRANSPORT_ERROR_TYPES or isinstance(c.error, (TimeoutError, ConnectionError, OSError))
+    # ⤷ 出口 return：返回 _V_TIMEOUT if transport else None
     return _V_TIMEOUT if transport else None
 
 
+# ┌── 函数 def _by_status()
+# │  作用：HTTP status code with message-aware refinement (unlisted 4xx/5xx → generic).
+# │  参数：c: _Ctx
+# │  返回：Optional[Verdict]
+# └──────────────────────────────────────────────────────────────
 def _by_status(c: _Ctx) -> Optional[Verdict]:
     """HTTP status code with message-aware refinement (unlisted 4xx/5xx → generic)."""
     status = c.status_code
     if status is None:
+        # ⤷ 出口 return：返回 None
         return None
     default = _V_FORMAT_ERROR if 400 <= status < 500 else _V_SERVER_ERROR if 500 <= status < 600 else None
+    # ⤷ 出口 return：返回 _STATUS_HANDLERS[status](c) if status in _STATUS_HANDLERS el…
     return _STATUS_HANDLERS[status](c) if status in _STATUS_HANDLERS else default
 
 
@@ -696,6 +844,11 @@ _STAGES: Sequence[Callable[[_Ctx], Optional[Verdict]]] = (
 )
 
 
+# ┌── 函数 def classify_api_error()
+# │  作用：Classify an API error into a structured recovery recommendation (see ``_STAGES``).
+# │  参数：error: Exception, provider: str = ..., model: str = ..., approx_tokens: int = ..., context_length: int = ..., num_messages: int = ...
+# │  返回：ClassifiedError
+# └──────────────────────────────────────────────────────────────
 def classify_api_error(
     error: Exception, *, provider: str = "", model: str = "",
     approx_tokens: int = 0, context_length: int = 200000, num_messages: int = 0,
@@ -712,42 +865,64 @@ def classify_api_error(
     )
     verdict = next((v for v in (stage(c) for stage in _STAGES) if v is not None), _V_UNKNOWN)
     base = {"status_code": status_code, "provider": provider, "model": model, "message": _extract_message(error, body)}
+    # ⤷ 出口 return：返回 ClassifiedError(**{**base, **verdict})
     return ClassifiedError(**{**base, **verdict})
 
 
 # ── Status code handlers ────────────────────────────────────────────────
 
+# ┌── 函数 def _status_403()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：c: _Ctx
+# │  返回：Verdict
+# └──────────────────────────────────────────────────────────────
 def _status_403(c: _Ctx) -> Verdict:
     # OpenRouter 403 "key limit exceeded" and similar plan/credit exhaustion are billing.
     xai_spend = c.provider_slug == "xai-oauth" and c.code == _XAI_SPENDING_LIMIT_ERROR_CODE
     billing = xai_spend or any(p in c.msg for p in ("key limit exceeded", "spending limit") + _BILLING_PATTERNS)
+    # ⤷ 出口 return：返回 _V_BILLING if billing else _V_AUTH_FALLBACK
     return _V_BILLING if billing else _V_AUTH_FALLBACK
 
 
+# ┌── 函数 def _status_404()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：c: _Ctx
+# │  返回：Verdict
+# └──────────────────────────────────────────────────────────────
 def _status_404(c: _Ctx) -> Verdict:
     verdict = _first_match(c.msg, _404_RULES)
     if verdict is not None:
+        # ⤷ 出口 return：返回 verdict
         return verdict
     # Bare id the catalogue only knows prefixed → malformed id (NVIDIA NIM "404
     # page not found", #78796). A generic 404 (wrong path, proxy glitch) stays
     # unknown so the real error surfaces instead of a silent misreported fallback.
+    # ⤷ 出口 return：返回 _V_MODEL_NOT_FOUND if _model_id_missing_known_prefix(c.model…
     return _V_MODEL_NOT_FOUND if _model_id_missing_known_prefix(c.model_slug, c.provider_slug) else _V_UNKNOWN
 
 
+# ┌── 函数 def _status_429()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：c: _Ctx
+# │  返回：Verdict
+# └──────────────────────────────────────────────────────────────
 def _status_429(c: _Ctx) -> Verdict:
     # A structured billing code is decisive: LiteLLM stamps
     # ``terminal_quota_exhausted`` (a hard cap, not throttling) on 429s, and
     # this handler always returns, so _by_error_code never sees the code.
     if c.code in _BILLING_ERROR_CODES:
+        # ⤷ 出口 return：返回 _V_BILLING
         return _V_BILLING
     # Z.AI/Zhipu reuse 429 for server-wide overload: back off on the same
     # key instead of burning the pool (#14038).
     if any(p in c.msg for p in _OVERLOADED_PATTERNS):
+        # ⤷ 出口 return：返回 _V_OVERLOADED
         return _V_OVERLOADED
     # OpenRouter-wrapped upstream 429: the key is healthy — fall back, don't bench.
     if _is_openrouter_upstream_error(c.body, c.provider_slug):
         upstream = _extract_upstream_provider_name(c.body)
         ctx = {"upstream_provider": upstream} if upstream else {}
+        # ⤷ 出口 return：返回 _v(_R.upstream_rate_limit, should_fallback=True, error_conte…
         return _v(_R.upstream_rate_limit, should_fallback=True, error_context=ctx)
     # Quota walls as 429 (Anthropic ``usage_limit_reached``, "quota", billing
     # phrases) are billing ONLY when the body is not itself a rate-limit phrase
@@ -758,32 +933,53 @@ def _status_429(c: _Ctx) -> Verdict:
     )
     explicit_rate_limit = any(p in c.msg for p in _RATE_LIMIT_PATTERNS)
     if quota_wall and not explicit_rate_limit and not _has_usage_limit_transient_signal(c.msg, c.body, c.headers):
+        # ⤷ 出口 return：返回 _V_BILLING
         return _V_BILLING
+    # ⤷ 出口 return：返回 _V_RATE_LIMIT
     return _V_RATE_LIMIT
 
 
+# ┌── 函数 def _status_5xx()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：c: _Ctx
+# │  返回：Verdict
+# └──────────────────────────────────────────────────────────────
 def _status_5xx(c: _Ctx) -> Verdict:
     # Request-validation errors as 5xx (codex.nekos.me) fail fast instead of
     # retry-flooding — unless the parameter was injected server-side.
     validation = any(p in c.msg for p in _REQUEST_VALIDATION_PATTERNS) or c.code in _5XX_VALIDATION_CODES
     if validation and not _is_server_injected_param_rejection(c.msg, c.provider_slug):
+        # ⤷ 出口 return：返回 _V_FORMAT_ERROR
         return _V_FORMAT_ERROR
+    # ⤷ 出口 return：返回 _first_match(c.msg, _OVERFLOW_AS_5XX_RULES) or _V_SERVER_ERR…
     return _first_match(c.msg, _OVERFLOW_AS_5XX_RULES) or _V_SERVER_ERROR
 
 
+# ┌── 函数 def _classify_402()
+# │  作用：Disambiguate 402: "usage limit, try again in 5 minutes" is a periodic quota, not billing.
+# │  参数：error_msg: str, result_fn: Callable[..., Any]
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _classify_402(error_msg: str, result_fn: Callable[..., Any]) -> Any:
     """Disambiguate 402: "usage limit, try again in 5 minutes" is a periodic quota, not billing."""
     transient = any(p in error_msg for p in _USAGE_LIMIT_PATTERNS) and any(
         p in error_msg for p in _USAGE_LIMIT_TRANSIENT_SIGNALS
     )
+    # ⤷ 出口 return：返回 result_fn(**_V_RATE_LIMIT if transient else _V_BILLING)
     return result_fn(**(_V_RATE_LIMIT if transient else _V_BILLING))
 
 
+# ┌── 函数 def _classify_400()
+# │  作用：400 Bad Request — image/tool shapes, request-shape rejections, overflow, or generic.
+# │  参数：c: _Ctx
+# │  返回：Verdict
+# └──────────────────────────────────────────────────────────────
 def _classify_400(c: _Ctx) -> Verdict:
     """400 Bad Request — image/tool shapes, request-shape rejections, overflow, or generic."""
     msg, code = c.msg, c.code
     verdict = _first_match(msg, _IMAGE_TOOL_RULES)
     if verdict is not None:
+        # ⤷ 出口 return：返回 verdict
         return verdict
     # Invalid encrypted reasoning replay blob (OpenAI Responses); before
     # overflow because "encrypted content … could not be verified" trips it.
@@ -793,17 +989,21 @@ def _classify_400(c: _Ctx) -> Verdict:
         # Azure Foundry (gpt-6-astra) rejects replayed reasoning from several prior responses this way (#105369).
         "conflicting authenticated continuation identities" in msg
     ):
+        # ⤷ 出口 return：返回 _V_INVALID_ENCRYPTED
         return _V_INVALID_ENCRYPTED
     # Reasoning-mandatory route rejecting a disable (GLM-5.3 on Nous Portal / OpenRouter). Deterministic
     # for the request shape, but the only bad field is ``reasoning: {enabled: false}`` — the loop drops
     # the disable and retries once. Must precede request-validation, which would abort as format_error.
     if _REASONING_MANDATORY_PATTERN in msg:
+        # ⤷ 出口 return：返回 _V_REASONING_MANDATORY
         return _V_REASONING_MANDATORY
     # 400 blaming a field this route never sent (Codex OAuth injects then rejects
     # prompt_cache_retention ~20% of the time): transient, retry identical request.
     if _is_server_injected_param_rejection(msg, c.provider_slug):
+        # ⤷ 出口 return：返回 _V_SERVER_ERROR
         return _V_SERVER_ERROR
     if any(p in msg for p in _MALFORMED_TOOL_ARGS_PATTERNS):
+        # ⤷ 出口 return：返回 _V_MALFORMED_TOOL_ARGS
         return _V_MALFORMED_TOOL_ARGS
     # Before overflow: GPT-5's "Unsupported parameter: 'max_tokens'" contains it.
     if any(p in msg for p in _400_VALIDATION_PATTERNS) or code in _400_VALIDATION_CODES:
@@ -831,6 +1031,7 @@ def _classify_400(c: _Ctx) -> Verdict:
     is_generic = len(body_msg) < 30 or body_msg in {"error", ""}
     if is_generic and c.large_session(0.4, 80000, 80):
         return _V_CONTEXT_OVERFLOW
+    # ⤷ 出口 return：返回 _V_FORMAT_ERROR
     return _V_FORMAT_ERROR
 
 
@@ -854,18 +1055,32 @@ _RESET_FIELDS = ("resets_in_seconds", "resets_at", "reset_at", "retry_after")
 _RESET_HEADERS = ("retry-after", "Retry-After", "x-ratelimit-reset", "X-RateLimit-Reset")
 
 
+# ┌── 函数 def _has_usage_limit_transient_signal()
+# │  作用：Whether a usage-limit response identifies a reset window (message, body fields, or headers).
+# │  参数：error_msg: str, body: dict, response_headers
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _has_usage_limit_transient_signal(error_msg: str, body: dict, response_headers) -> bool:
     """Whether a usage-limit response identifies a reset window (message, body fields, or headers)."""
     if any(pattern in error_msg for pattern in _USAGE_LIMIT_TRANSIENT_SIGNALS):
+        # ⤷ 出口 return：返回 True
         return True
     payloads = [p for p in (body, _error_obj(body)) if isinstance(p, dict)]
     if any(payload.get(f) not in (None, "") for payload in payloads for f in _RESET_FIELDS):
+        # ⤷ 出口 return：返回 True
         return True
     if response_headers and hasattr(response_headers, "get"):
+        # ⤷ 出口 return：返回 any((response_headers.get(h) not in (None, '') for h in _RES…
         return any(response_headers.get(h) not in (None, "") for h in _RESET_HEADERS)
+    # ⤷ 出口 return：返回 False
     return False
 
 
+# ┌── 函数 def _model_id_missing_known_prefix()
+# │  作用：True when a bare model id is only known to the provider as ``vendor/id``.
+# │  参数：model: str, provider: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _model_id_missing_known_prefix(model: str, provider: str) -> bool:
     """True when a bare model id is only known to the provider as ``vendor/id``.
 
@@ -874,14 +1089,23 @@ def _model_id_missing_known_prefix(model: str, provider: str) -> bool:
     """
     name = (model or "").strip()
     if not name or "/" in name:
+        # ⤷ 出口 return：返回 False
         return False
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.model_normalize import suggest_prefixed_model_id
+        # ⤷ 出口 return：返回 bool(suggest_prefixed_model_id((provider or '').strip(), nam…
         return bool(suggest_prefixed_model_id((provider or "").strip(), name))
     except Exception:
+        # ⤷ 出口 return：返回 False
         return False
 
 
+# ┌── 函数 def _is_server_injected_param_rejection()
+# │  作用：True when a 400 blames a one-route-only parameter this route never sends.
+# │  参数：error_msg: str, provider: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_server_injected_param_rejection(error_msg: str, provider: str) -> bool:
     """True when a 400 blames a one-route-only parameter this route never sends.
 
@@ -891,50 +1115,85 @@ def _is_server_injected_param_rejection(error_msg: str, provider: str) -> bool:
     provider_slug = (provider or "").strip().lower()
     for param, senders in _SERVER_INJECTED_PARAM_SENDERS.items():
         if error_msg and param in error_msg and any(w in error_msg for w in _PARAM_REJECTION_WORDS):
+            # ⤷ 出口 return：返回 not any((sender in provider_slug for sender in senders))
             return not any(sender in provider_slug for sender in senders)
+    # ⤷ 出口 return：返回 False
     return False
 
 
 _CODEX_MASKED_REPLAY_MESSAGE = "request blocked."
 
 
+# ┌── 函数 def _is_codex_masked_replay_rejection()
+# │  作用：HTTP 400 / status-less ``{code: invalid_prompt, message: "Request blocked."}`` from
+# │  参数：c: '_Ctx'
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_codex_masked_replay_rejection(c: "_Ctx") -> bool:
     """HTTP 400 / status-less ``{code: invalid_prompt, message: "Request blocked."}`` from
     ``openai-codex`` — as an SDK error body, a Responses ``error`` SSE frame, or the
     ``response.failed`` text ``"invalid_prompt: Request blocked."``."""
     if c.provider_slug != "openai-codex" or c.status_code not in (None, 400):
+        # ⤷ 出口 return：返回 False
         return False
     # The OpenAI SDK unwraps ``body["error"]`` on status errors; stream frames keep the envelope.
     body_msg = next((str(m).strip().lower() for m in _body_message_candidates(c.body or {}) if m), "")
+    # ⤷ 出口 return：返回 c.code == 'invalid_prompt' and body_msg == _CODEX_MASKED_REP…
     return (c.code == "invalid_prompt" and body_msg == _CODEX_MASKED_REPLAY_MESSAGE) or (
         c.msg.strip() == f"invalid_prompt: {_CODEX_MASKED_REPLAY_MESSAGE}"
     )
 
 
+# ┌── 函数 def _error_obj()
+# │  作用：``body["error"]`` when it is a dict, else ``{}``.
+# │  参数：body: Any
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _error_obj(body: Any) -> dict:
     """``body["error"]`` when it is a dict, else ``{}``."""
     err = body.get("error") if isinstance(body, dict) else None
+    # ⤷ 出口 return：返回 err if isinstance(err, dict) else {}
     return err if isinstance(err, dict) else {}
 
 
+# ┌── 函数 def _json_dict()
+# │  作用：Parse a JSON object string; None for non-strings, blanks, invalid JSON or non-objects.
+# │  参数：text: Any
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _json_dict(text: Any) -> Optional[dict]:
     """Parse a JSON object string; None for non-strings, blanks, invalid JSON or non-objects."""
     if not (isinstance(text, str) and text.strip()):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 关键分支 try/except：捕获 (json.JSONDecodeError, TypeError)，出错走兜底而不是崩溃。
     try:
         inner = json.loads(text)
     except (json.JSONDecodeError, TypeError):
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 inner if isinstance(inner, dict) else None
     return inner if isinstance(inner, dict) else None
 
 
+# ┌── 函数 def _openrouter_wrapped_message()
+# │  作用：Lowercased inner message from OpenRouter's ``error.metadata.raw`` JSON wrapper.
+# │  参数：err_obj: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _openrouter_wrapped_message(err_obj: dict) -> str:
     """Lowercased inner message from OpenRouter's ``error.metadata.raw`` JSON wrapper."""
     metadata = err_obj.get("metadata", {})
     inner = _json_dict(metadata.get("raw")) if isinstance(metadata, dict) else None
+    # ⤷ 出口 return：返回 str(_error_obj(inner).get('message') or '').lower() if inner…
     return str(_error_obj(inner).get("message") or "").lower() if inner else ""
 
 
+# ┌── 函数 def _build_error_msg()
+# │  作用：Lowercased str(error) + body message + OpenRouter-wrapped upstream message
+# │  参数：error: Exception, body: Any
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _build_error_msg(error: Exception, body: Any) -> str:
     """Lowercased str(error) + body message + OpenRouter-wrapped upstream message
     (OpenAI SDK's APIStatusError.__str__ omits the body, so it is appended)."""
@@ -949,114 +1208,200 @@ def _build_error_msg(error: Exception, body: Any) -> str:
         parts.append(body_msg)
     if metadata_msg and metadata_msg not in raw_msg and metadata_msg not in body_msg:
         parts.append(metadata_msg)
+    # ⤷ 出口 return：返回 ' '.join(parts)
     return " ".join(parts)
 
 
+# ┌── 函数 def _body_message_candidates()
+# │  作用：Body message fields in priority order (OpenAI, flat, litellm/Bedrock proxy shapes).
+# │  参数：body: dict
+# │  返回：Iterator[Any]
+# └──────────────────────────────────────────────────────────────
 def _body_message_candidates(body: dict) -> Iterator[Any]:
     """Body message fields in priority order (OpenAI, flat, litellm/Bedrock proxy shapes)."""
+    # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
     yield _error_obj(body).get("message")
+    # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
     yield body.get("message")
+    # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
     yield body.get("errorMessage")
     args = body.get("errorArgs")
+    # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
     yield args.get("reason") if isinstance(args, dict) else None
 
 
+# ┌── 函数 def _from_cause_chain()
+# │  作用：First non-None ``pick(exc)`` over the error and its __cause__/__context__ chain (max 5 deep).
+# │  参数：error: Exception, pick: Callable[[Any], Any], default: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _from_cause_chain(error: Exception, pick: Callable[[Any], Any], default: Any) -> Any:
     """First non-None ``pick(exc)`` over the error and its __cause__/__context__ chain (max 5 deep)."""
     current = error
     for _ in range(5):
         found = pick(current)
         if found is not None:
+            # ⤷ 出口 return：返回 found
             return found
         cause = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
         if cause is None or cause is current:
             break
         current = cause
+    # ⤷ 出口 return：返回 default
     return default
 
 
+# ┌── 函数 def _status_of()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：exc: Any
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _status_of(exc: Any) -> Optional[int]:
     code = getattr(exc, "status_code", None)
     if isinstance(code, int):
+        # ⤷ 出口 return：返回 code
         return code
     code = getattr(exc, "status", None)  # some SDKs use .status
+    # ⤷ 出口 return：返回 code if isinstance(code, int) and 100 <= code < 600 else Non…
     return code if isinstance(code, int) and 100 <= code < 600 else None
 
 
+# ┌── 函数 def _body_of()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：exc: Any
+# │  返回：Optional[dict]
+# └──────────────────────────────────────────────────────────────
 def _body_of(exc: Any) -> Optional[dict]:
     body = getattr(exc, "body", None)
     if isinstance(body, dict):
+        # ⤷ 出口 return：返回 body
         return body
     response = getattr(exc, "response", None)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         json_body = response.json() if response is not None else None
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
+    # ⤷ 出口 return：返回 json_body if isinstance(json_body, dict) else None
     return json_body if isinstance(json_body, dict) else None
 
 
+# ┌── 函数 def _headers_of()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：exc: Any
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _headers_of(exc: Any) -> Any:
     headers = getattr(getattr(exc, "response", None), "headers", None)
+    # ⤷ 出口 return：返回 headers if headers and hasattr(headers, 'get') else None
     return headers if headers and hasattr(headers, "get") else None
 
 
+# ┌── 函数 def _extract_status_code()
+# │  作用：HTTP status code from the error or its cause chain.
+# │  参数：error: Exception
+# │  返回：Optional[int]
+# └──────────────────────────────────────────────────────────────
 def _extract_status_code(error: Exception) -> Optional[int]:
     """HTTP status code from the error or its cause chain."""
+    # ⤷ 出口 return：返回 _from_cause_chain(error, _status_of, None)
     return _from_cause_chain(error, _status_of, None)
 
 
+# ┌── 函数 def _extract_error_body()
+# │  作用：Structured error body from an SDK exception or its cause chain.
+# │  参数：error: Exception
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _extract_error_body(error: Exception) -> dict:
     """Structured error body from an SDK exception or its cause chain."""
+    # ⤷ 出口 return：返回 _from_cause_chain(error, _body_of, {})
     return _from_cause_chain(error, _body_of, {})
 
 
+# ┌── 函数 def _code_from_payload()
+# │  作用：Code/type from ``payload.error`` or a top-level key; ``"400"`` is not a code.
+# │  参数：payload: Any, top_keys: Sequence[str], peek_message: bool
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _code_from_payload(payload: Any, top_keys: Sequence[str], peek_message: bool) -> str:
     """Code/type from ``payload.error`` or a top-level key; ``"400"`` is not a code.
     ``peek_message`` also parses a JSON ``error.message`` for a nested code
     (Responses API surfaces ``invalid_encrypted_content`` this way)."""
     if not isinstance(payload, dict):
+        # ⤷ 出口 return：返回 ''
         return ""
     error_obj = payload.get("error", {})
     if isinstance(error_obj, dict):
         code = error_obj.get("code") or error_obj.get("type") or ""
         if isinstance(code, str) and code.strip() and code.strip() != "400":
+            # ⤷ 出口 return：返回 code.strip()
             return code.strip()
         message = error_obj.get("message")
         if peek_message and isinstance(message, str) and message.strip().startswith("{"):
             nested_code = _code_from_payload(_json_dict(message), ("code", "error_code"), False)
             if nested_code:
+                # ⤷ 出口 return：返回 nested_code
                 return nested_code
     code = next((payload.get(k) for k in top_keys if payload.get(k)), "")
     text = str(code).strip() if isinstance(code, (str, int)) else ""
+    # ⤷ 出口 return：返回 text if text and text != '400' else ''
     return text if text and text != "400" else ""
 
 
+# ┌── 函数 def _extract_error_code()
+# │  作用：Extract an error code string from the response body.
+# │  参数：body: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _extract_error_code(body: dict) -> str:
     """Extract an error code string from the response body."""
+    # ⤷ 出口 return：返回 _code_from_payload(body, ('code', 'error_code', 'errorCode')…
     return _code_from_payload(body, ("code", "error_code", "errorCode"), True) if body else ""
 
 
+# ┌── 函数 def _extract_message()
+# │  作用：Extract the most informative error message (structured body first).
+# │  参数：error: Exception, body: dict
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _extract_message(error: Exception, body: dict) -> str:
     """Extract the most informative error message (structured body first)."""
     msg = next((m for m in _body_message_candidates(body or {}) if isinstance(m, str) and m.strip()), None)
+    # ⤷ 出口 return：返回 (msg.strip() if msg else str(error))[:500]
     return (msg.strip() if msg else str(error))[:500]
 
 
+# ┌── 函数 def _is_openrouter_upstream_error()
+# │  作用：OpenRouter's "Provider returned error" wrapper: the key is healthy, the
+# │  参数：body: Any, provider: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def _is_openrouter_upstream_error(body: Any, provider: str) -> bool:
     """OpenRouter's "Provider returned error" wrapper: the key is healthy, the
     upstream failed, so credential rotation is the wrong recovery."""
     err = _error_obj(body)
     if str(err.get("message") or "").strip().lower() != "provider returned error":
+        # ⤷ 出口 return：返回 False
         return False
     if (provider or "").strip().lower() == "openrouter":
+        # ⤷ 出口 return：返回 True
         return True
     # Otherwise require the metadata shape only OpenRouter produces.
     metadata = err.get("metadata")
+    # ⤷ 出口 return：返回 isinstance(metadata, dict) and ('raw' in metadata or 'provid…
     return isinstance(metadata, dict) and ("raw" in metadata or "provider_name" in metadata)
 
 
+# ┌── 函数 def _extract_upstream_provider_name()
+# │  作用：Pull the upstream provider name out of OpenRouter's error metadata.
+# │  参数：body: Any
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _extract_upstream_provider_name(body: Any) -> Optional[str]:
     """Pull the upstream provider name out of OpenRouter's error metadata."""
     metadata = _error_obj(body).get("metadata")
     name = metadata.get("provider_name") if isinstance(metadata, dict) else None
+    # ⤷ 出口 return：返回 name.strip() if isinstance(name, str) and name.strip() else …
     return name.strip() if isinstance(name, str) and name.strip() else None

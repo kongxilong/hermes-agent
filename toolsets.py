@@ -1,4 +1,25 @@
 """Toolset helpers: get/resolve/validate named tool groups (static TOOLSETS + registry-registered)."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：toolsets.py（约 485 行）
+# 地位：工具集（toolset）的定义与解析。
+#
+# 概念：一个 toolset 就是一组工具的命名集合。比如 core（基础工具）、browser、terminal ...
+#   用户可以用 --toolset 指定只启用哪些组，避免一次性把上百个工具的 schema 全塞给模型（费 token 还容易乱调用）。
+#
+# 主要函数：
+#   get_toolset(name)              取一个工具集的定义
+#   resolve_toolset(name, visited) 展开工具集（支持 includes 嵌套引用别的集合，visited 用来防循环引用）
+#   resolve_multiple_toolsets()    一次解析多个
+#   validate_toolset(name)         校验名字是否合法
+#   get_all_toolsets() / get_toolset_names()  列出全部
+#   bundle_non_core_tools()        把非 core 的工具打包（插件平台常用）
+#
+# 值得注意：文件里 TOOLSETS 是一张静态表，同时还能从 registry 动态注册新工具集，
+#   所以你会看到 _registry() / _registry_call() 这种「先查动态注册表，查不到再用静态表」的写法。
+# ==========================================================================
+#
 
 from typing import Dict, List, Any, Set, Optional, Tuple
 
@@ -49,18 +70,36 @@ _FEISHU_TOOLS = [
 _YUANBAO_TOOLS = ["yb_query_group_info", "yb_query_group_members", "yb_send_dm", "yb_search_sticker", "yb_send_sticker"]
 
 
+# ┌── 函数 def _ts()
+# │  作用：One TOOLSETS entry (fresh lists per entry; extra keys such as posture pass through).
+# │  参数：description, tools = (), includes = (), **extra
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _ts(description, tools=(), includes=(), **extra):
     """One TOOLSETS entry (fresh lists per entry; extra keys such as posture pass through)."""
+    # ⤷ 出口 return：返回 {'description': description, 'tools': list(tools), 'includes…
     return {"description": description, "tools": list(tools), "includes": list(includes), **extra}
 
 
+# ┌── 函数 def _bundle()
+# │  作用：A `hermes-*` platform bundle: the shared core tools plus optional platform extras.
+# │  参数：description, extras = ()
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _bundle(description, extras=()):
     """A `hermes-*` platform bundle: the shared core tools plus optional platform extras."""
+    # ⤷ 出口 return：返回 _ts(description, _HERMES_CORE_TOOLS + list(extras))
     return _ts(description, _HERMES_CORE_TOOLS + list(extras))
 
 
+# ┌── 函数 def _core_without()
+# │  作用：_HERMES_CORE_TOOLS minus *excluded* (and, unless kanban=True, every kanban_* tool); order preserved.
+# │  参数：*excluded, kanban = ...
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _core_without(*excluded, kanban=True):
     """_HERMES_CORE_TOOLS minus *excluded* (and, unless kanban=True, every kanban_* tool); order preserved."""
+    # ⤷ 出口 return：返回 [t for t in _HERMES_CORE_TOOLS if t not in excluded and (kan…
     return [t for t in _HERMES_CORE_TOOLS if t not in excluded and (kanban or not t.startswith("kanban_"))]
 
 
@@ -241,28 +280,55 @@ TOOLSETS = {
 }
 
 
+# ┌── 函数 def _registry()
+# │  作用：Live tool registry, or None when tools.registry can't be imported.
+# │  参数：无
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _registry():
     """Live tool registry, or None when tools.registry can't be imported."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.registry import registry
+        # ⤷ 出口 return：返回 registry
         return registry
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _registry_call()
+# │  作用：registry.<method>() or *default* when the registry is unavailable or the call fails.
+# │  参数：method: str, default
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _registry_call(method: str, default):
     """registry.<method>() or *default* when the registry is unavailable or the call fails."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
+        # ⤷ 出口 return：返回 getattr(_registry(), method)()
         return getattr(_registry(), method)()
     except Exception:  # registry None (AttributeError) or the call failed
+        # ⤷ 出口 return：返回 default
         return default
 
 
+# ┌── 函数 def _registry_generation()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：Tuple[int, int]
+# └──────────────────────────────────────────────────────────────
 def _registry_generation() -> Tuple[int, int]:
     reg = _registry()
+    # ⤷ 出口 return：返回 (id(reg), getattr(reg, '_generation', 0)) if reg is not None…
     return (id(reg), getattr(reg, "_generation", 0)) if reg is not None else (0, 0)
 
 
+# ┌── 函数 def get_toolset()
+# │  作用：Toolset definition, or None if unknown.
+# │  参数：name: str, include_registry: bool = ...
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[str, Any]]:
     """Toolset definition, or None if unknown.
 
@@ -278,10 +344,12 @@ def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[st
     """
     toolset = TOOLSETS.get(name)
     if not include_registry:
+        # ⤷ 出口 return：返回 {**toolset, 'tools': list(toolset.get('tools', [])), 'includ…
         return {**toolset, "tools": list(toolset.get("tools", [])), "includes": list(toolset.get("includes", []))} if toolset else None
 
     registry = _registry()
     if registry is None:
+        # ⤷ 出口 return：返回 toolset if toolset else None
         return toolset if toolset else None
 
     if toolset:
@@ -292,6 +360,7 @@ def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[st
         alias_target = registry.get_toolset_alias_target(name)
         if alias_target and alias_target != name:
             merged_tools |= set(registry.get_tool_names_for_toolset(alias_target))
+        # ⤷ 出口 return：返回 {**toolset, 'tools': sorted(merged_tools)}
         return {**toolset, "tools": sorted(merged_tools)}
 
     if name in _get_plugin_toolset_names():
@@ -302,11 +371,18 @@ def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[st
     else:
         registry_toolset = registry.get_toolset_alias_target(name)
         if not registry_toolset:
+            # ⤷ 出口 return：返回 None
             return None
         description = f"MCP server '{name}' tools"
+    # ⤷ 出口 return：返回 {'description': description, 'tools': registry.get_tool_name…
     return {"description": description, "tools": registry.get_tool_names_for_toolset(registry_toolset), "includes": []}
 
 
+# ┌── 函数 def bundle_non_core_tools()
+# │  作用：A bundle's tools minus _HERMES_CORE_TOOLS (one level of includes).
+# │  参数：toolset_name: str
+# │  返回：Set[str]
+# └──────────────────────────────────────────────────────────────
 def bundle_non_core_tools(toolset_name: str) -> Set[str]:
     """A bundle's tools minus _HERMES_CORE_TOOLS (one level of includes).
 
@@ -317,11 +393,13 @@ def bundle_non_core_tools(toolset_name: str) -> Set[str]:
     core = set(_HERMES_CORE_TOOLS)
     ts_def = get_toolset(toolset_name)
     if not (ts_def and "tools" in ts_def):
+        # ⤷ 出口 return：返回 set(resolve_toolset(toolset_name)) - core
         return set(resolve_toolset(toolset_name)) - core
     to_remove = set(ts_def["tools"])
     for inc_def in map(get_toolset, ts_def.get("includes", [])):
         if inc_def and "tools" in inc_def:
             to_remove.update(inc_def["tools"])
+    # ⤷ 出口 return：返回 to_remove - core
     return to_remove - core
 
 
@@ -332,26 +410,42 @@ def bundle_non_core_tools(toolset_name: str) -> Set[str]:
 _resolve_toolset_memo: Dict[Tuple[str, bool, int, int, str], List[str]] = {}
 
 
+# ┌── 函数 def _plugin_platform_bundle()
+# │  作用：Implicit `hermes-<platform>` bundle for a registered plugin platform: core
+# │  参数：name: str
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def _plugin_platform_bundle(name: str) -> List[str]:
     """Implicit `hermes-<platform>` bundle for a registered plugin platform: core
     tools plus whatever the plugin registered under the platform name. [] otherwise."""
     if not name.startswith("hermes-"):
+        # ⤷ 出口 return：返回 []
         return []
     platform_name = name[len("hermes-"):]
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.platform_registry import platform_registry
         if not platform_registry.is_registered(platform_name):
+            # ⤷ 出口 return：返回 []
             return []
     except Exception:
+        # ⤷ 出口 return：返回 []
         return []
     tools = set(_HERMES_CORE_TOOLS)
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         tools.update(e.name for e in _registry_call("get_all_entries", ()) if e.toolset == platform_name)
     except Exception:
         pass
+    # ⤷ 出口 return：返回 list(tools)
     return list(tools)
 
 
+# ┌── 函数 def resolve_toolset()
+# │  作用：Recursively resolve a toolset (and its includes) to a sorted tool-name list.
+# │  参数：name: str, visited: Set[str] = None, include_registry: bool = ...
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def resolve_toolset(name: str, visited: Set[str] = None, *, include_registry: bool = True) -> List[str]:
     """Recursively resolve a toolset (and its includes) to a sorted tool-name list.
     include_registry=False resolves the static TOOLSETS view only.
@@ -366,6 +460,7 @@ def resolve_toolset(name: str, visited: Set[str] = None, *, include_registry: bo
         memo_key = (name, include_registry, *_registry_generation(), _registry_call("current_scope_key", ""))
         cached = _resolve_toolset_memo.get(memo_key)
         if cached is not None:
+            # ⤷ 出口 return：返回 list(cached)
             return list(cached)
         visited = set()
 
@@ -374,15 +469,18 @@ def resolve_toolset(name: str, visited: Set[str] = None, *, include_registry: bo
         all_tools: Set[str] = set()
         for toolset_name in get_toolset_names():
             all_tools.update(resolve_toolset(toolset_name, visited.copy(), include_registry=include_registry))
+        # ⤷ 出口 return：返回 sorted(all_tools)
         return sorted(all_tools)
 
     # Diamond include or cycle: [] silently — the tools are collected via another path.
     if name in visited:
+        # ⤷ 出口 return：返回 []
         return []
     visited.add(name)
 
     toolset = get_toolset(name, include_registry=include_registry)
     if not toolset:
+        # ⤷ 出口 return：返回 _plugin_platform_bundle(name) if include_registry else []
         return _plugin_platform_bundle(name) if include_registry else []
 
     tools = set(toolset.get("tools", []))
@@ -394,29 +492,59 @@ def resolve_toolset(name: str, visited: Set[str] = None, *, include_registry: bo
         if len(_resolve_toolset_memo) >= 256:  # stale-generation entries are never hit again
             _resolve_toolset_memo.clear()
         _resolve_toolset_memo[memo_key] = list(result)
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def _get_plugin_toolset_names()
+# │  作用：Registry toolset names absent from the static TOOLSETS dict.
+# │  参数：无
+# │  返回：Set[str]
+# └──────────────────────────────────────────────────────────────
 def _get_plugin_toolset_names() -> Set[str]:
     """Registry toolset names absent from the static TOOLSETS dict."""
+    # ⤷ 出口 return：返回 {n for n in _registry_call('get_registered_toolset_names', (…
     return {n for n in _registry_call("get_registered_toolset_names", ()) if n not in TOOLSETS}
 
 
+# ┌── 函数 def _get_registry_toolset_aliases()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：无
+# │  返回：Dict[str, str]
+# └──────────────────────────────────────────────────────────────
 def _get_registry_toolset_aliases() -> Dict[str, str]:
+    # ⤷ 出口 return：返回 _registry_call('get_registered_toolset_aliases', {})
     return _registry_call("get_registered_toolset_aliases", {})
 
 
+# ┌── 函数 def _display_alias()
+# │  作用：First non-static alias pointing at *ts_name*, or None.
+# │  参数：ts_name: str, aliases: Dict[str, str]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _display_alias(ts_name: str, aliases: Dict[str, str]) -> Optional[str]:
     """First non-static alias pointing at *ts_name*, or None."""
+    # ⤷ 出口 return：返回 next((a for a, canonical in aliases.items() if canonical == …
     return next((a for a, canonical in aliases.items() if canonical == ts_name and a not in TOOLSETS), None)
 
 
+# ┌── 函数 def _plugin_display_names()
+# │  作用：Plugin toolset names, shown under their first non-static alias when one exists.
+# │  参数：无
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def _plugin_display_names() -> List[str]:
     """Plugin toolset names, shown under their first non-static alias when one exists."""
     aliases = _get_registry_toolset_aliases()
+    # ⤷ 出口 return：返回 [_display_alias(n, aliases) or n for n in _get_plugin_toolse…
     return [_display_alias(n, aliases) or n for n in _get_plugin_toolset_names()]
 
 
+# ┌── 函数 def get_all_toolsets()
+# │  作用：All toolset definitions: static plus plugin-registered.
+# │  参数：无
+# │  返回：Dict[str, Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def get_all_toolsets() -> Dict[str, Dict[str, Any]]:
     """All toolset definitions: static plus plugin-registered."""
     result = dict(TOOLSETS)
@@ -428,30 +556,55 @@ def get_all_toolsets() -> Dict[str, Dict[str, Any]]:
     # Static names an MCP server also aliases show the merged view get_toolset() resolves.
     for name in TOOLSETS.keys() & aliases.keys():
         result[name] = get_toolset(name) or result[name]
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def get_toolset_names()
+# │  作用：Sorted names of all toolsets (static + plugin), excluding aliases.
+# │  参数：无
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def get_toolset_names() -> List[str]:
     """Sorted names of all toolsets (static + plugin), excluding aliases."""
+    # ⤷ 出口 return：返回 sorted(set(TOOLSETS.keys()) | set(_plugin_display_names()))
     return sorted(set(TOOLSETS.keys()) | set(_plugin_display_names()))
 
 
+# ┌── 函数 def validate_toolset()
+# │  作用：（源码未写 docstring，可从下方参数与返回值推断）
+# │  参数：name: str
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def validate_toolset(name: str) -> bool:
+    # ⤷ 出口 return：返回 name in {'all', '*'} or name in TOOLSETS or name in _get_plu…
     return (name in {"all", "*"} or name in TOOLSETS
             or name in _get_plugin_toolset_names() or name in _get_registry_toolset_aliases())
 
 
+# ┌── 函数 def create_custom_toolset()
+# │  作用：Register a runtime toolset in TOOLSETS.
+# │  参数：name: str, description: str, tools: List[str] = None, includes: List[str] = None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def create_custom_toolset(name: str, description: str, tools: List[str] = None, includes: List[str] = None) -> None:
     """Register a runtime toolset in TOOLSETS."""
     TOOLSETS[name] = _ts(description, tools or [], includes or [])
 
 
+# ┌── 函数 def get_toolset_info()
+# │  作用：Toolset definition plus its resolved tools, or None if unknown.
+# │  参数：name: str
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def get_toolset_info(name: str) -> Dict[str, Any]:
     """Toolset definition plus its resolved tools, or None if unknown."""
     toolset = get_toolset(name)
     if not toolset:
+        # ⤷ 出口 return：返回 None
         return None
     resolved_tools = resolve_toolset(name)
+    # ⤷ 出口 return：返回 {'name': name, 'description': toolset['description'], 'direc…
     return {
         "name": name, "description": toolset["description"],
         "direct_tools": toolset["tools"], "includes": toolset["includes"],
@@ -465,6 +618,11 @@ def get_toolset_info(name: str) -> Dict[str, Any]:
 # Internal code MUST NOT use these (scripts/check_compat_pointers.py fails CI if it does).
 # The whole block is removed by reverting the commit that added it.
 
+# ┌── 函数 def resolve_multiple_toolsets()
+# │  作用：Resolve multiple toolsets and combine their tools.
+# │  参数：toolset_names: List[str]
+# │  返回：List[str]
+# └──────────────────────────────────────────────────────────────
 def resolve_multiple_toolsets(toolset_names: List[str]) -> List[str]:
     """
     Resolve multiple toolsets and combine their tools.
@@ -481,5 +639,6 @@ def resolve_multiple_toolsets(toolset_names: List[str]) -> List[str]:
         tools = resolve_toolset(name)
         all_tools.update(tools)
 
+    # ⤷ 出口 return：返回 sorted(all_tools)
     return sorted(all_tools)
 # ---- END PLUGIN-COMPAT ----

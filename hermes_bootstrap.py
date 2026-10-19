@@ -8,6 +8,25 @@ point (``hermes``, ``hermes-agent``, ``hermes-acp``, ``gateway.run``, ``batch_ru
 process still needs an explicit ``encoding="utf-8"`` (ruff ``PLW1514``). POSIX is left
 alone deliberately — users' ``LANG``/``LC_*`` choices are respected.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：hermes_bootstrap.py（约 119 行，很短，建议完整读完）
+# 地位：启动引导小工具，被所有入口脚本最先 import。
+#
+# 解决什么问题：
+#   Windows 把标准输入输出绑定到系统代码页（cp1252），所以 print 一个非 ASCII 字符（比如 café、中文）
+#   会直接抛 UnicodeEncodeError。本文件就是在 Windows 上强制切到 UTF-8 模式；在 macOS/Linux 上是空操作。
+#
+# 四个函数：
+#   apply_windows_utf8_bootstrap()   设置 PYTHONUTF8 / PYTHONIOENCODING 等环境变量
+#   suppress_platform_ver_console()  关掉 Windows 上那条多余的 platform 版本输出
+#   harden_import_path(src_root)     整理 sys.path，防止导入到错误的同名模块
+#   activate_durable_lazy_target()   启用懒加载目标
+#
+# 给新手的启发：这是「跨平台兼容层」的典型写法——把平台差异集中在一个小文件里，其他代码假装它不存在。
+# ==========================================================================
+#
 
 from __future__ import annotations
 
@@ -18,11 +37,18 @@ _IS_WINDOWS = sys.platform == "win32"
 _bootstrap_applied = False
 
 
+# ┌── 函数 def apply_windows_utf8_bootstrap()
+# │  作用：Apply the Windows UTF-8 bootstrap once; True only when it was applied this call.
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def apply_windows_utf8_bootstrap() -> bool:
     """Apply the Windows UTF-8 bootstrap once; True only when it was applied this call."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _bootstrap_applied
 
     if not _IS_WINDOWS or _bootstrap_applied:
+        # ⤷ 出口 return：返回 False
         return False
 
     # setdefault() so a user can opt out with PYTHONUTF8=0 / PYTHONIOENCODING=...
@@ -38,15 +64,22 @@ def apply_windows_utf8_bootstrap() -> bool:
         reconfigure = getattr(getattr(sys, stream_name, None), "reconfigure", None)
         if reconfigure is None:
             continue
+        # ⤷ 关键分支 try/except：捕获 (OSError, ValueError)，出错走兜底而不是崩溃。
         try:
             reconfigure(encoding="utf-8", errors="replace")
         except (OSError, ValueError):
             pass  # closed, or replaced with something non-reconfigurable
 
     _bootstrap_applied = True
+    # ⤷ 出口 return：返回 True
     return True
 
 
+# ┌── 函数 def suppress_platform_ver_console()
+# │  作用：Stub ``platform._syscmd_ver`` on Windows — decode-crash + console-flash guard.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def suppress_platform_ver_console() -> None:
     """Stub ``platform._syscmd_ver`` on Windows — decode-crash + console-flash guard.
 
@@ -61,12 +94,14 @@ def suppress_platform_ver_console() -> None:
     """
     if not _IS_WINDOWS:
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import platform
 
         if hasattr(platform, "_syscmd_ver"):
             def _quiet_syscmd_ver(system="", release="", version="",
                                   supported_platforms=("win32", "win16", "dos")):
+                # ⤷ 出口 return：返回 (system, release, version)
                 return system, release, version
 
             platform._syscmd_ver = _quiet_syscmd_ver
@@ -74,6 +109,11 @@ def suppress_platform_ver_console() -> None:
         pass  # hardening only — never break an entry point
 
 
+# ┌── 函数 def harden_import_path()
+# │  作用：Stop a package in the current directory from shadowing Hermes modules.
+# │  参数：src_root: str | None = None
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def harden_import_path(src_root: str | None = None) -> None:
     """Stop a package in the current directory from shadowing Hermes modules.
 
@@ -96,6 +136,11 @@ def harden_import_path(src_root: str | None = None) -> None:
     sys.path.insert(0, root)
 
 
+# ┌── 函数 def activate_durable_lazy_target()
+# │  作用：Put the durable lazy-install dir (``HERMES_LAZY_INSTALL_TARGET``) on ``sys.path``.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def activate_durable_lazy_target() -> None:
     """Put the durable lazy-install dir (``HERMES_LAZY_INSTALL_TARGET``) on ``sys.path``.
 
@@ -106,6 +151,7 @@ def activate_durable_lazy_target() -> None:
     """
     if not os.environ.get("HERMES_LAZY_INSTALL_TARGET", "").strip():
         return
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools import lazy_deps
         lazy_deps.activate_durable_lazy_target()

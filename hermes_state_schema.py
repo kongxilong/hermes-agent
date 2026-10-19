@@ -3,6 +3,29 @@
 Plain mixin for ``hermes_state.SessionDB`` (no ``__init__``/state of its own).
 Must never import hermes_state (cycle); shared constants live in hermes_state_common.
 """
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：hermes_state_schema.py（约 1298 行）
+# 地位：数据库表结构的创建与演进（建表 + 加列 + FTS 索引管理）。
+#
+# 重要约束（源码注释明确写了）：绝不能 import hermes_state，否则循环导入。
+#   共享常量放在 hermes_state_common。这是大型项目的典型依赖纪律。
+#
+# 核心类：class SessionSchemaMixin（34 个方法）
+#   _sqlite_table_exists()      表是否存在
+#   _sqlite_supports_fts5()     这个 SQLite 编译了 FTS5 吗（全文搜索不是默认就有）
+#   _rebuild_fts_indexes()      重建全文索引
+#   _migrate_broad_fts_update_triggers() / _migrate_bounded_tool_fts_triggers()
+#                               触发器迁移（把过宽的更新触发器收窄，提升性能）
+#   _execute_ddl_script_transactional()   在事务里跑 DDL，失败整体回滚
+#
+# 入口函数：reconcile_state_schema(conn)
+#   —— 打开数据库后调用它，自动把旧版本的表结构补齐到最新（这就是「schema migration」）。
+#
+# 值得学：_holder_cmdline(pid) 用来查「是谁占着数据库」，写状态层时排查锁问题很有用。
+# ==========================================================================
+#
 
 import contextlib
 import datetime
@@ -44,8 +67,14 @@ _FTS_STALE_RETRY_SECONDS = 60.0
 _FTS_STALE_RETRY_MAX_SECONDS = 3600.0
 
 
+# ┌── 函数 def _holder_cmdline()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：pid: int
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _holder_cmdline(pid: int) -> str:
     argv = _read_proc_argv(pid)
+    # ⤷ 出口 return：返回 ' '.join(argv)[:120] if argv else '<cmdline unavailable>'
     return " ".join(argv)[:120] if argv else "<cmdline unavailable>"
 
 # schema_read_probe_statements() cache (parses SCHEMA_SQL in an in-memory DB; once per process).
@@ -135,10 +164,16 @@ _STATE_META_UPSERT_SQL = (
 _CLEAR_REBUILD_MARKERS_SQL = "DELETE FROM state_meta WHERE key IN ('fts_rebuild_high_water', 'fts_rebuild_progress')"
 
 
+# ┌── 函数 def _legacy_inline_reinsert_sql()
+# │  作用：Legacy inline (pre-v23) FTS re-population script fragment (whitespace pinned).
+# │  参数：table: str, indent: int, delete_first: bool = ...
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _legacy_inline_reinsert_sql(table: str, indent: int, *, delete_first: bool = False) -> str:
     """Legacy inline (pre-v23) FTS re-population script fragment (whitespace pinned)."""
     pad = " " * indent
     body = f"{pad}DELETE FROM {table};\n" if delete_first else ""
+    # ⤷ 出口 return：返回 f"\n{body}{pad}INSERT INTO {table}(rowid, content)\n{pad}SEL…
     return (
         f"\n{body}{pad}INSERT INTO {table}(rowid, content)\n"
         f"{pad}SELECT id,\n"
@@ -149,11 +184,22 @@ def _legacy_inline_reinsert_sql(table: str, indent: int, *, delete_first: bool =
     )
 
 
+# ┌── 函数 def _q()
+# │  作用：Double-quote an SQL identifier.
+# │  参数：ident: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _q(ident: str) -> str:
     """Double-quote an SQL identifier."""
+    # ⤷ 出口 return：返回 '"' + ident.replace('"', '""') + '"'
     return '"' + ident.replace('"', '""') + '"'
 
 
+# ┌── 函数 def schema_read_probe_statements()
+# │  作用：SELECT statements that fail iff a live store is behind SCHEMA_SQL. Read-only opens skip
+# │  参数：无
+# │  返回：tuple
+# └──────────────────────────────────────────────────────────────
 def schema_read_probe_statements() -> tuple:
     """SELECT statements that fail iff a live store is behind SCHEMA_SQL. Read-only opens skip
     ``_reconcile_columns()`` (no DDL against another profile's live DB), so healing callers
@@ -161,6 +207,7 @@ def schema_read_probe_statements() -> tuple:
     SCHEMA_SQL (a hand-maintained list went stale within days). Columns are
     table-qualified: an unqualified double-quoted identifier that fails to resolve silently
     degrades to a string literal (SQLite misfeature) and would pass on the stale store."""
+    # ⤷ global：声明接下来赋值的是模块级全局变量，而不是新建局部变量。
     global _READ_PROBE_STATEMENTS
     if _READ_PROBE_STATEMENTS is None:
         tables = SessionSchemaMixin._parse_schema_columns(SCHEMA_SQL)
@@ -168,22 +215,34 @@ def schema_read_probe_statements() -> tuple:
             "SELECT {} FROM {} LIMIT 0".format(", ".join(f"{_q(table)}.{_q(col)}" for col in cols), _q(table))
             for table, cols in sorted(tables.items())
         )
+    # ⤷ 出口 return：返回 _READ_PROBE_STATEMENTS
     return _READ_PROBE_STATEMENTS
 
 
+# ┌── 类 class SessionSchemaMixin
+# │  说明：See module docstring — mixin for SessionDB (Schema cluster).
+# │  成员：共 34 个方法；对外可用 1 个
+# └──────────────────────────────────────────────────────────────
 class SessionSchemaMixin:
     """See module docstring — mixin for SessionDB (Schema cluster)."""
 
+    # ┌── 函数 def _dedupe_legacy_system_prompts()
+    # │  作用：Move inline prompt snapshots into the shared content-addressed table. Any
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _dedupe_legacy_system_prompts(self, cursor: sqlite3.Cursor) -> None:
         """Move inline prompt snapshots into the shared content-addressed table. Any
         ``OperationalError`` mid-loop returns instead of raising: partial migration is safe
         (the legacy column stays a read fallback; next init resumes), whereas propagating
         left the version below 25 and re-ran this on every open (gateway crash loop)."""
+        # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             rows = cursor.execute("SELECT id, system_prompt FROM sessions WHERE system_prompt IS NOT NULL").fetchall()
         except sqlite3.OperationalError:
             return
         for session_id, prompt in rows:
+            # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
             try:
                 prompt_hash = self._store_system_prompt(cursor, prompt)
                 cursor.execute(
@@ -198,40 +257,75 @@ class SessionSchemaMixin:
                 )
                 return
 
+    # ┌── 函数 def _sqlite_supports_fts5()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _sqlite_supports_fts5(self, cursor: sqlite3.Cursor) -> bool:
+        # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             cursor.execute("CREATE VIRTUAL TABLE temp._hermes_fts5_probe USING fts5(x)")
             cursor.execute("DROP TABLE temp._hermes_fts5_probe")
+            # ⤷ 出口 return：返回 True
             return True
         except sqlite3.OperationalError as exc:
             if not self._is_fts5_unavailable_error(exc):
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
             self._warn_fts5_unavailable(exc)
+            # ⤷ 出口 return：返回 False
             return False
 
+    # ┌── 函数 def _drop_all_fts_triggers()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _drop_all_fts_triggers(self, cursor: sqlite3.Cursor) -> None:
         self._drop_fts_triggers(cursor)
         for trigger in _FTS_CJK_TRIGGERS:
             with contextlib.suppress(sqlite3.OperationalError):
                 cursor.execute(f"DROP TRIGGER IF EXISTS {trigger}")
 
+    # ┌── 函数 def _fts_triggers_missing()
+    # │  作用：True unless every trigger in *names* (one DDL half) exists.
+    # │  参数：cursor: sqlite3.Cursor, names: Sequence[str]
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _fts_triggers_missing(cursor: sqlite3.Cursor, names: Sequence[str]) -> bool:
         """True unless every trigger in *names* (one DDL half) exists."""
         if not names:
+            # ⤷ 出口 return：返回 False
             return False  # "name IN ()" is a SQLite syntax error
         placeholders = ",".join("?" for _ in names)
         sql = f"SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name IN ({placeholders})"
+        # ⤷ 出口 return：返回 int(cursor.execute(sql, tuple(names)).fetchone()[0]) < len(n…
         return int(cursor.execute(sql, tuple(names)).fetchone()[0]) < len(names)
 
+    # ┌── 函数 def _fts_update_trigger_needs_narrowing()
+    # │  作用：True when trigger SQL is a broad AFTER UPDATE (missing ``OF``).
+    # │  参数：sql: Optional[str]
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _fts_update_trigger_needs_narrowing(sql: Optional[str]) -> bool:
         """True when trigger SQL is a broad AFTER UPDATE (missing ``OF``)."""
         if not sql:
+            # ⤷ 出口 return：返回 False
             return False
         compact = " ".join(sql.split()).upper()  # multi-line DDL still matches
+        # ⤷ 出口 return：返回 'AFTER UPDATE OF ' not in compact and 'AFTER UPDATE ON ' in …
         return "AFTER UPDATE OF " not in compact and "AFTER UPDATE ON " in compact
 
+    # ┌── 函数 def _migrate_broad_fts_update_triggers()
+    # │  作用：Replace broad AFTER UPDATE FTS triggers with AFTER UPDATE OF variants (``IF NOT EXISTS``
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：int
+    # └──────────────────────────────────────────────────────────────
     def _migrate_broad_fts_update_triggers(self, cursor: sqlite3.Cursor) -> int:
         """Replace broad AFTER UPDATE FTS triggers with AFTER UPDATE OF variants (``IF NOT EXISTS``
         never replaces an existing broad trigger). No FTS rebuild: correctness was already
@@ -247,6 +341,7 @@ class SessionSchemaMixin:
         rows = cursor.execute(sql, update_names).fetchall()
         to_drop = [name for name, sql in rows if self._fts_update_trigger_needs_narrowing(sql)]
         if not to_drop:
+            # ⤷ 出口 return：返回 0
             return 0
         for name in to_drop:
             cursor.execute(f"DROP TRIGGER IF EXISTS {name}")  # names from the literal allowlist above
@@ -258,11 +353,13 @@ class SessionSchemaMixin:
         # Only recreate the CJK trigger this migration dropped. ``_ensure_fts_cjk_schema`` soft-fails
         # (never raises), so afterwards require a narrowed trigger or durable quarantine.
         if "messages_fts_cjk_update" in to_drop:
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 self._ensure_fts_cjk_schema(cursor)
             except Exception:
                 self._quarantine_cjk_after_update_of_migration(cursor)
                 logger.exception("CJK FTS re-ensure after UPDATE OF migration failed")
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
             row = cursor.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?", ("messages_fts_cjk_update",),
@@ -274,8 +371,15 @@ class SessionSchemaMixin:
                     "UPDATE OF migration; marked stale and unavailable"
                 )
         logger.info("Migrated %d broad FTS UPDATE trigger(s) to AFTER UPDATE OF (no rebuild required)", len(to_drop))
+        # ⤷ 出口 return：返回 len(to_drop)
         return len(to_drop)
 
+    # ┌── 函数 def _stamp_fts_tool_high_water()
+    # │  作用：Record MAX(messages.id) as the bounded-tool-content high-water mark: rows at or below it keep
+    # │  参数：cursor: sqlite3.Cursor
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _stamp_fts_tool_high_water(cursor: sqlite3.Cursor) -> None:
         """Record MAX(messages.id) as the bounded-tool-content high-water mark: rows at or below it keep
@@ -283,6 +387,12 @@ class SessionSchemaMixin:
         high_water = cursor.execute("SELECT COALESCE(MAX(id), 0) FROM messages").fetchone()[0]
         cursor.execute(_STATE_META_UPSERT_SQL, (FTS_TOOL_FULL_CONTENT_HIGH_WATER_KEY, str(high_water)))
 
+    # ┌── 函数 def _execute_ddl_skipping_settled_triggers()
+    # │  作用：Run *ddl* statement by statement, skipping each ``DROP TRIGGER IF EXISTS x`` /
+    # │  参数：cursor: sqlite3.Cursor, ddl: str
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _execute_ddl_skipping_settled_triggers(cursor: sqlite3.Cursor, ddl: str) -> None:
         """Run *ddl* statement by statement, skipping each ``DROP TRIGGER IF EXISTS x`` /
@@ -316,8 +426,15 @@ class SessionSchemaMixin:
                 pending_drop = None
             cursor.execute(current)
         if statement.strip():
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise sqlite3.OperationalError("incomplete DDL statement")
 
+    # ┌── 函数 def _execute_ddl_script_transactional()
+    # │  作用：Execute a DDL script without ``executescript``'s implicit commit.
+    # │  参数：cursor: sqlite3.Cursor, ddl: str
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _execute_ddl_script_transactional(cursor: sqlite3.Cursor, ddl: str) -> None:
         """Execute a DDL script without ``executescript``'s implicit commit."""
@@ -328,8 +445,14 @@ class SessionSchemaMixin:
                 cursor.execute(statement)
                 statement = ""
         if statement.strip():
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise sqlite3.OperationalError("incomplete FTS DDL statement")
 
+    # ┌── 函数 def _migrate_bounded_tool_fts_triggers()
+    # │  作用：Replace FTS triggers without rebuilding historical indexes. Existing rows keep their
+    # │  参数：self, cursor: sqlite3.Cursor, legacy: bool
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _migrate_bounded_tool_fts_triggers(self, cursor: sqlite3.Cursor, *, legacy: bool) -> None:
         """Replace FTS triggers without rebuilding historical indexes. Existing rows keep their
         full-content token stream; the durable high-water id makes new tool rows use the bounded
@@ -350,6 +473,7 @@ class SessionSchemaMixin:
             has_messages and self._fts_triggers_missing(cursor, names)
         )
         cursor.execute("SAVEPOINT bounded_tool_fts")
+        # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
         try:
             self._stamp_fts_tool_high_water(cursor)
             for name in names:
@@ -364,14 +488,27 @@ class SessionSchemaMixin:
         except BaseException:
             cursor.execute("ROLLBACK TO SAVEPOINT bounded_tool_fts")
             cursor.execute("RELEASE SAVEPOINT bounded_tool_fts")
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
 
+    # ┌── 函数 def _sqlite_table_exists()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：cursor: sqlite3.Cursor, name: str
+    # │  返回：bool
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _sqlite_table_exists(cursor: sqlite3.Cursor, name: str) -> bool:
+        # ⤷ 出口 return：返回 cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'ta…
         return cursor.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,),
         ).fetchone() is not None
 
+    # ┌── 函数 def _migrate_trigram_cron_exclusion()
+    # │  作用：Install the source-filtered trigram view and purge historical rows (v29 cron exclusion,
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _migrate_trigram_cron_exclusion(self, cursor: sqlite3.Cursor) -> bool:
         """Install the source-filtered trigram view and purge historical rows (v29 cron exclusion,
         v30 subagent exclusion: both only change the view/trigger predicate and rebuild from it).
@@ -381,16 +518,19 @@ class SessionSchemaMixin:
         the inverted index still holds excluded rows until FTS5 rebuilds from the new view, which
         runs under the shared cross-process admission gate. Returns False to hold schema_version back."""
         if self._db_has_legacy_inline_fts(cursor) or self._db_has_trigram_tool_calls_projection(cursor):
+            # ⤷ 出口 return：返回 True
             return True
         trigram_exists = self._fts_table_probe(cursor, "messages_fts_trigram")
         if trigram_exists is not True:
             # Absent: the normal ensure path creates/backfills it. None: this runtime cannot
             # safely inspect an existing one, so leave the version behind for retry.
+            # ⤷ 出口 return：返回 trigram_exists is False
             return trigram_exists is False
         for name in _FTS_TRIGRAM_TRIGGERS:
             cursor.execute(f"DROP TRIGGER IF EXISTS {name}")
         cursor.execute("DROP VIEW IF EXISTS messages_fts_trigram_src")
         if not self._ensure_fts_schema(cursor, "messages_fts_trigram", FTS_TRIGRAM_SQL):
+            # ⤷ 出口 return：返回 False
             return False
         # Always rebuild while schema_version is behind, even if the view already has the new
         # predicate: a process can die between replacing the view and rebuilding/stamping.
@@ -398,22 +538,36 @@ class SessionSchemaMixin:
             cursor,
             lambda: cursor.execute("INSERT INTO messages_fts_trigram(messages_fts_trigram) VALUES('rebuild')"),
         )
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _quarantine_cjk_after_update_of_migration()
+    # │  作用：Fail closed after dropping the CJK UPDATE trigger mid-migration: clear availability,
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _quarantine_cjk_after_update_of_migration(self, cursor: sqlite3.Cursor) -> None:
         """Fail closed after dropping the CJK UPDATE trigger mid-migration: clear availability,
         persist ``fts_cjk_stale``, drop any residual trigger so a later open cannot
         IF-NOT-EXISTS over a gap."""
         self._fts_cjk_available = False
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             self.set_meta(FTS_CJK_STALE_KEY, "1", cursor=cursor)
         except Exception:
             logger.debug("Could not persist CJK FTS stale breadcrumb", exc_info=True)
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             cursor.execute("DROP TRIGGER IF EXISTS messages_fts_cjk_update")
         except Exception:
             logger.debug("Could not drop residual CJK UPDATE trigger after quarantine", exc_info=True)
 
+    # ┌── 函数 def _rebuild_fts_indexes()
+    # │  作用：v23+ external-content 'rebuild'. It indexes EVERY row, so the deferred-backfill
+    # │  参数：cursor: sqlite3.Cursor, legacy: bool = ..., include_trigram: bool = ...
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _rebuild_fts_indexes(cursor: sqlite3.Cursor, *, legacy: bool = False, include_trigram: bool = True) -> None:
         """v23+ external-content 'rebuild'. It indexes EVERY row, so the deferred-backfill
@@ -431,14 +585,21 @@ class SessionSchemaMixin:
         if not legacy:
             cursor.execute(_CLEAR_REBUILD_MARKERS_SQL)
 
+    # ┌── 函数 def _fts_table_probe()
+    # │  作用：True = queryable, False = absent, None = FTS module/tokenizer missing or content
+    # │  参数：self, cursor: sqlite3.Cursor, table_name: str
+    # │  返回：Optional[bool]
+    # └──────────────────────────────────────────────────────────────
     def _fts_table_probe(self, cursor: sqlite3.Cursor, table_name: str) -> Optional[bool]:
         """True = queryable, False = absent, None = FTS module/tokenizer missing or content
         undecodable (index degraded, store accessible). Invalid UTF-8 surfaces as a bare
         UnicodeDecodeError on some builds and OperationalError("Could not decode to UTF-8")
         on others; both are caught so the probe never raises into init/recovery flows.
         Anything else (malformed schema, corrupt vtable) re-raises."""
+        # ⤷ 关键分支 try/except：捕获 UnicodeDecodeError、sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             cursor.execute(f"SELECT * FROM {table_name} LIMIT 0")
+            # ⤷ 出口 return：返回 True
             return True
         except UnicodeDecodeError as exc:
             decode_exc = exc
@@ -450,20 +611,29 @@ class SessionSchemaMixin:
                     self._warn_trigram_unavailable(exc)
                 else:
                     self._warn_fts5_unavailable(exc)
+                # ⤷ 出口 return：返回 None
                 return None
             if "no such table" in str(exc).lower():
+                # ⤷ 出口 return：返回 False
                 return False
             if "decode to utf-8" not in str(exc).lower():
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
             decode_exc = exc
         logger.warning(
             "%s probe encountered invalid UTF-8 in FTS content; "
             "search may return incomplete results until FTS is rebuilt: %s", table_name, decode_exc,
         )
+        # ⤷ 出口 return：返回 None
         return None
 
     # ── Stale-FTS recovery ─────────────────────────────────────────────────
 
+    # ┌── 函数 def _defer_stale_fts_for_holders()
+    # │  作用：Record a deferral diagnostic for the foreign processes holding the DB; True = defer
+    # │  参数：self, cursor: sqlite3.Cursor, foreign_holders
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _defer_stale_fts_for_holders(self, cursor: sqlite3.Cursor, foreign_holders) -> bool:
         """Record a deferral diagnostic for the foreign processes holding the DB; True = defer
         (holders remain). After ``_FTS_HOLDER_ESCALATE_ATTEMPTS`` deferrals spanning
@@ -475,6 +645,7 @@ class SessionSchemaMixin:
         works from inside a gateway session (stop only the other holder; this process's own
         retry tick admits the rebuild). A changed holder set restarts that window."""
         now = time.time()
+        # ⤷ 关键分支 try/except：捕获 sqlite3.Error，出错走兜底而不是崩溃。
         try:
             row = cursor.execute(
                 "SELECT value FROM state_meta WHERE key = ? LIMIT 1", (FTS_REBUILD_DEFERRAL_KEY,),
@@ -483,6 +654,7 @@ class SessionSchemaMixin:
             row = None
         parsed = safe_json_loads(row[0]) if row else None
         record = parsed if isinstance(parsed, dict) else {}
+        # ⤷ 关键分支 try/except：捕获 (TypeError, ValueError)，出错走兜底而不是崩溃。
         try:
             first_seen = float(record.get("first_seen", now))
             attempts = int(record.get("attempts", 0)) + 1
@@ -519,6 +691,7 @@ class SessionSchemaMixin:
         )
         if not foreign_holders:
             self._fts_deferred_holder_pids = None
+            # ⤷ 出口 return：返回 False
             return False
         self._fts_deferred_holder_pids = holder_pids
         if futile:
@@ -540,14 +713,21 @@ class SessionSchemaMixin:
             "hold the database or WAL sidecars (%s); canonical writes and LIKE search remain available (deferral %d).",
             foreign_holders, attempts,
         )
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _recover_stale_fts()
+    # │  作用：Atomically rebuild stale base/trigram indexes and resume syncing. *timeout_seconds*
+    # │  参数：self, cursor: sqlite3.Cursor, legacy: bool, timeout_seconds = ...
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _recover_stale_fts(self, cursor: sqlite3.Cursor, *, legacy: bool, timeout_seconds=None) -> bool:
         """Atomically rebuild stale base/trigram indexes and resume syncing. *timeout_seconds*
         bounds the admission wait (None = full startup budget, ``0`` = non-blocking retry).
         Fails closed: holders or a lost admission race leave the breadcrumb set."""
         foreign_holders = self._foreign_state_db_holders()
         if foreign_holders and self._defer_stale_fts_for_holders(cursor, foreign_holders):
+            # ⤷ 出口 return：返回 False
             return False
         with fts_rebuild_admission(self.db_path, timeout_seconds=timeout_seconds) as admitted:
             if not admitted:
@@ -555,9 +735,16 @@ class SessionSchemaMixin:
                     "Deferred stale state.db FTS rebuild: another process holds the rebuild authority; "
                     "canonical writes and LIKE search remain available."
                 )
+                # ⤷ 出口 return：返回 False
                 return False
+            # ⤷ 出口 return：返回 self._recover_stale_fts_locked(cursor, legacy=legacy)
             return self._recover_stale_fts_locked(cursor, legacy=legacy)
 
+    # ┌── 函数 def retry_deferred_fts_recovery()
+    # │  作用：Retry a deferred stale-FTS rebuild (gateway housekeeping tick). ``_recover_stale_fts``
+    # │  参数：self
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def retry_deferred_fts_recovery(self) -> bool:
         """Retry a deferred stale-FTS rebuild (gateway housekeeping tick). ``_recover_stale_fts``
         fails closed at open, leaving search on LIKE; live write/search paths must never
@@ -571,6 +758,7 @@ class SessionSchemaMixin:
         housekeeping). See #100108, #97940.
         """
         if not self._fts_stale:
+            # ⤷ 出口 return：返回 False
             return False
         if self._quarantine_reason() is not None:
             # Quarantined: never run FTS DDL/DML against a damaged image or a stale/replaced generation
@@ -578,8 +766,10 @@ class SessionSchemaMixin:
             # from the default interval.
             self._fts_stale_retry_after = 0.0
             self._fts_stale_retry_interval = 0.0
+            # ⤷ 出口 return：返回 False
             return False
         if self.read_only or self._conn is None:
+            # ⤷ 出口 return：返回 False
             return False
         now = time.monotonic()
         deferred_pids = getattr(self, "_fts_deferred_holder_pids", None)
@@ -589,6 +779,7 @@ class SessionSchemaMixin:
             if deferred_pids is None or sorted(
                 {pid for pid, _path in self._foreign_state_db_holders() if pid > 0}
             ) == deferred_pids:
+                # ⤷ 出口 return：返回 False
                 return False
             self._fts_stale_retry_interval = 0.0
         interval = float(getattr(self, "_fts_stale_retry_interval", 0.0))
@@ -598,6 +789,7 @@ class SessionSchemaMixin:
         self._fts_stale_retry_interval = min(
             max(interval, _FTS_STALE_RETRY_SECONDS, 1.0) * 2.0, _FTS_STALE_RETRY_MAX_SECONDS,
         )
+        # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
         try:
             with self._lock:
                 if self._conn is None or not self._fts_stale:
@@ -612,6 +804,7 @@ class SessionSchemaMixin:
                     self._fts_stale_retry_interval = 0.0
                 with contextlib.suppress(sqlite3.Error):
                     self._conn.commit()
+                # ⤷ 出口 return：返回 recovered
                 return recovered
         except Exception:  # noqa: BLE001 - background retry must never raise
             logger.warning(
@@ -619,9 +812,15 @@ class SessionSchemaMixin:
             )
             return False
 
+    # ┌── 函数 def _recover_stale_fts_locked()
+    # │  作用：Body of :meth:`_recover_stale_fts`; caller holds rebuild authority. One write
+    # │  参数：self, cursor: sqlite3.Cursor, legacy: bool
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _recover_stale_fts_locked(self, cursor: sqlite3.Cursor, *, legacy: bool) -> bool:
         """Body of :meth:`_recover_stale_fts`; caller holds rebuild authority. One write
         transaction, so no canonical writer slips between rebuild and trigger restoration."""
+        # ⤷ 关键分支 try/except：捕获 (sqlite3.DatabaseError, UnicodeDecodeError)，出错走兜底而不是崩溃。
         try:
             trigram_present = self._fts_table_probe(cursor, "messages_fts_trigram") is True
         except (sqlite3.DatabaseError, UnicodeDecodeError):
@@ -649,6 +848,7 @@ class SessionSchemaMixin:
             "BEGIN IMMEDIATE;" + drop_sql + rebuild_sql
             + f"DELETE FROM state_meta WHERE key IN ('{FTS_STALE_KEY}', '{FTS_REBUILD_DEFERRAL_KEY}');COMMIT;"
         )
+        # ⤷ 关键分支 try/except：捕获 sqlite3.DatabaseError，出错走兜底而不是崩溃。
         try:
             cursor.executescript(recovery_sql)
         except sqlite3.DatabaseError as exc:
@@ -661,30 +861,47 @@ class SessionSchemaMixin:
                 "Automatic rebuild of stale FTS indexes failed (%s); "
                 "canonical writes remain enabled with FTS detached.", exc,
             )
+            # ⤷ 出口 return：返回 False
             return False
         self._fts_stale = False
         self._fts_enabled = True
         self._trigram_available = include_trigram
         logger.warning("Rebuilt stale state.db FTS indexes from canonical messages and restored sync triggers.")
+        # ⤷ 出口 return：返回 True
         return True
 
+    # ┌── 函数 def _trigram_tokenizer_available()
+    # │  作用：Probe trigram support without publishing a persistent FTS object.
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：bool
+    # └──────────────────────────────────────────────────────────────
     def _trigram_tokenizer_available(self, cursor: sqlite3.Cursor) -> bool:
         """Probe trigram support without publishing a persistent FTS object."""
         probe = "temp.hermes_fts5_trigram_probe"
         cursor.execute(f"DROP TABLE IF EXISTS {probe}")
+        # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             cursor.execute(f"CREATE VIRTUAL TABLE {probe} USING fts5(content, tokenize='trigram')")
         except sqlite3.OperationalError as exc:
             if not self._is_trigram_unavailable_error(exc):
+                # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                 raise
             self._warn_trigram_unavailable(exc)
+            # ⤷ 出口 return：返回 False
             return False
         finally:
             cursor.execute(f"DROP TABLE IF EXISTS {probe}")
+        # ⤷ 出口 return：返回 True
         return True
 
     # ── Declarative column reconciliation ──────────────────────────────────
 
+    # ┌── 函数 def _parse_schema_columns()
+    # │  作用：Expected columns per table: execute SCHEMA_SQL in an in-memory database and read
+    # │  参数：schema_sql: str
+    # │  返回：Dict[str, Dict[str, str]]
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _parse_schema_columns(schema_sql: str) -> Dict[str, Dict[str, str]]:
         """Expected columns per table: execute SCHEMA_SQL in an in-memory database and read
@@ -702,9 +919,11 @@ class SessionSchemaMixin:
             if isinstance(tables, dict) and all(
                 isinstance(cols, dict) and all(isinstance(v, str) for v in cols.values()) for cols in tables.values()
             ):
+                # ⤷ 出口 return：返回 tables
                 return tables
 
         ref = sqlite3.connect(":memory:")
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             ref.executescript(schema_sql)
             table_columns: Dict[str, Dict[str, str]] = {}
@@ -732,13 +951,20 @@ class SessionSchemaMixin:
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
                     json.dump({"schema_hash": schema_hash, "tables": table_columns}, fh)
                 os.replace(tmp, cache_path)
+        # ⤷ 出口 return：返回 table_columns
         return table_columns
 
+    # ┌── 函数 def _reconcile_columns()
+    # │  作用：ADD every SCHEMA_SQL column missing from the live tables (SCHEMA_SQL is the single
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _reconcile_columns(self, cursor: sqlite3.Cursor) -> None:
         """ADD every SCHEMA_SQL column missing from the live tables (SCHEMA_SQL is the single
         source of truth; column additions need no version-gated migration)."""
         expected = self._parse_schema_columns(SCHEMA_SQL)
         for table_name, declared_cols in expected.items():
+            # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
             try:
                 rows = cursor.execute(f'PRAGMA table_info("{table_name}")').fetchall()
             except sqlite3.OperationalError:
@@ -748,6 +974,7 @@ class SessionSchemaMixin:
             for col_name, col_type in declared_cols.items():
                 if col_name in live_cols:
                     continue
+                # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
                 try:
                     cursor.execute(f'ALTER TABLE "{table_name}" ADD COLUMN {_q(col_name)} {col_type}')
                 except sqlite3.OperationalError as exc:
@@ -759,25 +986,41 @@ class SessionSchemaMixin:
                     if "locked" in message or "busy" in message:
                         # Swallowing lock contention left the store half-reconciled ("no such
                         # column" on every read). Re-raise so the lock-patience wrapper retries init.
+                        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
                         raise
                     # Anything else permanently strands the store behind SCHEMA_SQL — be loud.
                     logger.warning(
                         "reconcile %s.%s failed; store remains behind SCHEMA_SQL: %s", table_name, col_name, exc,
                     )
 
+    # ┌── 函数 def _live_pk_columns()
+    # │  作用：PRIMARY KEY column names of *table* in key order; None when the table is
+    # │  参数：cursor: sqlite3.Cursor, table: str
+    # │  返回：Optional[List[str]]
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _live_pk_columns(cursor: sqlite3.Cursor, table: str) -> Optional[List[str]]:
         """PRIMARY KEY column names of *table* in key order; None when the table is
         missing or has no columns (SCHEMA_SQL creates it correctly)."""
+        # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             rows = cursor.execute(f'PRAGMA table_info("{table}")').fetchall()
         except sqlite3.OperationalError:
             rows = None
         if not rows:
+            # ⤷ 出口 return：返回 None
             return None
         # row: (cid, name, type, notnull, dflt_value, pk)
+        # ⤷ 出口 return：返回 [r[1] for r in sorted((r for r in rows if r[5]), key=lambda …
         return [r[1] for r in sorted((r for r in rows if r[5]), key=lambda r: r[5])]
 
+    # ┌── 函数 def _rebuild_table()
+    # │  作用：RENAME *table* to *legacy_name*, CREATE it fresh from *ddl*, copy rows back with
+    # │  参数：cursor: sqlite3.Cursor, table: str, legacy_name: str, ddl: str, copy_sql: str, indexes = ()
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _rebuild_table(cursor: sqlite3.Cursor, table: str, legacy_name: str, ddl: str, copy_sql: str, indexes=()) -> None:
         """RENAME *table* to *legacy_name*, CREATE it fresh from *ddl*, copy rows back with
@@ -795,13 +1038,21 @@ class SessionSchemaMixin:
             SessionSchemaMixin._rebuild_table_statements(cursor, table, legacy_name, ddl, copy_sql, indexes)
             return
         cursor.execute("BEGIN IMMEDIATE")
+        # ⤷ 关键分支 try/except：捕获 BaseException，出错走兜底而不是崩溃。
         try:
             SessionSchemaMixin._rebuild_table_statements(cursor, table, legacy_name, ddl, copy_sql, indexes)
         except BaseException:
             cursor.execute("ROLLBACK")
+            # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
             raise
         cursor.execute("COMMIT")
 
+    # ┌── 函数 def _rebuild_table_statements()
+    # │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+    # │  参数：cursor, table, legacy_name, ddl, copy_sql, indexes
+    # │  返回：None
+    # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
+    # └──────────────────────────────────────────────────────────────
     @staticmethod
     def _rebuild_table_statements(cursor, table, legacy_name, ddl, copy_sql, indexes) -> None:
         cursor.execute(f"ALTER TABLE {table} RENAME TO {legacy_name}")
@@ -811,6 +1062,11 @@ class SessionSchemaMixin:
         for sql in indexes:
             cursor.execute(sql)
 
+    # ┌── 函数 def _heal_gateway_routing_pk()
+    # │  作用：Rebuild ``gateway_routing`` when its PRIMARY KEY predates scoping (``session_key TEXT
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _heal_gateway_routing_pk(self, cursor: sqlite3.Cursor) -> None:
         """Rebuild ``gateway_routing`` when its PRIMARY KEY predates scoping (``session_key TEXT
         PRIMARY KEY``): the reconciler ADDs ``scope`` but SQLite cannot ALTER a PK, so every
@@ -842,6 +1098,11 @@ class SessionSchemaMixin:
             "FROM gateway_routing_legacy_pk ORDER BY updated_at ASC",
         )
 
+    # ┌── 函数 def _heal_session_model_usage_pk()
+    # │  作用：Rebuild ``session_model_usage`` when its PRIMARY KEY lacks ``task``: installs already at
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _heal_session_model_usage_pk(self, cursor: sqlite3.Cursor) -> None:
         """Rebuild ``session_model_usage`` when its PRIMARY KEY lacks ``task``: installs already at
         v22+ when ``task`` landed carry the 5-column PK, the reconciler ADDs ``task`` but
@@ -864,6 +1125,7 @@ class SessionSchemaMixin:
             sorted(pk_cols),
         )
         cursor.execute("PRAGMA foreign_keys=OFF")
+        # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             self._rebuild_table(
                 cursor, "session_model_usage", "session_model_usage_legacy_pk", _SESSION_MODEL_USAGE_HEAL_DDL,
@@ -900,6 +1162,11 @@ class SessionSchemaMixin:
 
     # ── _init_schema ───────────────────────────────────────────────────────
 
+    # ┌── 函数 def _init_schema()
+    # │  作用：Create tables and FTS if missing, reconcile columns, run data migrations. Column
+    # │  参数：self
+    # │  返回：（未标注类型）
+    # └──────────────────────────────────────────────────────────────
     def _init_schema(self):
         """Create tables and FTS if missing, reconcile columns, run data migrations. Column
         additions are declarative via _reconcile_columns(), so reordered migrations can
@@ -935,6 +1202,7 @@ class SessionSchemaMixin:
         # whole history. The INSERTs now set active=1 explicitly; this idempotent repair un-hides rows
         # written before the fix. It was previously gated at ``current_version < 12`` which never re-ran for
         # already-v12+ databases.
+        # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_messages_platform_msg_id "
@@ -984,6 +1252,11 @@ class SessionSchemaMixin:
             self._init_fts(cursor)
         self._conn.commit()
 
+    # ┌── 函数 def _run_data_migrations()
+    # │  作用：Version-gated chain for DATA migrations only (row backfills); column additions never
+    # │  参数：self, cursor: sqlite3.Cursor, current_version: int, fts5_available: bool
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_data_migrations(self, cursor: sqlite3.Cursor, current_version: int, fts5_available: bool) -> None:
         """Version-gated chain for DATA migrations only (row backfills); column additions never
         belong here. Advances schema_version at the end unless FTS5 is unavailable."""
@@ -1017,6 +1290,7 @@ class SessionSchemaMixin:
                 )
         if current_version < 18:
             # v18: best-effort gateway metadata backfill from sessions.json.
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 # Backfill display_name / origin_json / expiry_finalized from sessions.json so pre-migration
                 # gateway sessions are discoverable from state.db without the JSON index. See #9006.
@@ -1089,9 +1363,15 @@ class SessionSchemaMixin:
         if current_version < SCHEMA_VERSION and fts_migrations_complete and fts5_available:
             cursor.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
 
+    # ┌── 函数 def _migrate_v22_session_model_usage()
+    # │  作用：v22: ``task`` joins the session_model_usage PRIMARY KEY ('' = main loop; aux calls
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _migrate_v22_session_model_usage(self, cursor: sqlite3.Cursor) -> None:
         """v22: ``task`` joins the session_model_usage PRIMARY KEY ('' = main loop; aux calls
         named). SQLite cannot ALTER a PK, so rebuild; existing rows → task=''."""
+        # ⤷ 关键分支 try/except：捕获 sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             # v22: task-dimension usage attribution (issue #23270). session_model_usage gains a ``task``
             # column ('' = main agent loop; 'vision'/'compression'/'title_generation'/... = auxiliary calls)
@@ -1122,12 +1402,19 @@ class SessionSchemaMixin:
         except sqlite3.OperationalError as exc:
             logger.debug("v22 session_model_usage rebuild skipped: %s", exc)
 
+    # ┌── 函数 def _ensure_unique_title_index()
+    # │  作用：Unique title index. Older DBs may hold duplicate aliases from before the constraint;
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _ensure_unique_title_index(self, cursor: sqlite3.Cursor) -> None:
         """Unique title index. Older DBs may hold duplicate aliases from before the constraint;
         the newest keeps the alias. Must never abort opening the DB, so the repair is guarded."""
+        # ⤷ 关键分支 try/except：捕获 sqlite3.IntegrityError、sqlite3.OperationalError，出错走兜底而不是崩溃。
         try:
             cursor.execute(_TITLE_UNIQUE_INDEX_SQL)
         except sqlite3.IntegrityError:
+            # ⤷ 关键分支 try/except：捕获 sqlite3.Error，出错走兜底而不是崩溃。
             try:
                 cursor.execute("""UPDATE sessions AS older
                        SET title = NULL
@@ -1146,6 +1433,11 @@ class SessionSchemaMixin:
         except sqlite3.OperationalError:
             pass  # Index already exists
 
+    # ┌── 函数 def _init_fts()
+    # │  作用：Create/repair the FTS objects on an FTS5-capable runtime. The DDL runs even when the
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _init_fts(self, cursor: sqlite3.Cursor) -> None:
         """Create/repair the FTS objects on an FTS5-capable runtime. The DDL runs even when the
         vtable exists so CREATE TRIGGER IF NOT EXISTS repairs trigger-only degradation.
@@ -1212,6 +1504,11 @@ class SessionSchemaMixin:
         if self._fts_enabled:
             self._migrate_broad_fts_update_triggers(cursor)
 
+    # ┌── 函数 def _run_admitted_startup_rebuild()
+    # │  作用：Run FTS bootstrap or trigger-repair rebuild under cross-process admission.
+    # │  参数：self, cursor, rebuild_fn
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _run_admitted_startup_rebuild(self, cursor, rebuild_fn) -> None:
         """Run FTS bootstrap or trigger-repair rebuild under cross-process admission.
 
@@ -1236,6 +1533,11 @@ class SessionSchemaMixin:
         self._fts_stale = True
         self._fts_enabled = self._trigram_available = self._fts_cjk_available = False
 
+    # ┌── 函数 def _backfill_gateway_metadata_from_sessions_json()
+    # │  作用：One-time v18 backfill of gateway metadata from sessions.json. Only fills NULL
+    # │  参数：self, cursor: sqlite3.Cursor
+    # │  返回：None
+    # └──────────────────────────────────────────────────────────────
     def _backfill_gateway_metadata_from_sessions_json(self, cursor: sqlite3.Cursor) -> None:
         """One-time v18 backfill of gateway metadata from sessions.json. Only fills NULL
         columns — never overwrites data written by newer code."""
@@ -1276,6 +1578,11 @@ class SessionSchemaMixin:
             )
 
 
+# ┌── 函数 def reconcile_state_schema()
+# │  作用：Bring a raw ``state.db`` connection to the canonical SCHEMA_SQL shape.
+# │  参数：conn: sqlite3.Connection
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def reconcile_state_schema(conn: sqlite3.Connection) -> None:
     """Bring a raw ``state.db`` connection to the canonical SCHEMA_SQL shape.
 

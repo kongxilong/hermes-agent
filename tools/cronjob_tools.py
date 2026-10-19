@@ -1,5 +1,29 @@
 """Cron job management tool: one compressed action-oriented `cronjob_manage` tool
 (schema/context bloat avoided); `cronjob()` stays callable for direct Python callers."""
+# ==========================================================================
+#  📘 文件导读（新增注释，原代码未做任何改动）
+# ==========================================================================
+# 文件：tools/cronjob_tools.py（约 1164 行）
+# 地位：定时任务（cron job）的管理工具。
+#
+# 设计：对外只暴露一个动作式工具 cronjob_manage（用 action 参数区分 create/list/update/remove/run ...）。
+#   为什么合并成一个？源码注释说了：避免工具 schema 膨胀（工具越多，塞给模型的提示词越长）。
+#   老的 cronjob() 函数保留着，供 Python 直接调用。
+#
+# 主要逻辑：
+#   _action_create / _action_list / _action_remove / _action_update / _action_run / _action_resnap
+#   execute_job_for_event(job_ref, extra_prompt)   事件触发执行
+#   _run_claimed_job / _claim_for_manual_run        抢占式执行（防止同一任务并发跑）
+#   _try_dispatch_background_run                   放到后台跑
+#
+# 工程细节：
+#   - 心跳：_run_heartbeat（@contextmanager）—— 长任务定期报活
+#   - 陈旧执行回收：_reap_stale_executions
+#   - 交付：_manual_run_delivery_note —— 定时任务的产出怎么发给用户（聊天平台？）
+#
+# 值得学：把一个「多功能工具」压缩成单入口 + action 参数，是 Agent 工具设计的常见权衡。
+# ==========================================================================
+#
 
 import contextlib
 import json
@@ -67,12 +91,24 @@ from tools.cronjob_job_args import (
 from tools.registry import registry, tool_error
 
 
+# ┌── 函数 def _dumps()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：payload: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _dumps(payload: Dict[str, Any]) -> str:
+    # ⤷ 出口 return：返回 json.dumps(payload, indent=2)
     return json.dumps(payload, indent=2)
 
 
+# ┌── 函数 def _notify_provider_jobs_changed_safe()
+# │  作用：Tell the active scheduler provider the job set changed; best-effort, never raises.
+# │  参数：无
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _notify_provider_jobs_changed_safe() -> None:
     """Tell the active scheduler provider the job set changed; best-effort, never raises."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from cron.scheduler import _notify_provider_jobs_changed
         _notify_provider_jobs_changed()
@@ -84,32 +120,50 @@ def _notify_provider_jobs_changed_safe() -> None:
 # Manual run execution (claim -> run_one_job -> report)
 # ---------------------------------------------------------------------------
 
+# ┌── 函数 def _relay_fronted_delivery_platforms()
+# │  作用：Delivery-platform names for this job that the relay connector fronts.
+# │  参数：job: Dict[str, Any]
+# │  返回：set
+# └──────────────────────────────────────────────────────────────
 def _relay_fronted_delivery_platforms(job: Dict[str, Any]) -> set:
     """Delivery-platform names for this job that the relay connector fronts."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.relay import relay_fronted_platforms
     except Exception:
+        # ⤷ 出口 return：返回 set()
         return set()
     fronted = relay_fronted_platforms()
     if not fronted:
+        # ⤷ 出口 return：返回 set()
         return set()
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from cron.scheduler import _resolve_delivery_targets
         targets = _resolve_delivery_targets(job) or []
     except Exception:
+        # ⤷ 出口 return：返回 set()
         return set()
+    # ⤷ 出口 return：返回 {t.get('platform') for t in targets if t.get('platform')} & …
     return {t.get("platform") for t in targets if t.get("platform")} & fronted
 
 
+# ┌── 函数 def _api_server_base_url()
+# │  作用：``http://host:port`` of the local api_server, mirroring its bind resolution
+# │  参数：无
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _api_server_base_url() -> str:
     """``http://host:port`` of the local api_server, mirroring its bind resolution
     (extra.host -> API_SERVER_HOST -> 127.0.0.1); a wildcard bind listens on loopback too."""
     import os
     port_raw = os.getenv("API_SERVER_PORT", "").strip()
+    # ⤷ 关键分支 try/except：捕获 ValueError，出错走兜底而不是崩溃。
     try:
         port = int(port_raw) if port_raw else 8642
     except ValueError:
         port = 8642
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from hermes_cli.config import cfg_get, load_config_readonly
         host = str(cfg_get(load_config_readonly(), "platforms", "api_server", "extra", "host", default="") or "").strip()
@@ -120,18 +174,26 @@ def _api_server_base_url() -> str:
         host = "127.0.0.1"
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"  # bare IPv6 literal
+    # ⤷ 出口 return：返回 f'http://{host}:{port}'
     return f"http://{host}:{port}"
 
 
+# ┌── 函数 def _forward_relay_fronted_run()
+# │  作用：Forward a manual run to the gateway when it targets a relay-fronted platform: such delivery
+# │  参数：job: Dict[str, Any], extra_prompt: Optional[str] = None
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _forward_relay_fronted_run(job: Dict[str, Any], extra_prompt: Optional[str] = None) -> Optional[str]:
     """Forward a manual run to the gateway when it targets a relay-fronted platform: such delivery
     has no standalone sender — the gateway's live relay adapter is the only path, reached via
     ``POST /api/jobs/{id}/run`` (marks the job due; ``extra_prompt`` rides in the body). Returns a
     JSON result string when forwarding engages, else None (normal in-process run)."""
     if not _relay_fronted_delivery_platforms(job):
+        # ⤷ 出口 return：返回 None
         return None
     from agent.secret_scope import get_secret
     key = get_secret("API_SERVER_KEY", "") or ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         import httpx
         resp = httpx.post(
@@ -140,6 +202,7 @@ def _forward_relay_fronted_run(job: Dict[str, Any], extra_prompt: Optional[str] 
     except Exception:
         resp = None
     if resp is not None and resp.status_code < 300:
+        # ⤷ 出口 return：返回 _dumps({'success': True, 'forwarded_to_gateway': True, 'note…
         return _dumps({
             "success": True,
             "forwarded_to_gateway": True,
@@ -148,6 +211,7 @@ def _forward_relay_fronted_run(job: Dict[str, Any], extra_prompt: Optional[str] 
                 "to the running gateway, whose live relay adapter owns that "
                 "delivery."),
         })
+    # ⤷ 出口 return：返回 _dumps({'success': False, 'error': 'This job targets a relay…
     return _dumps({
         "success": False,
         "error": (
@@ -157,6 +221,11 @@ def _forward_relay_fronted_run(job: Dict[str, Any], extra_prompt: Optional[str] 
     })
 
 
+# ┌── 函数 def _manual_run_delivery_note()
+# │  作用：Parenthetical delivery note for a manual run's summary; follows the refreshed record's
+# │  参数：deliver: str, refreshed: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _manual_run_delivery_note(deliver: str, refreshed: Dict[str, Any]) -> str:
     """Parenthetical delivery note for a manual run's summary; follows the refreshed record's
     ``last_delivery_error`` so the summary never claims success over a failed delivery.
@@ -169,12 +238,16 @@ def _manual_run_delivery_note(deliver: str, refreshed: Dict[str, Any]) -> str:
     # Falsy deliver ("", stored JSON null) is normalized to "local" at fire time -> saved
     # locally. Whitespace-only values fall through so the fire-time "no target" error surfaces.
     if not deliver or deliver == "local":
+        # ⤷ 出口 return：返回 ' (output saved locally only)'
         return " (output saved locally only)"
     err = str(refreshed.get("last_delivery_error") or "").strip()
     if not err:
         if refreshed.get("last_delivery_queued"):
+            # ⤷ 出口 return：返回 ' (output queued for Bot Chat; completion unverified, do not…
             return " (output queued for Bot Chat; completion unverified, do not resend)"
+        # ⤷ 出口 return：返回 ' (output was delivered there by the job itself)'
         return " (output was delivered there by the job itself)"
+    # ⤷ 出口 return：返回 f' (⚠ delivery FAILED: {err[:200]})'
     return f" (⚠ delivery FAILED: {err[:200]})"
 
 
@@ -183,13 +256,20 @@ _ALREADY_RUNNING_ERROR = (
     "manual run is executing it); not started again.")
 
 
+# ┌── 函数 def _claim_for_manual_run()
+# │  作用：At-most-once claim shared by the sync and background run paths: ``(claimed_job, None)`` or
+# │  参数：job_id: str, log_label: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _claim_for_manual_run(job_id: str, log_label: str):
     """At-most-once claim shared by the sync and background run paths: ``(claimed_job, None)`` or
     ``(None, error_dict)`` in the ``_execute_job_now`` shape. A lost claim is labelled precisely —
     claim_job_for_fire also returns False for paused/disabled/missing jobs, not just in-flight ones."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         claimed_job = claim_job_for_fire(job_id, manual=True, return_job=True)
         if isinstance(claimed_job, dict):
+            # ⤷ 出口 return：返回 (claimed_job, None)
             return claimed_job, None
         refreshed = get_job(job_id)
         if refreshed is None:
@@ -198,22 +278,36 @@ def _claim_for_manual_run(job_id: str, log_label: str):
             reason = "Job is paused/disabled; resume it before running."
         else:
             reason = "Job is already being fired by the scheduler; not run again."
+        # ⤷ 出口 return：返回 (None, {'claimed': False, 'success': False, 'error': reason}…
         return None, {"claimed": False, "success": False, "error": reason}
     except Exception as e:
         logger.error("Failed to claim cron job %s for %s: %s", job_id, log_label, e)
         with contextlib.suppress(Exception):
             mark_job_run(job_id, False, str(e))
+        # ⤷ 出口 return：返回 (None, {'claimed': True, 'success': False, 'error': str(e)})
         return None, {"claimed": True, "success": False, "error": str(e)}
 
 
+# ┌── 函数 def _execute_job_now()
+# │  作用：Run a job now, outside the scheduler tick: claim via ``claim_job_for_fire`` (the ticker's
+# │  参数：job: Dict[str, Any], extra_prompt: Optional[str] = None
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _execute_job_now(job: Dict[str, Any], extra_prompt: Optional[str] = None) -> Dict[str, Any]:
     """Run a job now, outside the scheduler tick: claim via ``claim_job_for_fire`` (the ticker's
     CAS, so a concurrent tick cannot double-fire and next_run_at advances), then fire through
     the shared ``run_one_job`` body. Returns {"claimed", "success", "error"}."""
     claimed_job, err = _claim_for_manual_run(job["id"], "immediate run")
+    # ⤷ 出口 return：返回 err if err is not None else _run_claimed_job(claimed_job, ex…
     return err if err is not None else _run_claimed_job(claimed_job, extra_prompt=extra_prompt)
 
 
+# ┌── 函数 def _run_heartbeat()
+# │  作用：Heartbeat into the caller's activity tracker while a manual run executes (minutes,
+# │  参数：job_name: str
+# │  返回：（未标注类型）
+# │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
+# └──────────────────────────────────────────────────────────────
 @contextlib.contextmanager
 def _run_heartbeat(job_name: str):
     """Heartbeat into the caller's activity tracker while a manual run executes (minutes,
@@ -221,6 +315,7 @@ def _run_heartbeat(job_name: str):
     watchdog would kill the parent turn). Best-effort: no callback -> no thread."""
     stop = threading.Event()
     thread = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # run_one_job records last_run_at/last_status via mark_job_run (which also clears the fire claim)
         # and returns True iff it processed the job. ``job`` here is the exact claimed snapshot
@@ -250,6 +345,7 @@ def _run_heartbeat(job_name: str):
                     "'%s' (%.0fs) — stopping heartbeat; gateway watchdog regains authority",
                     job_name, elapsed)
                 return
+            # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
             try:
                 activity_cb(f"cronjob: running job '{job_name}' ({int(elapsed)}s elapsed)")
             except Exception:
@@ -258,7 +354,9 @@ def _run_heartbeat(job_name: str):
     if activity_cb is not None:
         thread = threading.Thread(target=_heartbeat_loop, daemon=True, name="cronjob-run-heartbeat")
         thread.start()
+    # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
     try:
+        # ⤷ 关键分支 yield：产出值并暂停，调用方用 for / next 逐个取（生成器）。
         yield
     finally:
         stop.set()
@@ -266,6 +364,11 @@ def _run_heartbeat(job_name: str):
             thread.join(timeout=_CRON_RUN_HEARTBEAT_INTERVAL + 1)
 
 
+# ┌── 函数 def _run_claimed_job()
+# │  作用：Fire an already-claimed job through the shared ``run_one_job`` body (split from
+# │  参数：job: Dict[str, Any], extra_prompt: Optional[str] = None
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _run_claimed_job(job: Dict[str, Any], extra_prompt: Optional[str] = None) -> Dict[str, Any]:
     """Fire an already-claimed job through the shared ``run_one_job`` body (split from
     ``_execute_job_now`` so the background path can claim synchronously and hand the run
@@ -273,6 +376,7 @@ def _run_claimed_job(job: Dict[str, Any], extra_prompt: Optional[str] = None) ->
     job_id = job["id"]
     _registered = False
     fire_owner = None
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from cron.scheduler import release_running_job, run_one_job, try_register_running_job
 
@@ -283,6 +387,7 @@ def _run_claimed_job(job: Dict[str, Any], extra_prompt: Optional[str] = None) ->
         # outlived by real jobs, so it alone cannot stop a manual run from double-firing a job the ticker
         # (or another manual run) is still executing.
         if not try_register_running_job(job_id):
+            # ⤷ 出口 return：返回 {'claimed': True, 'success': False, 'error': _ALREADY_RUNNIN…
             return {"claimed": True, "success": False, "error": _ALREADY_RUNNING_ERROR}
         _registered = True
 
@@ -299,6 +404,7 @@ def _run_claimed_job(job: Dict[str, Any], extra_prompt: Optional[str] = None) ->
         runner = runner_ref() if callable(runner_ref) else None
         adapters = getattr(runner, "adapters", None) if runner is not None else None
         gateway_loop = getattr(runner, "_gateway_loop", None) if runner is not None else None
+        # ⤷ 关键分支 try/except：捕获 ，出错走兜底而不是崩溃。
         try:
             # run_one_job records last_run_at/last_status via mark_job_run; `job` is the
             # owner-bearing claimed snapshot, so terminal writes stay fenced by that owner.
@@ -327,6 +433,7 @@ def _run_claimed_job(job: Dict[str, Any], extra_prompt: Optional[str] = None) ->
         if execution is not None and execution.get("status") != "completed":
             ok = False
             run_error = execution.get("error") or f"execution ended in {execution.get('status') or 'unknown'} state"
+        # ⤷ 出口 return：返回 {'claimed': True, 'success': bool(processed and ok), 'error'…
         return {"claimed": True, "success": bool(processed and ok), "error": run_error}
     except Exception as e:
         logger.error("Failed to execute cron job %s immediately: %s", job_id, e)
@@ -338,9 +445,15 @@ def _run_claimed_job(job: Dict[str, Any], extra_prompt: Optional[str] = None) ->
                 release_running_job(job_id)
         with contextlib.suppress(Exception):
             mark_job_run(job_id, False, str(e), expected_fire_owner=fire_owner)
+        # ⤷ 出口 return：返回 {'claimed': True, 'success': False, 'error': str(e)}
         return {"claimed": True, "success": False, "error": str(e)}
 
 
+# ┌── 函数 def execute_job_for_event()
+# │  作用：Fire an existing cron job in response to an external event.
+# │  参数：job_ref: str, extra_prompt: Optional[str] = None
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def execute_job_for_event(
     job_ref: str, extra_prompt: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -360,40 +473,59 @@ def execute_job_for_event(
     Returns the ``_execute_job_now`` result shape:
     ``{"claimed": bool, "success": bool, "error": str|None}``.
     """
+    # ⤷ 关键分支 try/except：捕获 AmbiguousJobReference，出错走兜底而不是崩溃。
     try:
         job = resolve_job_ref(job_ref)
     except AmbiguousJobReference as e:
+        # ⤷ 出口 return：返回 {'claimed': False, 'success': False, 'error': str(e)}
         return {"claimed": False, "success": False, "error": str(e)}
     if job is None:
+        # ⤷ 出口 return：返回 {'claimed': False, 'success': False, 'error': f"Cron job '{j…
         return {
             "claimed": False,
             "success": False,
             "error": f"Cron job '{job_ref}' not found.",
         }
+    # ⤷ 出口 return：返回 _execute_job_now(job, extra_prompt=extra_prompt)
     return _execute_job_now(job, extra_prompt=extra_prompt)
 
 
+# ┌── 函数 def _latest_job_output_excerpt()
+# │  作用：Excerpt of the job's most recent saved output file for the background completion
+# │  参数：job_id: str, max_chars: int = 2000
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _latest_job_output_excerpt(job_id: str, max_chars: int = 2000) -> Optional[str]:
     """Excerpt of the job's most recent saved output file for the background completion
     block (parent sees what the job produced). Never raises."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from cron.jobs import get_cron_output_dir
         files = sorted((get_cron_output_dir() / job_id).glob("*.md"))
         text = files[-1].read_text(encoding="utf-8", errors="replace").strip() if files else ""
         if not text:
+            # ⤷ 出口 return：返回 None
             return None
         if len(text) > max_chars:
             text = text[:max_chars] + f"\n… (truncated; full output: {files[-1]})"
+        # ⤷ 出口 return：返回 text
         return text
     except Exception:
+        # ⤷ 出口 return：返回 None
         return None
 
 
+# ┌── 函数 def _reap_stale_executions()
+# │  作用：Reap execution rows left 'claimed'/'running' by a provably-dead owner (e.g. a prior
+# │  参数：job_name: str
+# │  返回：None
+# └──────────────────────────────────────────────────────────────
 def _reap_stale_executions(job_name: str) -> None:
     """Reap execution rows left 'claimed'/'running' by a provably-dead owner (e.g. a prior
     one-shot `hermes cron run` that died mid-run). The ticker does this at startup; one-shot
     invocations have no such moment, so a stale claim would block every later manual run.
     Best-effort self-heal: must not block dispatch."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         # Reap any execution row this job (or any job) left stranded 'claimed'/ 'running' by a dead owner
         # process -- e.g. a PRIOR one-shot `hermes cron run` invocation whose dispatched runner died with
@@ -410,9 +542,15 @@ def _reap_stale_executions(job_name: str) -> None:
         logger.debug("Stale execution reclaim failed: %s", _reap_exc)
 
 
+# ┌── 函数 def _background_session_key()
+# │  作用：Routing key for a detached completion, captured on THIS thread (contextvars don't
+# │  参数：session_id: Optional[str]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _background_session_key(session_id: Optional[str]) -> str:
     """Routing key for a detached completion, captured on THIS thread (contextvars don't
     cross the pool). Empty string = no durable consumer."""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.approval_context import get_current_session_key
         session_key = get_current_session_key(default="")
@@ -421,9 +559,15 @@ def _background_session_key(session_id: Optional[str]) -> str:
     # CLI path: the approval contextvar is only bound during gateway/TUI turns; the CLI
     # drain filters completions by the durable session id, and an empty key would fail
     # closed (completion never claimable).
+    # ⤷ 出口 return：返回 session_key or (str(session_id) if session_id else '')
     return session_key or (str(session_id) if session_id else "")
 
 
+# ┌── 函数 def _manual_run_completion()
+# │  作用：Async-delegation completion block for a finished background manual run.
+# │  参数：res: Dict[str, Any], job_id: str, job_name: str, deliver: str, started_at: float
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _manual_run_completion(
     res: Dict[str, Any], job_id: str, job_name: str, deliver: str, started_at: float) -> Dict[str, Any]:
     """Async-delegation completion block for a finished background manual run."""
@@ -440,12 +584,18 @@ def _manual_run_completion(
     excerpt = _latest_job_output_excerpt(job_id)
     if excerpt:
         lines += ["--- JOB OUTPUT ---", excerpt]
+    # ⤷ 出口 return：返回 {'status': 'completed' if res.get('success') else 'error', '…
     return {
         "status": "completed" if res.get("success") else "error", "summary": "\n".join(lines),
         "error": res.get("error"), "api_calls": 0, "duration_seconds": duration,
     }
 
 
+# ┌── 函数 def _try_dispatch_background_run()
+# │  作用：Claim ``job`` now (SYNCHRONOUSLY, so unrunnable jobs report immediately), then fire it
+# │  参数：job: Dict[str, Any], session_id: Optional[str] = None, extra_prompt: Optional[str] = None
+# │  返回：Optional[Dict[str, Any]]
+# └──────────────────────────────────────────────────────────────
 def _try_dispatch_background_run(
     job: Dict[str, Any], session_id: Optional[str] = None, extra_prompt: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
@@ -457,6 +607,7 @@ def _try_dispatch_background_run(
     False}`` on a lost claim; ``{"claimed": True, "dispatched": True, "delegation_id"}``; or
     ``{"claimed": True, "dispatched": False, ...}`` when the pool was full and it ran inline."""
     # Finite sessions cannot route a detached result back after the turn ends (delegate_task's gate).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.session_context import async_delivery_supported
         if not async_delivery_supported():
@@ -479,6 +630,7 @@ def _try_dispatch_background_run(
 
     # Early dedupe so a mid-run job reports in THIS response, not as a delayed error completion
     # (authoritative check: try_register_running_job).
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from cron.scheduler import get_running_job_ids
         if job_id in get_running_job_ids():
@@ -493,12 +645,14 @@ def _try_dispatch_background_run(
         return err
 
     origin_ui_session_id = ""
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from gateway.session_context import get_session_env
         origin_ui_session_id = get_session_env("HERMES_UI_SESSION_ID", "") or ""
     except Exception:
         pass
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.async_delegation import _current_origin_session_id, dispatch_async_delegation
         origin_session_id = _current_origin_session_id()
@@ -509,6 +663,7 @@ def _try_dispatch_background_run(
         result["dispatched"] = False
         return result
 
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         from tools.delegate_tool import _get_max_async_children
         max_async = _get_max_async_children()
@@ -541,6 +696,7 @@ def _try_dispatch_background_run(
         dispatch.get("error", "rejected"), job_name)
     result = _run_claimed_job(job, extra_prompt=extra_prompt)
     result["dispatched"] = False
+    # ⤷ 出口 return：返回 result
     return result
 
 
@@ -549,24 +705,37 @@ def _try_dispatch_background_run(
 # job record for job-bound actions) and returns the JSON result string.
 # ---------------------------------------------------------------------------
 
+# ┌── 函数 def _with_guidance()
+# │  作用：Attach mode/delivery guidance (create and update echo the same notes).
+# │  参数：result: Dict[str, Any], job: Dict[str, Any], deliver: Optional[str]
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _with_guidance(result: Dict[str, Any], job: Dict[str, Any], deliver: Optional[str]) -> Dict[str, Any]:
     """Attach mode/delivery guidance (create and update echo the same notes)."""
     _notes = _mode_guidance_notes(job, deliver)
     if _notes:
         result["guidance"] = _notes
+    # ⤷ 出口 return：返回 result
     return result
 
 
+# ┌── 函数 def _action_create()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：a: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _action_create(a: Dict[str, Any]) -> str:
     prompt, script = a["prompt"], a["script"]
     deliver = _normalize_deliver_param(a["deliver"])
     if not a["schedule"]:
+        # ⤷ 出口 return：返回 tool_error('schedule is required for create', success=False)
         return tool_error("schedule is required for create", success=False)
     canonical_skills = _canonical_skills(a["skill"], a["skills"])
     _no_agent = bool(a["no_agent"])
     # no_agent=True -> the script IS the job (prompt/skills optional); else prompt or skills.
     if _no_agent:
         if not script:
+            # ⤷ 出口 return：返回 tool_error('create with no_agent=True requires a script — th…
             return tool_error(
                 "create with no_agent=True requires a script — "
                 "the script is the job. In no_agent mode the LLM is "
@@ -575,6 +744,7 @@ def _action_create(a: Dict[str, Any]) -> str:
                 "sends nothing (watchdog pattern), and a non-zero exit or timeout sends an error alert.",
                 success=False)
     elif not prompt and not canonical_skills:
+        # ⤷ 出口 return：返回 tool_error('create requires either prompt or at least one sk…
         return tool_error("create requires either prompt or at least one skill", success=False)
     error = (
         (prompt and _scan_cron_prompt(prompt))
@@ -590,6 +760,7 @@ def _action_create(a: Dict[str, Any]) -> str:
         or (a["context_from"] and _validate_context_from_refs(
             [a["context_from"]] if isinstance(a["context_from"], str) else a["context_from"])))
     if error:
+        # ⤷ 出口 return：返回 tool_error(error, success=False)
         return tool_error(error, success=False)
 
     context_from = a["context_from"]
@@ -597,6 +768,7 @@ def _action_create(a: Dict[str, Any]) -> str:
         context_from = _apply_continuity(context_from, a["continuity"])
 
     from cron.scheduler import CronSchedulerRegistrationError, create_job_with_scheduler_registration
+    # ⤷ 关键分支 try/except：捕获 CronSchedulerRegistrationError，出错走兜底而不是崩溃。
     try:
         job = create_job_with_scheduler_registration(
             prompt=prompt or "", schedule=a["schedule"], name=a["name"], repeat=a["repeat"],
@@ -627,9 +799,15 @@ def _action_create(a: Dict[str, Any]) -> str:
         "deliver": job.get("deliver", "local"), "next_run_at": job["next_run_at"], "job": _format_job(job),
         "message": _create_message, **_gateway_liveness_notice(),
     }
+    # ⤷ 出口 return：返回 _dumps(_with_guidance(_result, job, deliver))
     return _dumps(_with_guidance(_result, job, deliver))
 
 
+# ┌── 函数 def _action_list()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：a: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _action_list(a: Dict[str, Any]) -> str:
     jobs = [_format_job(job) for job in list_jobs(include_disabled=a["include_disabled"])]
     _result = {"success": True, "count": len(jobs), "jobs": jobs}
@@ -638,14 +816,22 @@ def _action_list(a: Dict[str, Any]) -> str:
         # Same silent-inert-job class as create (#87033): an agent inspecting existing jobs in a
         # gateway-less environment must learn they are not firing, not just see a clean list.
         _result.update(_gateway_liveness_notice(plural=True))
+    # ⤷ 出口 return：返回 _dumps(_result)
     return _dumps(_result)
 
 
+# ┌── 函数 def _action_remove()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：job: Dict[str, Any], a: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _action_remove(job: Dict[str, Any], a: Dict[str, Any]) -> str:
     job_id = job["id"]
     if not remove_job(job_id):
+        # ⤷ 出口 return：返回 tool_error(f"Failed to remove job '{job_id}'", success=False…
         return tool_error(f"Failed to remove job '{job_id}'", success=False)
     _notify_provider_jobs_changed_safe()
+    # ⤷ 出口 return：返回 _dumps({'success': True, 'message': f"Cron job '{job['name']…
     return _dumps({
         "success": True,
         "message": f"Cron job '{job['name']}' removed.",
@@ -653,16 +839,33 @@ def _action_remove(job: Dict[str, Any], a: Dict[str, Any]) -> str:
     })
 
 
+# ┌── 函数 def _job_state_result()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：updated: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _job_state_result(updated: Dict[str, Any]) -> str:
     _notify_provider_jobs_changed_safe()
+    # ⤷ 出口 return：返回 _dumps({'success': True, 'job': _format_job(updated)})
     return _dumps({"success": True, "job": _format_job(updated)})
 
 
+# ┌── 函数 def _refreshed_job_view()
+# │  作用：Re-read so the response reflects the post-run last_run_at/last_status.
+# │  参数：job_id: str
+# │  返回：Dict[str, Any]
+# └──────────────────────────────────────────────────────────────
 def _refreshed_job_view(job_id: str) -> Dict[str, Any]:
     """Re-read so the response reflects the post-run last_run_at/last_status."""
+    # ⤷ 出口 return：返回 _format_job(get_job(job_id) or {'id': job_id})
     return _format_job(get_job(job_id) or {"id": job_id})
 
 
+# ┌── 函数 def _action_run()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：job: Dict[str, Any], a: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _action_run(job: Dict[str, Any], a: Dict[str, Any]) -> str:
     job_id = job["id"]
     # `prompt` on run is transient per-fire context appended to the stored prompt, never
@@ -672,6 +875,7 @@ def _action_run(job: Dict[str, Any], a: Dict[str, Any]) -> str:
     if extra_prompt:
         scan_error = _scan_cron_prompt(extra_prompt)
         if scan_error:
+            # ⤷ 出口 return：返回 tool_error(scan_error, success=False)
             return tool_error(scan_error, success=False)
     # A manual run must actually run even with no ticker active. Preferred: background
     # dispatch (handle now, outcome as a completion event); inline fallback otherwise.
@@ -682,6 +886,7 @@ def _action_run(job: Dict[str, Any], a: Dict[str, Any]) -> str:
         result["executed"] = True
         result["execution_mode"] = "background"
         result["delegation_id"] = bg.get("delegation_id")
+        # ⤷ 出口 return：返回 _dumps({'success': True, 'job': result, 'note': 'The job is …
         return _dumps({
             "success": True,
             "job": result,
@@ -697,6 +902,7 @@ def _action_run(job: Dict[str, Any], a: Dict[str, Any]) -> str:
         # Relay-fronted manual run: no live adapter here — forward to the running gateway.
         forwarded = _forward_relay_fronted_run(job, extra_prompt=extra_prompt)
         if forwarded is not None:
+            # ⤷ 出口 return：返回 forwarded
             return forwarded
         exec_result = _execute_job_now(job, extra_prompt=extra_prompt)
     # A claimed direct run advances next_run_at and may race an external provider's
@@ -713,20 +919,33 @@ def _action_run(job: Dict[str, Any], a: Dict[str, Any]) -> str:
             "Already being fired by the scheduler; not run again.")
     elif exec_result.get("error"):
         result["execution_error"] = exec_result["error"]
+    # ⤷ 出口 return：返回 _dumps({'success': True, 'job': result})
     return _dumps({"success": True, "job": result})
 
 
+# ┌── 函数 def _pick()
+# │  作用：Effective value of ``key`` after this update: pending update wins over the stored job.
+# │  参数：updates: Dict[str, Any], job: Dict[str, Any], key: str
+# │  返回：Any
+# └──────────────────────────────────────────────────────────────
 def _pick(updates: Dict[str, Any], job: Dict[str, Any], key: str) -> Any:
     """Effective value of ``key`` after this update: pending update wins over the stored job."""
+    # ⤷ 出口 return：返回 updates[key] if key in updates else job.get(key)
     return updates[key] if key in updates else job.get(key)
 
 
+# ┌── 函数 def _update_core_fields()
+# │  作用：prompt / name / deliver / skills / model pins; returns an error string or None.
+# │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _update_core_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]) -> Optional[str]:
     """prompt / name / deliver / skills / model pins; returns an error string or None."""
     prompt, deliver, skill, skills = a["prompt"], a["deliver"], a["skill"], a["skills"]
     if prompt is not None:
         scan_error = _scan_cron_prompt(prompt)
         if scan_error:
+            # ⤷ 出口 return：返回 scan_error
             return scan_error
         updates["prompt"] = prompt
     if a["name"] is not None and a["name"].strip():
@@ -736,6 +955,7 @@ def _update_core_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[st
     if deliver is not None:
         bot_chat_error = _validate_bot_chat_deliver(_normalize_deliver_param(deliver))
         if bot_chat_error:
+            # ⤷ 出口 return：返回 bot_chat_error
             return bot_chat_error
         updates["deliver"] = _resolve_cron_context_deliver(_normalize_deliver_param(deliver))
     if a["failure_deliver"] is not None:
@@ -746,6 +966,7 @@ def _update_core_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[st
         if _norm_fd:
             bot_chat_error = _validate_bot_chat_deliver(_norm_fd)
             if bot_chat_error:
+                # ⤷ 出口 return：返回 bot_chat_error
                 return bot_chat_error
             _norm_fd = _resolve_cron_context_deliver(_norm_fd)
         updates["failure_deliver"] = _norm_fd
@@ -765,9 +986,15 @@ def _update_core_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[st
     # Re-validate the EFFECTIVE provider/base_url on EVERY update: a job persisted before
     # this guard may hold an unsafe pair, and editing an unrelated field must not leave it
     # schedulable. Merging this update over the stored job lets an operator remediate.
+    # ⤷ 出口 return：返回 _validate_cron_base_url(_pick(updates, job, 'provider'), _pi…
     return _validate_cron_base_url(_pick(updates, job, "provider"), _pick(updates, job, "base_url"))
 
 
+# ┌── 函数 def _update_script_fields()
+# │  作用：script / monitor_script / monitor_url (empty string clears); returns an error string or None.
+# │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _update_script_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]) -> Optional[str]:
     """script / monitor_script / monitor_url (empty string clears); returns an error string or None."""
     monitor_script, monitor_url = a["monitor_script"], a["monitor_url"]
@@ -776,21 +1003,30 @@ def _update_script_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[
             if value:
                 path_error = _validate_cron_script_path(value)
                 if path_error:
+                    # ⤷ 出口 return：返回 path_error
                     return path_error
             updates[field] = _normalize_optional_job_value(value) if value else None
     if monitor_url is not None:
         updates["monitor_url"] = _normalize_optional_job_value(monitor_url) if monitor_url else None
     if (monitor_script is not None or monitor_url is not None) and (
         _pick(updates, job, "monitor_script") and _pick(updates, job, "monitor_url")):
+        # ⤷ 出口 return：返回 'monitor_script and monitor_url are mutually exclusive — cle…
         return("monitor_script and monitor_url are mutually exclusive — clear one before setting the other.")
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _update_context_from()
+# │  作用：context_from / continuity: empty string / list clears; otherwise every ref must
+# │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _update_context_from(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]) -> Optional[str]:
     """context_from / continuity: empty string / list clears; otherwise every ref must
     exist. Stored as a list (or None) to match create_job()."""
     context_from, continuity = a["context_from"], a["continuity"]
     if context_from is None and continuity is None:
+        # ⤷ 出口 return：返回 None
         return None
     if context_from is None:
         context_from = list(job.get("context_from") or [])  # continuity-only update
@@ -800,11 +1036,18 @@ def _update_context_from(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[s
     if refs:
         ref_error = _validate_context_from_refs(refs)
         if ref_error:
+            # ⤷ 出口 return：返回 ref_error
             return ref_error
     updates["context_from"] = refs or None
+    # ⤷ 出口 return：返回 None
     return None
 
 
+# ┌── 函数 def _update_run_fields()
+# │  作用：enabled_toolsets / attach_to_session / workdir / no_agent / repeat / schedule.
+# │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
+# │  返回：Optional[str]
+# └──────────────────────────────────────────────────────────────
 def _update_run_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]) -> Optional[str]:
     """enabled_toolsets / attach_to_session / workdir / no_agent / repeat / schedule."""
     if a["enabled_toolsets"] is not None:
@@ -818,6 +1061,7 @@ def _update_run_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str
         # Flipping to True needs a script on the job or in this same update.
         target_no_agent = bool(a["no_agent"])
         if target_no_agent and not _pick(updates, job, "script"):
+            # ⤷ 出口 return：返回 'Cannot set no_agent=True on a job without a script. Set `sc…
             return (
                 "Cannot set no_agent=True on a job without a script. "
                 "Set `script` in the same update, or on the job first.")
@@ -835,6 +1079,7 @@ def _update_run_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str
         if job.get("state") != "paused":
             updates["state"] = "scheduled"
             updates["enabled"] = True
+    # ⤷ 出口 return：返回 None
     return None
 
 
@@ -842,21 +1087,34 @@ def _update_run_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str
 _UPDATE_STEPS = (_update_core_fields, _update_script_fields, _update_context_from, _update_run_fields)
 
 
+# ┌── 函数 def _action_update()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：job: Dict[str, Any], a: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _action_update(job: Dict[str, Any], a: Dict[str, Any]) -> str:
     updates: Dict[str, Any] = {}
     for step in _UPDATE_STEPS:
         error = step(job, a, updates)
         if error:
+            # ⤷ 出口 return：返回 tool_error(error, success=False)
             return tool_error(error, success=False)
     if not updates:
+        # ⤷ 出口 return：返回 tool_error('No updates provided.', success=False)
         return tool_error("No updates provided.", success=False)
     updated = update_job(job["id"], updates)
     _notify_provider_jobs_changed_safe()
     # An update can switch modes or delivery — echo the same guidance as create.
+    # ⤷ 出口 return：返回 _dumps(_with_guidance({'success': True, 'job': _format_job(u…
     return _dumps(_with_guidance(
         {"success": True, "job": _format_job(updated)}, updated, _normalize_deliver_param(a["deliver"])))
 
 
+# ┌── 函数 def _action_resnap()
+# │  作用：Adopt the current global inference resolution without pinning (#44585).
+# │  参数：a: Dict[str, Any]
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _action_resnap(a: Dict[str, Any]) -> str:
     """Adopt the current global inference resolution without pinning (#44585).
 
@@ -866,6 +1124,7 @@ def _action_resnap(a: Dict[str, Any]) -> str:
     if bool(a["all"]):
         updated = resnapshot_all_unpinned()
         _notify_provider_jobs_changed_safe()
+        # ⤷ 出口 return：返回 _dumps({'success': True, 'message': f'Refreshed inference sn…
         return _dumps({
             "success": True,
             "message": (
@@ -876,6 +1135,7 @@ def _action_resnap(a: Dict[str, Any]) -> str:
         })
     job_id = a["job_id"]
     if not job_id:
+        # ⤷ 出口 return：返回 tool_error('resnap requires either `job_id=<id>` (single job…
         return tool_error(
             "resnap requires either `job_id=<id>` (single job) or `all=true` "
             "(refresh every unpinned job). Refusing to guess scope.",
@@ -883,12 +1143,15 @@ def _action_resnap(a: Dict[str, Any]) -> str:
         )
     job, error = _resolve_job_or_error(job_id)
     if error is not None:
+        # ⤷ 出口 return：返回 error
         return error
     assert job is not None  # error is None ⇔ job resolved
     updated = resnapshot_job(job["id"])
     if not updated:
+        # ⤷ 出口 return：返回 tool_error(f"Failed to resnap job '{job_id}'", success=False…
         return tool_error(f"Failed to resnap job '{job_id}'", success=False)
     _notify_provider_jobs_changed_safe()
+    # ⤷ 出口 return：返回 _dumps({'success': True, 'message': f"Cron job '{updated['na…
     return _dumps({
         "success": True,
         "message": (
@@ -909,11 +1172,18 @@ _JOB_ACTIONS = {
 }
 
 
+# ┌── 函数 def _resolve_job_or_error()
+# │  作用：``(job, None)`` or ``(None, json_error)`` for a job_id/name reference.
+# │  参数：job_id: str
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _resolve_job_or_error(job_id: str):
     """``(job, None)`` or ``(None, json_error)`` for a job_id/name reference."""
+    # ⤷ 关键分支 try/except：捕获 AmbiguousJobReference，出错走兜底而不是崩溃。
     try:
         job = resolve_job_ref(job_id)
     except AmbiguousJobReference as exc:
+        # ⤷ 出口 return：返回 (None, _dumps({'success': False, 'error': str(exc), 'matches…
         return None, _dumps({
             "success": False,
             "error": str(exc),
@@ -923,12 +1193,19 @@ def _resolve_job_or_error(job_id: str):
             ],
         })
     if not job:
+        # ⤷ 出口 return：返回 (None, _dumps({'success': False, 'error': f"Job with ID or n…
         return None, _dumps(
             {"success": False, "error": f"Job with ID or name '{job_id}' not found. Use cronjob(action='list') to inspect jobs."},
         )
+    # ⤷ 出口 return：返回 (job, None)
     return job, None
 
 
+# ┌── 函数 def cronjob()
+# │  作用：Unified cron job management tool.
+# │  参数：action: str, job_id: Optional[str] = None, prompt: Optional[str] = None, schedule: Optional[str] = None, name: Optional[str] = None, repeat: Optional[int] = None, deliver: Optional[str] = None, include_disabled: bool = False  …共 30 个
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def cronjob(
     action: str,
     job_id: Optional[str] = None,
@@ -963,38 +1240,56 @@ def cronjob(
     """Unified cron job management tool."""
     a = dict(locals())
     del a["task_id"]  # unused but kept for handler signature compatibility
+    # ⤷ 关键分支 try/except：捕获 Exception，出错走兜底而不是崩溃。
     try:
         normalized = (action or "").strip().lower()
         handler = _JOBLESS_ACTIONS.get(normalized)
         if handler is not None:
+            # ⤷ 出口 return：返回 handler(a)
             return handler(a)
         if not job_id:
+            # ⤷ 出口 return：返回 tool_error(f"job_id is required for action '{normalized}'", …
             return tool_error(f"job_id is required for action '{normalized}'", success=False)
         # Job resolution precedes the action check (an unknown action on a missing job
         # reports the missing job) — preserved ordering.
         job, error = _resolve_job_or_error(job_id)
         if error is not None:
+            # ⤷ 出口 return：返回 error
             return error
         handler = _JOB_ACTIONS.get(normalized)
         if handler is None:
+            # ⤷ 出口 return：返回 tool_error(f"Unknown cron action '{action}'", success=False)
             return tool_error(f"Unknown cron action '{action}'", success=False)
+        # ⤷ 出口 return：返回 handler(job, a)
         return handler(job, a)
     except Exception as e:
         return tool_error(str(e), success=False)
 
 
+# ┌── 函数 def _script_description()
+# │  作用：内部辅助函数（下划线开头 = 模块私有，外部不应直接调用）
+# │  参数：home: str
+# │  返回：str
+# └──────────────────────────────────────────────────────────────
 def _script_description(home: str) -> str:
+    # ⤷ 出口 return：返回 f"Optional script run each tick; stdout is injected into the…
     return (f"Optional script run each tick; stdout is injected into the agent's prompt as context (with no_agent=True "
             f"the script IS the job). Relative paths resolve under {home}/scripts/; .sh/.bash via bash, else Python. "
             "On update, '' clears.")
 
 
+# ┌── 函数 def _cronjob_schema_overrides()
+# │  作用：Rebuild the ``script`` path hint from the ACTIVE profile at every get_definitions(): the
+# │  参数：无
+# │  返回：dict
+# └──────────────────────────────────────────────────────────────
 def _cronjob_schema_overrides() -> dict:
     """Rebuild the ``script`` path hint from the ACTIVE profile at every get_definitions(): the
     static schema is built once per process, but the multiplexed gateway serves every profile from
     that process, so a path baked in at import would name the launch profile's home (#95685)."""
     params = copy.deepcopy(CRONJOB_SCHEMA["parameters"])
     params["properties"]["script"]["description"] = _script_description(display_hermes_home())
+    # ⤷ 出口 return：返回 {'parameters': params}
     return {"parameters": params}
 
 
@@ -1093,10 +1388,16 @@ Jobs run in a fresh session with no current-chat context, so prompts must be sel
 }
 
 
+# ┌── 函数 def check_cronjob_requirements()
+# │  作用：Available in interactive CLI mode and gateway/messaging platforms (the scheduler is
+# │  参数：无
+# │  返回：bool
+# └──────────────────────────────────────────────────────────────
 def check_cronjob_requirements() -> bool:
     """Available in interactive CLI mode and gateway/messaging platforms (the scheduler is
     internal; no crontab needed). Flags must be explicitly truthy via ``env_var_enabled``."""
     from utils import env_var_enabled
+    # ⤷ 出口 return：返回 env_var_enabled('HERMES_INTERACTIVE') or env_var_enabled('HE…
     return (
         env_var_enabled("HERMES_INTERACTIVE")
         or env_var_enabled("HERMES_GATEWAY_SESSION")
@@ -1114,10 +1415,16 @@ _HANDLER_FORWARDED_ARGS = (
     "paused_reason", "all")
 
 
+# ┌── 函数 def _cronjob_handler()
+# │  作用：Model-tool dispatch: resolves the one model-facing ``monitor`` field into the stored
+# │  参数：args, **kw
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
 def _cronjob_handler(args, **kw):
     """Model-tool dispatch: resolves the one model-facing ``monitor`` field into the stored
     ``monitor_script``/``monitor_url`` pair (legacy field names still accepted)."""
     _mon_script, _mon_url = _split_monitor_arg(args.get("monitor"), args.get("monitor_script"), args.get("monitor_url"))
+    # ⤷ 出口 return：返回 cronjob(action=args.get('action', ''), include_disabled=args…
     return cronjob(
         action=args.get("action", ""),
         include_disabled=args.get("include_disabled", True),
@@ -1153,12 +1460,22 @@ _PLUGIN_COMPAT_LAZY = {
 }
 
 
+# ┌── 函数 def __getattr__()
+# │  作用：魔术方法 __getattr__（Python 在特定场景自动调用，见下方说明）
+# │  参数：name
+# │  返回：（未标注类型）
+# └──────────────────────────────────────────────────────────────
+# 💡【本项目惯用法】模块级 __getattr__：当外部访问本模块里尚未导入的名字时才会触发，
+#    这里用来做「懒加载」——真正用到时才 import，避免启动慢和循环导入。
+#    所以你看到 `from xxx import YYY` 在本文件里搜不到定义，是正常的。
 def __getattr__(name):  # PEP 562 — lazy so no import cycles
     target = _PLUGIN_COMPAT_LAZY.get(name)
     if target is None:
+        # ⤷ 关键分支 raise：主动抛出异常，交给上层处理。
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
     from hermes_cli.plugin_compat import warn_once
     warn_once(__name__, name, *target)
+    # ⤷ 出口 return：返回 getattr(importlib.import_module(target[0]), target[1])
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----

@@ -59,7 +59,7 @@ from hermes_constants import get_hermes_home
 
 
 # ┌── 函数 def _launch_cwd_for_session()
-# │  作用：cwd to stamp on a new session row (``hermes -c`` / ``--resume``), or None.
+# │  作用：计算新建会话行时要写入的工作目录（对应 `hermes -c` / `--resume` 参数）；无法确定时返回 None。
 # │  参数：source: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ def _session_source_for_agent(platform: Optional[str]) -> str:
 
 
 # ┌── 函数 def _gateway_origin_json()
-# │  作用：Gateway routing ``origin_json`` for a session row; None when the agent carries no gateway identity.
+# │  作用：生成会话行的网关路由标识 origin_json（来源信息）；当 agent 不带网关身份时返回 None。
 # │  参数：agent: 'AIAgent'
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ _openrouter_prewarm_done = threading.Event()
 
 
 # ┌── 函数 def _quietly()
-# │  作用：Run one teardown step, swallowing any exception so sibling steps still run.
+# │  作用：执行一个收尾步骤，并吞掉它可能抛出的任何异常，保证其余并列的收尾步骤照常执行。
 # │  参数：fn: Callable, *args, **kwargs
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -213,7 +213,7 @@ def _quietly(fn: Callable, *args, **kwargs) -> None:
 
 
 # ┌── 函数 def _call_engine_hook()
-# │  作用：Invoke an optional context-engine lifecycle hook; failures are logged, never raised.
+# │  作用：调用一个可选的上下文引擎生命周期钩子；失败只记日志，绝不向外抛异常。
 # │  参数：engine: Any, hook: str, *args, **kwargs
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ def _call_engine_hook(engine: Any, hook: str, *args, **kwargs) -> None:
 
 
 # ┌── 函数 def _positive_int()
-# │  作用：``value`` when it is a real positive int (bools excluded), else None.
+# │  作用：当 value 是真正的正整数时返回它（布尔值不算），否则返回 None。
 # │  参数：value: Any
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -240,7 +240,7 @@ def _positive_int(value: Any) -> Optional[int]:
 
 
 # ┌── 函数 def _review_should_defer()
-# │  作用：True when an automatic background review targets the managed local runtime under ``defer: auto``.
+# │  作用：在 `defer: auto` 模式下，当自动后台复查指向「托管的本地运行时」时返回 True。
 # │  参数：agent: Any, task_cfg: Optional[Dict[str, Any]]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -262,7 +262,7 @@ def _review_queue_key(agent: Any) -> str:
 
 
 # ┌── 函数 def _notify_context_engine_session_end()
-# │  作用：Tell the context engine the session ended (flush DAG, close DBs) at the same lifecycle moment as the
+# │  作用：在与关闭流程相同的生命周期时机通知上下文引擎「会话已结束」（刷新 DAG、关闭数据库连接）……
 # │  参数：agent: Any, messages: Optional[list]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -275,7 +275,7 @@ def _notify_context_engine_session_end(agent: Any, messages: Optional[list]) -> 
 
 
 # ┌── 函数 def _pool_may_recover_from_rate_limit()
-# │  作用：Wait for credential-pool rotation (True) or fall back to ``fallback_model`` (False) after a 429.
+# │  作用：遇到 429 限流后该怎么走：等待凭证池轮换（返回 True），还是降级到 `fallback_model`（返回 False）。
 # │  参数：pool
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ def _pool_may_recover_from_rate_limit(pool) -> bool:
 
 
 # ┌── 类 class _StreamErrorEvent（继承自：Exception）
-# │  说明：Provider error synthesized from a standalone Responses ``type=error`` SSE frame (Codex-style backends).
+# │  说明：由一段独立的 Responses `type=error` SSE 帧（Codex 类后端）合成出来的服务商错误。
 # │  成员：共 1 个方法；全部是下划线开头的内部方法；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _StreamErrorEvent(Exception):
@@ -314,7 +314,7 @@ class _StreamErrorEvent(Exception):
 
 
 # ┌── 类 class AIAgent（继承自：ClientLifecycleMixin, StreamDeliveryMixin, StatusOutputMixin, ApiRequestHooksMixin, ApiErrorSummaryMixin, InterruptControlMixin, TurnExplainersMixin, ActivityTrackingMixin, RateLimitCreditsMixin, SessionPersistenceMixin, CompressionFacadeMixin, TurnFacadeMixin, VisionMessagePrepMixin, ReasoningParamsMixin）
-# │  说明：AI Agent with tool calling capabilities.
+# │  说明：具备工具调用能力的 AI Agent（整个项目最核心的类）。
 # │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
 # │  成员：共 71 个方法；对外可用 9 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
@@ -354,7 +354,7 @@ class AIAgent(
         self._base_url_hostname = base_url_hostname(value)
 
     # ┌── 函数 def __init__()
-    # │  作用：Forwarder — see ``agent.agent_init.init_agent`` (same keyword parameters, minus ``tool_delay``).
+    # │  作用：转发函数——真正的实现在 `agent.agent_init.init_agent`（关键字参数完全相同，只是少了 `tool_delay`）。
     # │  参数：self, base_url: str = None, api_key: str = None, provider: str = None, api_mode: str = None, acp_command: str = None, acp_args: list[str] | None = None, command: str = None  …共 81 个
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -408,7 +408,7 @@ class AIAgent(
         init_agent(self, **init_kwargs)
 
     # ┌── 函数 def _get_session_db_for_recall()
-    # │  作用：SessionDB for recall, opening the default state DB when no ``session_db`` was passed so the
+    # │  作用：用于回忆（recall）的 SessionDB；若初始化时没传入 `session_db`，则打开默认的状态数据库……
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -437,7 +437,7 @@ class AIAgent(
             return None
 
     # ┌── 函数 def _session_row_model_config()
-    # │  作用：``model_config`` for the session row: the init config plus the live YOLO bypass.
+    # │  作用：会话行的 `model_config`：初始配置加上当前生效的 YOLO 免审批开关。
     # │  参数：self
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -460,7 +460,7 @@ class AIAgent(
         return model_config
 
     # ┌── 函数 def _ensure_db_session()
-    # │  作用：Create the session DB row on first use; a transient failure leaves it to retry next turn.
+    # │  作用：首次使用时创建该会话对应的数据库记录；若是临时性失败，就留给下一轮再重试。
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -502,7 +502,7 @@ class AIAgent(
             logger.warning("Session DB creation failed (will retry next turn): %s", e)
 
     # ┌── 函数 def _transition_context_engine_session()
-    # │  作用：Drive the context engine's session transition: on_session_end → on_session_reset → on_session_start
+    # │  作用：驱动上下文引擎的会话切换流程：on_session_end → on_session_reset → on_session_start。
     # │  参数：self, old_session_id: Optional[str] = ..., new_session_id: Optional[str] = ..., previous_messages: Optional[list] = ..., carry_over_context: bool = ..., reset_engine: bool = ..., **extra_context
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -536,7 +536,7 @@ class AIAgent(
             _call_engine_hook(engine, "carry_over_new_session_context", old_session_id, target_session_id)
 
     # ┌── 函数 def reset_session_state()
-    # │  作用：Reset session-scoped token/cost counters and compressor state for a fresh session.
+    # │  作用：重置会话级的 token/成本计数器以及压缩器状态，以便开启一个全新的会话。
     # │  参数：self, previous_messages: Optional[list] = None, old_session_id: Optional[str] = None, carry_over_context: bool = False
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -589,7 +589,7 @@ class AIAgent(
                 logger.debug("context engine bind_session_state during reset: %s", exc)
 
     # ┌── 函数 def _effective_lmstudio_context_length()
-    # │  作用：Return a safe context budget from explicit intent and verified runtime.
+    # │  作用：根据显式意图与已验证的运行时，返回一个安全的上下文预算。
     # │  参数：config_context_length: Optional[int], runtime_context_length: Any
     # │  返回：Optional[int]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -611,7 +611,7 @@ class AIAgent(
         return runtime if runtime is not None else explicit
 
     # ┌── 函数 def _lmstudio_load_was_unverified()
-    # │  作用：Return true when a management load was rejected or unverifiable.
+    # │  作用：当一次托管加载（managed load）被拒绝、或无法验证时返回 True。
     # │  参数：load_result: Any
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -625,7 +625,7 @@ class AIAgent(
         )
 
     # ┌── 函数 def _ensure_lmstudio_runtime_loaded()
-    # │  作用：Preload LM Studio unless configured to rely on JIT loading.
+    # │  作用：预加载 LM Studio，除非配置成依赖即时加载（JIT loading）。
     # │  参数：self, config_context_length: Optional[int] = None
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -650,7 +650,7 @@ class AIAgent(
     switch_model = _forward("agent.agent_runtime_helpers", "switch_model")
 
     # ┌── 函数 def _disable_codex_reasoning_replay()
-    # │  作用：On HTTP 400 ``invalid_encrypted_content``: disable Responses reasoning replay and pop
+    # │  作用：收到 HTTP 400 `invalid_encrypted_content` 时：关闭 Responses 的推理重放并移除……
     # │  参数：self, messages: Optional[List[Dict[str, Any]]] = None
     # │  返回：Dict[str, int]
     # └──────────────────────────────────────────────────────────────
@@ -674,7 +674,7 @@ class AIAgent(
     _flatten_exception_chain = _forward_static("agent.stream_diag", "flatten_exception_chain")
 
     # ┌── 函数 def _is_provider_stream_parse_error()
-    # │  作用：True for a malformed Anthropic event-stream frame (surfaced by the SDK as a plain ``ValueError``);
+    # │  作用：判断是否为畸形的 Anthropic 事件流帧（SDK 会把它当成普通 `ValueError` 抛出）；……
     # │  参数：self, error: BaseException
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -690,7 +690,7 @@ class AIAgent(
     _emit_stream_drop = _forward("agent.stream_diag", "emit_stream_drop")
 
     # ┌── 函数 def _emit_auxiliary_failure()
-    # │  作用：Surface a compact warning for failed auxiliary work.
+    # │  作用：对失败的辅助任务输出一条简短的警告。
     # │  参数：self, task: str, exc: BaseException
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -707,7 +707,7 @@ class AIAgent(
         self._emit_warning(f"⚠ Auxiliary {task} failed: {detail}")
 
     # ┌── 函数 def _current_main_runtime()
-    # │  作用：Return the live main runtime for session-scoped auxiliary routing.
+    # │  作用：返回当前生效的主运行时，供会话级的辅助调用路由使用。
     # │  参数：self
     # │  返回：Dict[str, str]
     # └──────────────────────────────────────────────────────────────
@@ -720,7 +720,7 @@ class AIAgent(
     _replay_compression_warning = _forward("agent.conversation_compression", "replay_compression_warning")
 
     # ┌── 函数 def _hostname_for()
-    # │  作用：Hostname of ``base_url``, or of the agent's own base URL when None.
+    # │  作用：返回 `base_url` 的主机名；参数为 None 时返回 agent 自身 base URL 的主机名。
     # │  参数：self, base_url: Optional[str]
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -733,7 +733,7 @@ class AIAgent(
         return getattr(self, "_base_url_hostname", "") or base_url_hostname(getattr(self, "_base_url_lower", ""))
 
     # ┌── 函数 def _is_direct_openai_url()
-    # │  作用：Return True when a base URL targets OpenAI's native API.
+    # │  作用：当 base URL 指向 OpenAI 官方 API 时返回 True。
     # │  参数：self, base_url: str = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -743,7 +743,7 @@ class AIAgent(
         return self._hostname_for(base_url) == "api.openai.com"
 
     # ┌── 函数 def _is_azure_openai_url()
-    # │  作用：True when a base URL targets Azure OpenAI (standard client, but NO Responses API support).
+    # │  作用：当 base URL 指向 Azure OpenAI 时返回 True（是标准客户端，但不支持 Responses API）。
     # │  参数：self, base_url: str = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -754,7 +754,7 @@ class AIAgent(
         return base_url_host_matches(url, "openai.azure.com")
 
     # ┌── 函数 def _is_github_copilot_url()
-    # │  作用：Return True when a base URL targets GitHub Copilot's OpenAI-compatible API.
+    # │  作用：当 base URL 指向 GitHub Copilot 的 OpenAI 兼容 API 时返回 True。
     # │  参数：self, base_url: str = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -765,7 +765,7 @@ class AIAgent(
         return bool(hostname) and (hostname == "api.githubcopilot.com" or hostname.endswith(".githubcopilot.com"))
 
     # ┌── 函数 def _resolved_api_call_timeout()
-    # │  作用：Per-call request timeout: per-model ``timeout_seconds`` > provider ``request_timeout_seconds`` >
+    # │  作用：单次请求的超时时间：优先取按模型配置的 `timeout_seconds`，其次服务商的 `request_timeout_seconds`，……
     # │  参数：self
     # │  返回：float
     # └──────────────────────────────────────────────────────────────
@@ -777,7 +777,7 @@ class AIAgent(
         return cfg if cfg is not None else env_float("HERMES_API_TIMEOUT", 1800.0)
 
     # ┌── 函数 def _resolved_api_call_stale_timeout_base()
-    # │  作用：Base non-stream stale timeout: per-model ``stale_timeout_seconds`` > provider-wide >
+    # │  作用：非流式的基准 stale（卡死）超时：优先取按模型的 `stale_timeout_seconds`，其次服务商级，……
     # │  参数：self
     # │  返回：tuple[float, bool]
     # └──────────────────────────────────────────────────────────────
@@ -807,7 +807,7 @@ class AIAgent(
         return 90.0, True
 
     # ┌── 函数 def _compute_non_stream_stale_timeout()
-    # │  作用：Effective non-stream stale timeout for ``api_payload`` (an ``api_kwargs`` dict or legacy ``messages``
+    # │  作用：针对 `api_payload` 计算生效的非流式 stale 超时（payload 可以是 `api_kwargs` 字典或旧版 `messages`）……
     # │  参数：self, api_payload: Any
     # │  返回：float
     # └──────────────────────────────────────────────────────────────
@@ -834,7 +834,7 @@ class AIAgent(
         return timeout
 
     # ┌── 函数 def _stale_timeout_is_explicit()
-    # │  作用：True when the user explicitly configured the stale timeout (config or env var); implicit values
+    # │  作用：当用户显式配置了 stale 超时（配置文件或环境变量）时返回 True；由系统隐式推算的值……
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -846,7 +846,7 @@ class AIAgent(
                 or os.getenv("HERMES_API_CALL_STALE_TIMEOUT") is not None)
 
     # ┌── 函数 def _codex_silent_hang_hint()
-    # │  作用：Actionable hint when the request matches a known Codex silent-reject shape (currently the ``gpt-5.5``
+    # │  作用：当请求命中已知的 Codex 静默拒绝形态（目前是 `gpt-5.5`）时，给出可操作的提示……
     # │  参数：self, model: Optional[str] = None
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -879,7 +879,7 @@ class AIAgent(
         )
 
     # ┌── 函数 def _is_openrouter_url()
-    # │  作用：Return True when the base URL targets OpenRouter.
+    # │  作用：当 base URL 指向 OpenRouter 时返回 True。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -889,7 +889,7 @@ class AIAgent(
         return base_url_host_matches(self._base_url_lower, "openrouter.ai")
 
     # ┌── 函数 def _is_copilot_url()
-    # │  作用：Return True when the base URL targets GitHub Copilot or GitHub Models.
+    # │  作用：当 base URL 指向 GitHub Copilot 或 GitHub Models 时返回 True。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -899,7 +899,7 @@ class AIAgent(
         return any(base_url_host_matches(self._base_url_lower, h) for h in ("api.githubcopilot.com", "models.github.ai"))
 
     # ┌── 函数 def _is_copilot_provider()
-    # │  作用：True when the active provider is GitHub Copilot under any alias (``copilot`` / ``github-copilot`` /
+    # │  作用：当当前服务商是 GitHub Copilot 的任意别名（`copilot` / `github-copilot` / ……）时返回 True。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -910,7 +910,7 @@ class AIAgent(
         return (self.provider or "").strip().lower() in {"copilot", "github-copilot", "github"} or self._is_copilot_url()
 
     # ┌── 函数 def _is_codex_backend()
-    # │  作用：Return True for the ChatGPT OAuth Codex Responses backend.
+    # │  作用：是 ChatGPT OAuth 的 Codex Responses 后端时返回 True。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -925,7 +925,7 @@ class AIAgent(
     _direct_native_anthropic_tool_cache_capability = _forward("agent.agent_runtime_helpers", "_direct_native_anthropic_tool_cache_capability")
 
     # ┌── 函数 def _model_requires_responses_api()
-    # │  作用：True for GPT-5.x, which OpenAI and OpenRouter reject on /v1/chat/completions
+    # │  作用：针对 GPT-5.x 返回 True——OpenAI 和 OpenRouter 都会在 `/v1/chat/completions` 上拒绝它。
     # │  参数：model: str
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -938,7 +938,7 @@ class AIAgent(
         return model.lower().rsplit("/", 1)[-1].startswith("gpt-5")  # strip vendor prefix ("openai/gpt-5.4")
 
     # ┌── 函数 def _provider_model_requires_responses_api()
-    # │  作用：Return True when this provider/model pair should use Responses API.
+    # │  作用：该服务商/模型组合应当使用 Responses API 时返回 True。
     # │  参数：model: str, provider: Optional[str] = ...
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -965,7 +965,7 @@ class AIAgent(
         return AIAgent._model_requires_responses_api(model)
 
     # ┌── 函数 def _max_tokens_param()
-    # │  作用：``max_completion_tokens`` for newer OpenAI families (and Azure / Copilot serving them), else
+    # │  作用：新版 OpenAI 系列（以及提供这些模型的 Azure / Copilot）用 `max_completion_tokens`，否则用……
     # │  参数：self, value: int
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -980,7 +980,7 @@ class AIAgent(
         return {"max_tokens": value}
 
     # ┌── 函数 def _requested_output_cap_from_api_kwargs()
-    # │  作用：Extract the outgoing response token cap from a prepared request.
+    # │  作用：从已准备好的请求中提取「响应最大 token 数」上限。
     # │  参数：api_kwargs: Any
     # │  返回：Optional[int]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1004,7 +1004,7 @@ class AIAgent(
         return None
 
     # ┌── 函数 def _has_content_after_think_block()
-    # │  作用：True when text remains after stripping reasoning blocks (reasoning-only output is retried).
+    # │  作用：剥离推理块之后仍有正文时返回 True（只有推理内容的输出会触发重试）。
     # │  参数：self, content: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1016,7 +1016,7 @@ class AIAgent(
     _strip_think_blocks = _forward("agent.agent_runtime_helpers", "strip_think_blocks")
 
     # ┌── 函数 def _has_natural_response_ending()
-    # │  作用：Heuristic: does visible assistant text look intentionally finished?
+    # │  作用：启发式判断：可见的助手文本看起来是不是「有意地结束了」？
     # │  参数：content: str
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1034,7 +1034,7 @@ class AIAgent(
         return stripped.endswith("```") or last in '.!?:)"\']}。！？：）】」』》^' or ord(last) >= 0x1F300
 
     # ┌── 函数 def _is_ollama_glm_backend()
-    # │  作用：Ollama-hosted GLM models misreport finish_reason='stop'. Matches only explicit Ollama signatures
+    # │  作用：Ollama 托管的 GLM 模型会误报 `finish_reason='stop'`。只有在明确的 Ollama 特征下才匹配……
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1068,7 +1068,7 @@ class AIAgent(
         return provider_lower == "ollama"
 
     # ┌── 函数 def _should_treat_stop_as_truncated()
-    # │  作用：Detect conservative stop->length misreports for Ollama-hosted GLM models.
+    # │  作用：检测 Ollama 托管的 GLM 模型把 stop 误报成 length 的保守情况。
     # │  参数：self, finish_reason: str, assistant_message, messages: Optional[list] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1103,7 +1103,7 @@ class AIAgent(
     _summarize_background_review_actions = _forward_static("agent.background_review", "summarize_background_review_actions")
 
     # ┌── 函数 def _spawn_background_review()
-    # │  作用：Post-turn review entry point: decide WHEN, then spawn.
+    # │  作用：每轮结束后的复查入口：先决定「什么时候」复查，再派生线程去执行。
     # │  参数：self, messages_snapshot: List[Dict], review_memory: bool = False, review_skills: bool = False, focus: Optional[str] = None, explicit: bool = False
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1140,7 +1140,7 @@ class AIAgent(
         self._spawn_background_review_now(**kwargs)
 
     # ┌── 函数 def _spawn_background_review_now()
-    # │  作用：Spawn the background memory/skill review thread.
+    # │  作用：派生后台的记忆/技能复查线程。
     # │  参数：self, messages_snapshot: List[Dict], review_memory: bool = False, review_skills: bool = False, focus: Optional[str] = None, task_cfg: Optional[Dict[str, Any]] = None, _requeue_attempts: int = 0, explicit: bool = False
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1189,7 +1189,7 @@ class AIAgent(
     _REVIEW_REQUEUE_MAX_ATTEMPTS = 3
 
     # ┌── 函数 def _maybe_requeue_preempted_review()
-    # │  作用：Requeue a deferred-mode review that a live turn cancelled.
+    # │  作用：把一个被当前活跃轮次取消掉的延迟模式复查任务重新排队。
     # │  参数：self, review_run, kwargs
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1219,7 +1219,7 @@ class AIAgent(
     _apply_pending_steer_to_tool_results = _forward("agent.agent_runtime_helpers", "apply_pending_steer_to_tool_results")
 
     # ┌── 函数 def get_activity_summary()
-    # │  作用：Diagnostic snapshot: ``last_activity_*`` plus the short aliases gateway and delegate readers use.
+    # │  作用：诊断快照：包含 `last_activity_*` 以及网关、委派读取方使用的那些简短别名。
     # │  参数：self
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -1241,7 +1241,7 @@ class AIAgent(
         )
 
     # ┌── 函数 def shutdown_memory_provider()
-    # │  作用：Shut down the memory provider and context engine at session end (idempotent: gateway cleanup and
+    # │  作用：在会话结束时关闭记忆提供者与上下文引擎（幂等操作：网关清理与……）
     # │  参数：self, messages: list = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1261,7 +1261,7 @@ class AIAgent(
         _notify_context_engine_session_end(self, messages)
 
     # ┌── 函数 def commit_memory_session()
-    # │  作用：Flush end-of-session extraction on session_id rotation (/new, compression) without tearing providers
+    # │  作用：在会话 id 轮换时（`/new`、上下文压缩）冲刷会话末尾的抽取，但不拆除提供者……
     # │  参数：self, messages: list = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1273,7 +1273,7 @@ class AIAgent(
         _notify_context_engine_session_end(self, messages)
 
     # ┌── 函数 def _sync_external_memory_for_turn()
-    # │  作用：Mirror a completed turn into external memory providers (``sync_all`` + ``queue_prefetch_all``).
+    # │  作用：把已完成的一轮镜像同步到外部记忆提供者（调用 `sync_all` + `queue_prefetch_all`）。
     # │  参数：self, original_user_message: Any, final_response: Any, interrupted: bool, messages: list | None = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1312,7 +1312,7 @@ class AIAgent(
             pass
 
     # ┌── 函数 def release_clients()
-    # │  作用：Release LLM clients and child agents WITHOUT tearing down session tool state (gateway cache
+    # │  作用：释放 LLM 客户端与子 agent，但不拆掉会话级的工具状态（网关缓存……）
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1327,7 +1327,7 @@ class AIAgent(
         self._close_request_clients("cache_evict")
 
     # ┌── 函数 def close()
-    # │  作用：Release every resource this agent holds (idempotent); each phase is guarded so one failure never
+    # │  作用：释放该 agent 持有的全部资源（幂等）；每个阶段都单独保护，单点失败绝不会……
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1355,7 +1355,7 @@ class AIAgent(
     # -- close()/release_clients() phases -------------------------------------------------------------
 
     # ┌── 函数 def _close_active_children()
-    # │  作用：Detach and close per-turn child agents; ``soft`` releases their clients first, falling back to close().
+    # │  作用：分离并关闭每轮派生出来的子 agent；`soft` 模式会先释放它们的客户端，失败再退回 `close()`。
     # │  参数：self, soft: bool
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1379,7 +1379,7 @@ class AIAgent(
             _quietly(lambda: child.close())
 
     # ┌── 函数 def _drop_shared_client()
-    # │  作用：Hand the shared OpenAI/httpx client to ``close_fn`` and clear the attribute.
+    # │  作用：把共享的 OpenAI/httpx 客户端交给 `close_fn` 处理，并清空该属性。
     # │  参数：self, close_fn: Callable[[Any], None]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1396,7 +1396,7 @@ class AIAgent(
             self.client = None
 
     # ┌── 函数 def _close_request_clients()
-    # │  作用：Drop the cached per-request wire clients (reused across sequential LLM calls).
+    # │  作用：丢弃缓存的「按请求」连接客户端（顺序执行的多次 LLM 调用之间会复用它们）。
     # │  参数：self, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1406,7 +1406,7 @@ class AIAgent(
         _quietly(self._close_cached_request_anthropic_client, reason=reason)
 
     # ┌── 函数 def _close_codex_session()
-    # │  作用：Close the Codex app-server session (else the child keeps running); the attribute is cleared BEFORE
+    # │  作用：关闭 Codex app-server 会话（否则子进程会一直跑）；该属性会在关闭动作之前就被清空……
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1419,7 +1419,7 @@ class AIAgent(
             codex_session.close()
 
     # ┌── 函数 def _trim_process_memory()
-    # │  作用：Return freed heap pages to the OS on glibc; safe no-op elsewhere.
+    # │  作用：在 glibc 上把已释放的堆内存归还给操作系统；在其他平台是安全的空操作。
     # │  参数：无
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1431,7 +1431,7 @@ class AIAgent(
         trim_memory(force=True, reason="agent close")
 
     # ┌── 函数 def _finalize_owned_session_row()
-    # │  作用：End the session row unless ownership was handed forward (compression helpers, review forks sharing
+    # │  作用：结束会话行，除非所有权已经被转交出去（压缩辅助函数、共享的复查 fork……）
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1452,7 +1452,7 @@ class AIAgent(
             release_or_close(session_db)
 
     # ┌── 函数 def _hydrate_todo_store()
-    # │  作用：Replay the most recent todo tool response (the gateway builds a fresh AIAgent per message). Only
+    # │  作用：重放最近一次 todo 工具的响应（网关对每条消息都会新建一个 AIAgent）。仅……
     # │  参数：self, history: List[Dict[str, Any]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1477,7 +1477,7 @@ class AIAgent(
         _set_interrupt(False)
 
     # ┌── 函数 def _latest_todo_response()
-    # │  作用：Walk history backwards for the newest paired, size-bounded todo result → ``(todos, revision)``.
+    # │  作用：从历史里向前回溯，找出最新一条「成对且大小受限」的 todo 结果 → 返回 `(todos, revision)`。
     # │  参数：self, history: List[Dict[str, Any]]
     # │  返回：Optional[tuple]
     # └──────────────────────────────────────────────────────────────
@@ -1508,7 +1508,7 @@ class AIAgent(
         return None
 
     # ┌── 函数 def _tool_response_matches_todo_call()
-    # │  作用：True when the nearest prior assistant message issued a ``todo`` call with this ``tool_call_id``; a
+    # │  作用：最近一条助手消息是否用这个 `tool_call_id` 发起过 `todo` 调用；……
     # │  参数：cls, history: List[Dict[str, Any]], tool_index: int
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -1533,7 +1533,7 @@ class AIAgent(
         return False
 
     # ┌── 函数 def _assistant_has_todo_tool_call()
-    # │  作用：True when the assistant message issued a ``todo`` call with this id.
+    # │  作用：该助手消息是否用这个 id 发起过 `todo` 调用。
     # │  参数：cls, assistant_msg: Dict[str, Any], tool_call_id: str
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -1549,7 +1549,7 @@ class AIAgent(
         )
 
     # ┌── 函数 def is_interrupted()
-    # │  作用：Check if an interrupt has been requested.
+    # │  作用：检查是否已经收到中断请求（比如用户按了 Ctrl+C）。
     # │  参数：self
     # │  返回：bool
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -1566,7 +1566,7 @@ class AIAgent(
     _get_tool_call_id_static = staticmethod(_sanitize_coalesce_tool_call_id)
 
     # ┌── 函数 def _get_tool_call_name_static()
-    # │  作用：Function name of a tool_call entry (dict or object); Gemini requires it on every ``role: tool`` message.
+    # │  作用：取 tool_call 条目的函数名（字典或对象都支持）；Gemini 要求每条 `role: tool` 消息都必须带上它。
     # │  参数：tc
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1585,7 +1585,7 @@ class AIAgent(
     _sanitize_api_messages = _forward_static("agent.agent_runtime_helpers", "sanitize_api_messages")
 
     # ┌── 函数 def _is_thinking_only_assistant()
-    # │  作用：True if ``msg`` is an assistant turn whose only payload is reasoning (no text, no tool_calls).
+    # │  作用：判断 `msg` 是否是「只有推理内容」的助手轮次（没有文本、也没有 tool_calls）。
     # │  参数：msg: Dict[str, Any], drop_codex_reasoning_items: bool = ...
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1633,7 +1633,7 @@ class AIAgent(
         return False
 
     # ┌── 函数 def _content_has_real_payload()
-    # │  作用：True when assistant ``content`` carries anything beyond (redacted) thinking blocks / whitespace.
+    # │  作用：判断助手的 `content` 是否含有「（已脱敏的）思考块与空白字符」之外的内容。
     # │  参数：content: Any
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1668,7 +1668,7 @@ class AIAgent(
     _drop_thinking_only_and_merge_users = _forward_static("agent.agent_runtime_helpers", "drop_thinking_only_and_merge_users")
 
     # ┌── 函数 def _cap_delegate_task_calls()
-    # │  作用：Cap delegate_task calls in one turn at max_concurrent_children (non-delegate calls all kept);
+    # │  作用：限制一轮里 `delegate_task` 的调用数不超过 `max_concurrent_children`（非委派调用全部保留）；……
     # │  参数：tool_calls: list
     # │  返回：list
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1696,7 +1696,7 @@ class AIAgent(
         return truncated
 
     # ┌── 函数 def _deduplicate_tool_calls()
-    # │  作用：Drop duplicate (tool_name, arguments) pairs in one turn (first wins). Valid JSON arguments are
+    # │  作用：去掉一轮里重复的 `(tool_name, arguments)` 组合（保留第一次出现的）。合法的 JSON 参数……
     # │  参数：tool_calls: list
     # │  返回：list
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1740,7 +1740,7 @@ class AIAgent(
     _try_activate_fallback = _forward("agent.chat_completion_helpers", "try_activate_fallback")
 
     # ┌── 函数 def _has_pending_fallback()
-    # │  作用：Whether a fallback provider remains (mirrors ``try_activate_fallback``'s guard) — gates the
+    # │  作用：是否还有可用的兜底服务商（判断条件与 `try_activate_fallback` 的守卫一致）——用来把……
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1758,7 +1758,7 @@ class AIAgent(
     _build_api_kwargs = _forward("agent.chat_completion_helpers", "build_api_kwargs")
 
     # ┌── 函数 def _set_tool_guardrail_halt()
-    # │  作用：Record the first guardrail decision that should stop this turn.
+    # │  作用：记录第一个「应当终止本轮」的安全护栏判定。
     # │  参数：self, decision: ToolGuardrailDecision
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1822,7 +1822,7 @@ class AIAgent(
         return function_result
 
     # ┌── 函数 def _stall_guards_enabled()
-    # │  作用：Config gate for the runtime anti-stall guards (agent.stall_guards).
+    # │  作用：运行时防卡死护栏的配置开关（`agent.stall_guards`）。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1842,7 +1842,7 @@ class AIAgent(
         return toolguard_synthetic_result(decision)
 
     # ┌── 函数 def _execute_tool_calls()
-    # │  作用：Execute the assistant's tool calls and append results to ``messages``.
+    # │  作用：执行助手要求的工具调用，并把结果追加到 `messages` 里。
     # │  参数：self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1876,7 +1876,7 @@ class AIAgent(
             self._executing_tools = False
 
     # ┌── 函数 def _dispatch_delegate_task()
-    # │  作用：Single call site for delegate_task dispatch; new DELEGATE_TASK_SCHEMA fields are added only here.
+    # │  作用：`delegate_task` 派发的唯一调用点；新增的 DELEGATE_TASK_SCHEMA 字段只在这里添加。
     # │  参数：self, function_args: dict
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -1899,7 +1899,7 @@ class AIAgent(
     _invoke_tool = _forward("agent.agent_runtime_helpers", "invoke_tool")
 
     # ┌── 函数 def _wrap_verbose()
-    # │  作用：Word-wrap verbose tool output to the terminal width (each existing line separately), continuation
+    # │  作用：把冗长的工具输出按终端宽度做折行（对已有的每一行分别处理），续行……
     # │  参数：label: str, text: str, indent: str = '     '
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1924,7 +1924,7 @@ class AIAgent(
     _handle_max_iterations = _forward("agent.chat_completion_helpers", "handle_max_iterations")
 
     # ┌── 函数 def _conversation_root_id()
-    # │  作用：Session-lineage ROOT id for Portal usage attribution, so one conversation keeps a single
+    # │  作用：用于 Portal 用量归因的会话血缘 ROOT id，让一次对话始终……
     # │  参数：self
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -1976,7 +1976,7 @@ _LIST_TOOLS_USAGE = """
 
 
 # ┌── 函数 def _print_tool_listing()
-# │  作用：``--list_tools``: print toolsets (basic / composite / scenario / legacy), every tool, and usage examples.
+# │  作用：`--list_tools`：打印工具集（基础 / 组合 / 场景 / 遗留）、全部工具以及用法示例。
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2021,7 +2021,7 @@ def _print_tool_listing() -> None:
 
 
 # ┌── 函数 def _parse_toolset_arg()
-# │  作用：Comma-separated toolset CLI arg → list (echoed), or None when absent.
+# │  作用：把逗号分隔的工具集命令行参数转成列表（原样返回）；参数不存在时返回 None。
 # │  参数：raw: Optional[str], label: str
 # │  返回：Optional[List[str]]
 # └──────────────────────────────────────────────────────────────
@@ -2037,7 +2037,7 @@ def _parse_toolset_arg(raw: Optional[str], label: str) -> Optional[List[str]]:
 
 
 # ┌── 函数 def _save_sample_trajectory()
-# │  作用：``--save_sample``: write one trajectory (same format as batch_runner) to a UUID-named JSON file.
+# │  作用：`--save_sample`：把一条轨迹（与 batch_runner 相同的格式）写入以 UUID 命名的 JSON 文件。
 # │  参数：agent: 'AIAgent', result: dict, user_query: str, model: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2058,7 +2058,7 @@ def _save_sample_trajectory(agent: "AIAgent", result: dict, user_query: str, mod
 
 
 # ┌── 函数 def main()
-# │  作用：Main function for running the agent directly.
+# │  作用：直接运行 agent 的主函数（命令行入口）。
 # │  参数：query: str = None, model: str = '', api_key: str = None, base_url: str = '', max_turns: int = 10, enabled_toolsets: str = None, disabled_toolsets: str = None, list_tools: bool = False  …共 12 个
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

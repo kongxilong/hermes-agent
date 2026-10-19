@@ -65,7 +65,7 @@ _CONTEXT_FILE_READ_TIMEOUT_SECS = 5.0
 
 
 # ┌── 函数 def _get_context_file_read_timeout()
-# │  作用：``context_file_read_timeout`` from config.yaml, else the 5s default.
+# │  作用：``context_file_read_timeout`` 从配置.YAML, 否则 5s 默认值.
 # │  参数：无
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ def _get_context_file_read_timeout() -> float:
 
 
 # ┌── 函数 def _read_text_with_timeout()
-# │  作用：``path.read_text()`` on a daemon thread so a slow file can't stall startup.
+# │  作用：``路径.read_text()`` 在…上 daemon 线程从而 slow 文件无法 stall startup.
 # │  参数：path: Path, timeout: Optional[float] = None
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ def _read_text_with_timeout(path: Path, timeout: Optional[float] = None) -> Opti
 
 
 # ┌── 函数 def _scan_context_content()
-# │  作用：Scan a context file (AGENTS.md, .cursorrules, SOUL.md) for injection; matches are BLOCKED.
+# │  作用：Scan 上下文文件 (Agent.md, .cursorrules, SOUL.md) 用于 injection; matches 是 BLOCKED.
 # │  参数：content: str, filename: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ def _scan_context_content(content: str, filename: str) -> str:
 
 
 # ┌── 函数 def _find_git_root()
-# │  作用：Nearest ancestor (or *start* itself) containing ``.git``, else None.
+# │  作用：Nearest ancestor (或 *start* itself) containing ``.git``, 否则 None.
 # │  参数：start: Path
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -170,7 +170,7 @@ def _exists_or_denied(path: Path) -> bool:
 
 
 # ┌── 函数 def _find_hermes_md()
-# │  作用：Nearest ``.hermes.md`` / ``HERMES.md`` from *cwd* up to the git root, else None.
+# │  作用：Nearest ``.hermes.md`` / ``HERMES.md`` 从 *cwd* up git root, 否则 None.
 # │  参数：cwd: Path
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ def _find_hermes_md(cwd: Path) -> Optional[Path]:
 
 
 # ┌── 函数 def _strip_yaml_frontmatter()
-# │  作用：Drop optional ``---`` YAML frontmatter so only the markdown body is injected.
+# │  作用：丢弃 optional ``---`` YAML frontmatter 从而仅 markdown body 是已注入.
 # │  参数：content: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ HERMES_AGENT_HELP_GUIDANCE_NO_SKILLS = (
 
 # Keep the every-session memory scope even when task knowledge cannot be saved as a skill.
 # ┌── 函数 def build_memory_guidance()
-# │  作用：Adapt store and skill-write guidance without widening what belongs in memory.
+# │  作用：Adapt store 且 skill-写入 guidance 不 widening 什么 belongs 在内存.
 # │  参数：memory_enabled: bool = True, profile_enabled: bool = True, skill_manage_available: bool = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -548,7 +548,7 @@ OPENAI_MODEL_EXECUTION_GUIDANCE = (
 
 
 # ┌── 函数 def execution_guidance_text()
-# │  作用：OPENAI_MODEL_EXECUTION_GUIDANCE for the session's toolset (cache-safe: the toolset is fixed per session).
+# │  作用：OPENAI_MODEL_EXECUTION_GUIDANCE 用于会话's 工具集 (缓存-safe: 工具集是 fixed per 会话).
 # │  参数：valid_tool_names = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -600,7 +600,7 @@ STEER_MARKER_CLOSE = "[/OUT-OF-BAND USER MESSAGE]"
 
 
 # ┌── 函数 def format_steer_marker()
-# │  作用：Wrap a mid-turn steer in the self-describing marker (see note above).
+# │  作用：Wrap 轮次中段的 steer 在 self-描述 marker (see note above).
 # │  参数：steer_text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -614,7 +614,7 @@ STEER_DISPLAY_KIND = "steer"
 
 
 # ┌── 函数 def steer_user_row()
-# │  作用：The standalone ``role:user`` row a mid-turn /steer is delivered as (after the newest tool
+# │  作用：standalone ``角色:user`` row 轮次中段的 /steer 是 delivered 作为 (在…之后 newest 工具
 # │  参数：steer_text: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -648,7 +648,7 @@ STEER_CHANNEL_NOTE = (
 
 
 # ┌── 函数 def hud_surface_note()
-# │  作用：Per-turn note for a message typed into the desktop's floating HUD ("this"/"here" = the app behind it).
+# │  作用：Per-轮次 note 用于消息 typed 进入 desktop's floating HUD ("这个"/"这里" = app behind 它).
 # │  参数：valid_tool_names: 'set[str] | None' = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -912,7 +912,7 @@ _BACKEND_PROBE_CACHE: dict[tuple[str, str, str], str] = {}
 
 
 # ┌── 函数 def _plugin_backend_attr()
-# │  作用：*attr* of a plugin-registered terminal backend, fail-soft (unknown backend / raising plugin -> *default*).
+# │  作用：*attr* 的 plugin-registered 终端 backend, fail-soft (unknown backend / 抛出 plugin -> *默认值*).
 # │  参数：backend: str, attr: str, default = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -929,7 +929,7 @@ def _plugin_backend_attr(backend: str, attr: str, default=None):
 
 
 # ┌── 函数 def _plugin_backend_is_remote()
-# │  作用：Whether a plugin-registered terminal backend runs commands remotely (unknown names are local).
+# │  作用：是否 plugin-registered 终端 backend 运行命令 remotely (unknown 名称是 local).。
 # │  参数：backend: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -941,7 +941,7 @@ def _plugin_backend_is_remote(backend: str) -> bool:
 
 
 # ┌── 函数 def _windows_marketing_version()
-# │  作用："10"/"11" (``platform.release()`` says 10 for both; 11 is build >= 22000).
+# │  作用："10"/"11" (``平台.release()`` says 10 用于 both; 11 是构建 >= 22000).
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -981,7 +981,7 @@ _WINDOWS_BASH_SHELL_HINT = (
 
 
 # ┌── 函数 def _tenv_read()
-# │  作用：Scope-aware TERMINAL_* read: the multiplexing gateway's per-turn scope carries
+# │  作用：Scope-aware TERMINAL_* 读取: multiplexing gateway's per-轮次 scope carries
 # │  参数：name: str, default: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1010,7 +1010,7 @@ _BACKEND_PROBE_CMD = (
 
 
 # ┌── 函数 def _run_backend_probe()
-# │  作用：Execute the probe command inside a freshly built backend; "" when it yields nothing.
+# │  作用：执行 probe 命令 inside freshly 已构建 backend; "" 当它 yields nothing.
 # │  参数：env_type: str, terminal_tool
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1054,7 +1054,7 @@ def _run_backend_probe(env_type: str, terminal_tool) -> str:
 
 
 # ┌── 函数 def _format_backend_probe()
-# │  作用：Render the probe's key=value lines as an indented summary ("" if nothing usable).
+# │  作用：Render probe's 键=值 lines 作为 indented 摘要 ("" 若 nothing usable).
 # │  参数：output: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1071,7 +1071,7 @@ def _format_backend_probe(output: str) -> str:
 
 
 # ┌── 函数 def _probe_remote_backend()
-# │  作用：Describe the active non-local backend via a live probe; None if it failed (cached, failures included).
+# │  作用：描述 active non-local backend via 当前活跃的 probe; None 若它 failed (cached, failures included).
 # │  参数：env_type: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -1099,7 +1099,7 @@ def _probe_remote_backend(env_type: str) -> str | None:
 
 
 # ┌── 函数 def _clear_backend_probe_cache()
-# │  作用：Test helper — drop the backend probe cache so monkeypatched backends take effect.
+# │  作用：测试 helper — 丢弃 backend probe 缓存从而 monkeypatched backends take effect.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1109,7 +1109,7 @@ def _clear_backend_probe_cache() -> None:
 
 
 # ┌── 函数 def _local_host_hints()
-# │  作用：Host OS / home / cwd block for a local terminal backend (tools run on this host).
+# │  作用：宿主 OS / 主目录 / cwd block 用于 local 终端 backend (工具运行在…上这个宿主).
 # │  参数：无
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -1142,7 +1142,7 @@ def _local_host_hints() -> list[str]:
 
 
 # ┌── 函数 def _remote_backend_hint()
-# │  作用：Backend-only block for remote/sandbox backends (host info deliberately suppressed).
+# │  作用：Backend-仅 block 用于 remote/sandbox backends (宿主信息 deliberately suppressed).
 # │  参数：backend: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1171,7 +1171,7 @@ def _remote_backend_hint(backend: str) -> str:
 
 
 # ┌── 函数 def _config_readonly()
-# │  作用：config.yaml as a dict, or {} when unreadable (logged at debug with *what* for context).
+# │  作用：配置.YAML 作为字典, 或 {} 当 unreadable (logged 在调试带 *什么* 用于上下文).
 # │  参数：what: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1189,7 +1189,7 @@ def _config_readonly(what: str) -> dict:
 
 
 # ┌── 函数 def _embedder_environment_hint()
-# │  作用：Embedder-supplied environment description: HERMES_ENVIRONMENT_HINT (container ENV)
+# │  作用：由嵌入器提供的环境描述：HERMES_ENVIRONMENT_HINT（容器环境变量）。
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1202,7 +1202,7 @@ def _embedder_environment_hint() -> str:
 
 
 # ┌── 函数 def build_environment_hints()
-# │  作用：Execution-environment block: local backends get host OS/home/cwd; remote/sandbox
+# │  作用：Execution-environment block: local backends 获取宿主 OS/主目录/cwd; remote/sandbox
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1233,7 +1233,7 @@ _CONTEXT_FILE_DYNAMIC_CEILING = 500_000
 
 
 # ┌── 函数 def _dynamic_context_file_max_chars()
-# │  作用：Char cap from the model's window, clamped to [20K floor, 500K ceiling]; flat default when unknown.
+# │  作用：Char cap 从模型's window, clamped [20K 下取整到, 500K ceiling]; flat 默认值当 unknown.
 # │  参数：context_length: Optional[int]
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1248,7 +1248,7 @@ def _dynamic_context_file_max_chars(context_length: Optional[int]) -> int:
 
 
 # ┌── 函数 def _get_context_file_max_chars()
-# │  作用：Context-file truncation limit: explicit config.yaml ``context_file_max_chars`` wins, else the dynamic cap.
+# │  作用：上下文-文件 truncation 限制: explicit 配置.YAML ``context_file_max_chars`` wins, 否则 dynamic cap.
 # │  参数：context_length: Optional[int] = None
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1267,7 +1267,7 @@ _truncation_warnings: "contextvars.ContextVar[Optional[list]]" = contextvars.Con
 
 
 # ┌── 函数 def drain_truncation_warnings()
-# │  作用：Return and clear any truncation warnings accumulated in this context.
+# │  作用：返回 且清除任意 truncation warnings accumulated 在这个上下文.。
 # │  参数：无
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -1303,7 +1303,7 @@ def _skills_prompt_snapshot_path() -> Path:
 
 
 # ┌── 函数 def clear_skills_system_prompt_cache()
-# │  作用：Drop the in-process skills prompt cache (and optionally the disk snapshot).
+# │  作用：丢弃在-进程 skills 提示词缓存 (且 optionally disk snapshot).
 # │  参数：clear_snapshot: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1320,7 +1320,7 @@ def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
 
 
 # ┌── 函数 def _build_skills_manifest()
-# │  作用：mtime/size manifest of every SKILL.md and DESCRIPTION.md; only the ACTIVE org mirror participates, and
+# │  作用：mtime/size manifest 的每个 SKILL.md 且 DESCRIPTION.md; 仅 ACTIVE org 镜像 participates, 且
 # │  参数：skills_dir: Path
 # │  返回：dict[str, list[int]]
 # └──────────────────────────────────────────────────────────────
@@ -1359,7 +1359,7 @@ def _build_skills_manifest(skills_dir: Path) -> dict[str, list[int]]:
 
 
 # ┌── 函数 def _load_skills_snapshot()
-# │  作用：The disk snapshot if it exists, is current-version, and its manifest still matches.
+# │  作用：disk snapshot 若它 exists, 是 current-版本, 且其 manifest 仍 matches.
 # │  参数：skills_dir: Path
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -1380,7 +1380,7 @@ def _load_skills_snapshot(skills_dir: Path) -> Optional[dict]:
 
 
 # ┌── 函数 def _build_snapshot_entry()
-# │  作用：Serialisable metadata dict for one skill.
+# │  作用：Serialisable metadata 字典用于 one skill.
 # │  参数：skill_file: Path, skills_dir: Path, frontmatter: dict, description: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1413,7 +1413,7 @@ def _build_snapshot_entry(skill_file: Path, skills_dir: Path, frontmatter: dict,
 
 
 # ┌── 函数 def _parse_skill_file()
-# │  作用：Read a SKILL.md once -> (is_compatible, frontmatter, description); errors yield (True, {}, "").
+# │  作用：读取 SKILL.md 一旦 -> (is_compatible, frontmatter, description); 错误 yield (True, {}, "").
 # │  参数：skill_file: Path
 # │  返回：tuple[bool, dict, str]
 # └──────────────────────────────────────────────────────────────
@@ -1435,7 +1435,7 @@ def _parse_skill_file(skill_file: Path) -> tuple[bool, dict, str]:
 
 
 # ┌── 函数 def _skill_should_show()
-# │  作用：False if the skill's conditional activation rules exclude it.
+# │  作用：False 若 skill's conditional activation rules exclude 它.
 # │  参数：conditions: dict, available_tools: 'set[str] | None', available_toolsets: 'set[str] | None', session_platform: 'str | None' = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1464,7 +1464,7 @@ def _skill_should_show(
 
 
 # ┌── 函数 def _current_session_platform_hint()
-# │  作用：Active platform without importing the gateway package on CLI startup.
+# │  作用：Active 平台不 导入 gateway 包在…上 CLI startup.
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1485,7 +1485,7 @@ def _current_session_platform_hint() -> str:
 
 
 # ┌── 函数 def build_skills_system_prompt()
-# │  作用：Compact skill index for the system prompt.
+# │  作用：Compact skill index 用于 system 提示词.
 # │  参数：available_tools: 'set[str] | None' = None, available_toolsets: 'set[str] | None' = None, compact_categories: 'frozenset[str] | None' = None, skills_dir_override: 'Path | None' = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1534,7 +1534,7 @@ def _entry_name(entry: dict) -> str:
 
 
 # ┌── 函数 def _read_category_descriptions()
-# │  作用：``description`` from every DESCRIPTION.md under *root*, keyed by category path.
+# │  作用：``description`` 从每个 DESCRIPTION.md under *root*, keyed 由 category 路径.
 # │  参数：root: Path, log_fmt: str
 # │  返回：dict[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -1555,7 +1555,7 @@ def _read_category_descriptions(root: Path, log_fmt: str) -> dict[str, str]:
 
 
 # ┌── 函数 def _collect_extra_skills()
-# │  作用：Add visible skills from a project/external dir; names already in *claimed* are skipped.
+# │  作用：添加 visible skills 从投射/external dir; 名称已 在 *claimed* 是 skipped.
 # │  参数：root: Path, skill_files, hides, claimed: set[str], skills_by_category: dict[str, list[tuple[str, str]]], desc_prefix: str, log_fmt: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1579,7 +1579,7 @@ def _collect_extra_skills(
 
 
 # ┌── 函数 def _label_visible_entries()
-# │  作用：Org labeling + FAIL-LOUD collisions: a personal/org name clash flags BOTH
+# │  作用：Org labeling + FAIL-LOUD collisions: personal/org 名称 clash 标志 BOTH
 # │  参数：visible_entries: list[dict], skills_by_category: dict[str, list[tuple[str, str]]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1601,7 +1601,7 @@ def _label_visible_entries(visible_entries: list[dict], skills_by_category: dict
 
 
 # ┌── 函数 def _render_skills_index()
-# │  作用：Render the ## Skills block; "" when there is nothing to list.
+# │  作用：Render ## Skills block; "" 当那里是 nothing 列表.
 # │  参数：skills_by_category: dict[str, list[tuple[str, str]]], category_descriptions: dict[str, str], compact_categories: 'frozenset[str] | None', available_tools: 'set[str] | None'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1750,7 +1750,7 @@ def _build_skills_system_prompt_inner(
 
 
 # ┌── 函数 def _truncate_content()
-# │  作用：Head/tail truncation with a marker in the middle; ``read_path`` (default ``filename``) is what the
+# │  作用：Head/tail truncation 带 marker 在 middle; ``read_path`` (默认值 ``filename``) 是什么
 # │  参数：content: str, filename: str, max_chars: Optional[int] = None, context_length: Optional[int] = None, read_path: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1785,7 +1785,7 @@ def _truncate_content(
 
 
 # ┌── 函数 def load_soul_md()
-# │  作用：SOUL.md from HERMES_HOME (identity slot #1), or None.
+# │  作用：SOUL.md 从 HERMES_HOME (身份 slot #1), 或 None.
 # │  参数：context_length: Optional[int] = None, home_override: 'Path | None' = None
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1831,7 +1831,7 @@ def load_soul_md(context_length: Optional[int] = None, home_override: "Path | No
 
 
 # ┌── 函数 def _read_context_file()
-# │  作用：Stripped text of *path*; "" when missing, empty or unreadable (logged at debug).
+# │  作用：Stripped 文本的 *路径*; "" 当 missing, empty 或 unreadable (logged 在调试).
 # │  参数：path: Path
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1851,7 +1851,7 @@ def _read_context_file(path: Path) -> str:
 
 
 # ┌── 函数 def _context_section()
-# │  作用：Threat-scan *content*, render it as ``## <label>``, cap it to the budget (*warn_name* labels warnings).
+# │  作用：Threat-scan *内容*, render 它作为 ``## <label>``, cap 它预算 (*warn_name* labels warnings).
 # │  参数：content: str, label: str, warn_name: str, path: Path, context_length: Optional[int]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1863,7 +1863,7 @@ def _context_section(content: str, label: str, warn_name: str, path: Path, conte
 
 
 # ┌── 函数 def _load_hermes_md()
-# │  作用：.hermes.md / HERMES.md — nearest match walking up to the git root.
+# │  作用：.hermes.md / HERMES.md——从当前目录向上找到 git 根目录过程中最近的匹配文件。
 # │  参数：cwd_path: Path, context_length: Optional[int] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1880,7 +1880,7 @@ def _load_hermes_md(cwd_path: Path, context_length: Optional[int] = None) -> str
 
 
 # ┌── 函数 def _agents_md_directory_chain()
-# │  作用：Directories to check for AGENTS.md: git root first, cwd last (deeper = precedence); cwd only without a root.
+# │  作用：Directories 检查用于 Agent.md: git root first, cwd last (deeper = precedence); cwd 仅不 root.
 # │  参数：cwd_path: Path
 # │  返回：list[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1897,7 +1897,7 @@ def _agents_md_directory_chain(cwd_path: Path) -> list[Path]:
 
 
 # ┌── 函数 def _load_agents_md()
-# │  作用：AGENTS.md — merged directory chain from git root down to cwd.
+# │  作用：Agent.md — merged directory chain 从 git root down cwd.
 # │  参数：cwd_path: Path, context_length: Optional[int] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1939,7 +1939,7 @@ def _load_agents_md(cwd_path: Path, context_length: Optional[int] = None) -> str
 
 
 # ┌── 函数 def _load_claude_md()
-# │  作用：CLAUDE.md / claude.md — cwd only.
+# │  作用：CLAUDE.md / claude.md — cwd 仅.
 # │  参数：cwd_path: Path, context_length: Optional[int] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1955,7 +1955,7 @@ def _load_claude_md(cwd_path: Path, context_length: Optional[int] = None) -> str
 
 
 # ┌── 函数 def _load_cursorrules()
-# │  作用：.cursorrules + .cursor/rules/*.mdc — cwd only, concatenated.
+# │  作用：.cursorrules + .cursor/rules/*.mdc — cwd 仅, concatenated.
 # │  参数：cwd_path: Path, context_length: Optional[int] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1978,7 +1978,7 @@ def _load_cursorrules(cwd_path: Path, context_length: Optional[int] = None) -> s
 
 
 # ┌── 函数 def build_context_files_prompt()
-# │  作用：Discover and load context files for the system prompt (each capped, see ``_get_context_file_max_chars``).
+# │  作用：Discover 且加载上下文文件用于 system 提示词 (每个 capped, see ``_get_context_file_max_chars``).
 # │  参数：cwd: Optional[str] = None, skip_soul: bool = False, context_length: Optional[int] = None, allow_install_tree_fallback: bool = False, home_override: 'Path | None' = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────

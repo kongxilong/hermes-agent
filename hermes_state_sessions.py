@@ -51,7 +51,7 @@ logger = logging.getLogger("hermes_state")
 
 
 # ┌── 函数 def workspace_key()
-# │  作用：Workspace grouping key: git repo root, else cwd, else None (branch excluded: a checkout must not
+# │  作用：Workspace grouping 键: git repo root, 否则 cwd, 否则 None (branch excluded: checkout 必须不
 # │  参数：row: Dict[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ _MODEL_CONFIG_ROW_MISSING = object()
 
 
 # ┌── 函数 def _parse_model_config()
-# │  作用：Tolerant ``model_config`` decode: JSON text or dict -> dict copy; anything else -> {}.
+# │  作用：Tolerant ``model_config`` decode: JSON 文本或 字典 -> 字典复制; anything 否则 -> {}.
 # │  参数：raw: Any
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ def _cwd_prefix_clause(cwd_prefix: str) -> Tuple[str, List[str]]:
 
 
 # ┌── 函数 def _workspace_key_clause()
-# │  作用：WHERE for ``workspace_key(row) == key``: git_repo_root equals ``key``, or (rows predating
+# │  作用：何处用于 ``workspace_key(row) == 键``: git_repo_root equals ``键``, 或 (rows predating
 # │  参数：key: str
 # │  返回：Tuple[str, List[str]]
 # └──────────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ _PREVIEW_COL_SQL = f"""COALESCE(
 
 
 # ┌── 函数 def _where_sql()
-# │  作用：``WHERE a AND b`` (with *lead* prefix) or "" when there are no clauses.
+# │  作用：``何处且 b`` (带 *lead* prefix) 或 "" 当那里是 无 clauses.
 # │  参数：clauses: List[str], lead: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ def _where_sql(clauses: List[str], lead: str = "") -> str:
 
 
 # ┌── 函数 def _session_filter_where()
-# │  作用：Shared ``sessions s`` WHERE builder so counts line up with listed rows. ``exclude_children``
+# │  作用：Shared ``会话 s`` 何处 builder 从而 counts line up 带 listed rows. ``exclude_children``
 # │  参数：exclude_children: bool = ..., source: str = ..., sources: List[str] = ..., session_key: str = ..., exclude_sources: List[str] = ..., cwd_prefix: str = ..., min_message_count: int = ..., archived_only: bool = ...  …共 9 个
 # │  返回：Tuple[List[str], List[Any]]
 # └──────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ def _session_filter_where(
 
 
 # ┌── 函数 def _collect_delegate_child_ids()
-# │  作用：Delegate-subagent ids (``_delegate_from`` marker, walked recursively) to cascade-delete with
+# │  作用：委派给-subagent ids (``_delegate_from`` marker, walked recursively) cascade-delete 带
 # │  参数：conn, parent_ids: List[str]
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ _ERROR_FINISH_REASONS = frozenset({"error", "agent_error", "content_filter"})
 
 
 # ┌── 函数 def classify_session_status()
-# │  作用：Error finish → ``error``; assistant with pending tool_calls or a trailing user/tool row →
+# │  作用：错误 finish → ``错误``; assistant 带 pending tool_calls 或 trailing user/工具 row →
 # │  参数：role: Optional[str], has_tool_calls: bool, finish_reason: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -303,7 +303,7 @@ _UPSERT_KEEP_EXISTING_SQL = ",\n".join(
 
 
 # ┌── 函数 def _inherit_col_sql()
-# │  作用：``col = COALESCE(sessions.col, (SELECT p.col FROM parent))`` (whitespace is part of the SQL text).
+# │  作用：``col = COALESCE(会话.col, (SELECT p.col 从 parent))`` (whitespace 是 part 的 SQL 文本).
 # │  参数：col: str, extra: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -341,14 +341,14 @@ _INHERIT_PARENT_ROUTING_SQL = (
 
 
 # ┌── 类 class SessionSessionsMixin
-# │  说明：Session rows: create/inherit, lifecycle flags, model_config, listing, deletion.
+# │  说明：会话 rows: 创建/inherit, lifecycle 标志, model_config, listing, deletion.
 # │  成员：共 61 个方法；对外可用 48 个
 # └──────────────────────────────────────────────────────────────
 class SessionSessionsMixin:
     """Session rows: create/inherit, lifecycle flags, model_config, listing, deletion."""
 
     # ┌── 函数 def _own_profile_name()
-    # │  作用：The profile owning THIS store, from ``db_path`` alone (``<root>/state.db`` → default,
+    # │  作用：配置档持有这个 store, 从 ``db_path`` alone (``<root>/状态.数据库`` → 默认值,
     # │  参数：self
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -374,7 +374,7 @@ class SessionSessionsMixin:
         return None
 
     # ┌── 函数 def _inherit_parent_session_metadata()
-    # │  作用：NULL-fill a child's cwd/git/profile from its parent (profile_name only within the same
+    # │  作用：空-fill child's cwd/git/配置档从 其 parent (profile_name 仅 within same
     # │  参数：conn, session_id: str
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -389,7 +389,7 @@ class SessionSessionsMixin:
         conn.execute(_INHERIT_PARENT_ROUTING_SQL, (session_id,))
 
     # ┌── 函数 def _insert_session_row()
-    # │  作用：Upsert a session row, never overwriting what an earlier writer set (the gateway creates a
+    # │  作用：Upsert 会话 row, never overwriting 什么 earlier writer 设置 ( gateway 创建
     # │  参数：self, session_id: str, source: str, model: str = None, model_config: Dict[str, Any] = None, system_prompt: str = None, user_id: str = None, session_key: Optional[str] = None  …共 17 个
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -485,7 +485,7 @@ class SessionSessionsMixin:
         self._execute_write(_do, patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
 
     # ┌── 函数 def create_session()
-    # │  作用：Create (upsert) a session record. Returns the session_id.
+    # │  作用：创建 (upsert) 会话 record. 返回 session_id.
     # │  参数：self, session_id: str, source: str, **kwargs
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -496,7 +496,7 @@ class SessionSessionsMixin:
         return session_id
 
     # ┌── 函数 def ensure_session()
-    # │  作用：Ensure a session row exists (upsert). Accepts optional kwargs.
+    # │  作用：Ensure 会话 row exists (upsert). 接受 optional kwargs.
     # │  参数：self, session_id: str, source: str = 'unknown', model: str = None, **kwargs
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -507,7 +507,7 @@ class SessionSessionsMixin:
         return session_id
 
     # ┌── 函数 def set_expiry_finalized()
-    # │  作用：Mirror ``SessionEntry.expiry_finalized`` so it survives a lost sessions.json.
+    # │  作用：镜像 ``SessionEntry.expiry_finalized`` 从而它 survives lost 会话.JSON.
     # │  参数：self, session_id: str, finalized: bool = True
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -523,7 +523,7 @@ class SessionSessionsMixin:
         )
 
     # ┌── 函数 def find_session_by_origin()
-    # │  作用：Most recent live session_id for source + chat_id (+ thread_id). With ``user_id`` exact sender
+    # │  作用：Most recent 当前活跃的 session_id 用于 source + chat_id (+ thread_id). 带 ``user_id`` exact sender
     # │  参数：self, platform: str, chat_id: str, thread_id: Optional[str] = ..., user_id: Optional[str] = ...
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -579,7 +579,7 @@ class SessionSessionsMixin:
     )
 
     # ┌── 函数 def end_session()
-    # │  作用：Mark a session ended; the first end_reason wins (a compression split must keep
+    # │  作用：Mark 会话 ended; first end_reason wins ( compression split 必须保留
     # │  参数：self, session_id: str, end_reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -592,7 +592,7 @@ class SessionSessionsMixin:
         ))
 
     # ┌── 函数 def _end_and_bump()
-    # │  作用：Run an end-stamp UPDATE; only a boundary this call actually wrote advances the
+    # │  作用：运行 end-stamp 更新; 仅 boundary 这个 call actually 写入 advances
     # │  参数：self, conn, sql: str, params: tuple, session_id: str, reason: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -606,7 +606,7 @@ class SessionSessionsMixin:
         return changed
 
     # ┌── 函数 def reopen_session()
-    # │  作用：Clear ended_at/end_reason so a session can be resumed; first stamp markerless legacy reset
+    # │  作用：清除 ended_at/end_reason 从而会话可以是 resumed; first stamp markerless legacy reset
     # │  参数：self, session_id: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -628,7 +628,7 @@ class SessionSessionsMixin:
         self._execute_write(_do)
 
     # ┌── 函数 def promote_to_session_reset()
-    # │  作用：Durably mark an intentional reset boundary on live rows or rows with a *recoverable* accidental
+    # │  作用：Durably mark intentional reset boundary 在…上当前活跃的 rows 或 rows 带 *recoverable* accidental
     # │  参数：self, session_id: str, reason: str = 'session_reset'
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -660,7 +660,7 @@ class SessionSessionsMixin:
             return False
 
     # ┌── 函数 def update_session_cwd()
-    # │  作用：Persist the authoritative cwd and claim a Git metadata generation. git fields are written
+    # │  作用：持久化 authoritative cwd 且 claim git metadata generation. git 字段是 已写入
     # │  参数：self, session_id: str, cwd: str, git_branch: Optional[str] = None, git_repo_root: Optional[str] = None, replace_git_meta: bool = False
     # │  返回：Optional[int]
     # └──────────────────────────────────────────────────────────────
@@ -702,7 +702,7 @@ class SessionSessionsMixin:
         return self._execute_write(_do)
 
     # ┌── 函数 def publish_session_git_metadata()
-    # │  作用：Publish async Git enrichment only while its cwd claim is current.
+    # │  作用：Publish 异步 git enrichment 仅当 其 cwd claim 是 current.
     # │  参数：self, session_id: str, cwd: str, generation: int, git_branch: Optional[str] = None, git_repo_root: Optional[str] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -731,7 +731,7 @@ class SessionSessionsMixin:
         ) == 1
 
     # ┌── 函数 def backfill_repo_roots()
-    # │  作用：Backfill git repo roots for cwds without one; never clobbers a recorded root.
+    # │  作用：Backfill git repo roots 用于 cwds 不 one; never clobbers recorded root.
     # │  参数：self, cwd_to_root: Dict[str, str]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -745,7 +745,7 @@ class SessionSessionsMixin:
             )
 
     # ┌── 函数 def touch_session_activity()
-    # │  作用：Stamp durable mid-turn activity (observation-only; rate-limited by the caller) so surfaces see
+    # │  作用：Stamp durable 轮次中段的 activity (observation-仅; rate-limited 由 caller) 从而上报 see
     # │  参数：self, session_id: str, ts: Optional[float] = None, description: Optional[str] = ..., provenance: Optional[ActivityProvenance] = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -778,7 +778,7 @@ class SessionSessionsMixin:
     # Under contention a heartbeat that waits ~20s would delay the response-critical path it is merely
     # observing; give up after a sub-second budget instead (the next due window retries naturally).
     # ┌── 函数 def clear_session_activity_labels()
-    # │  作用：Clear activity labels after a turn (``last_activity_at`` is kept so idle / watchdog clocks stay
+    # │  作用：清除 activity labels 在…之后轮次 (``last_activity_at`` 是保留从而 idle / watchdog clocks stay
     # │  参数：self, session_id: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -811,7 +811,7 @@ class SessionSessionsMixin:
         )
 
     # ┌── 函数 def update_session_meta()
-    # │  作用：Update model_config and (COALESCE) optionally model.
+    # │  作用：更新 model_config 且 (COALESCE) optionally 模型.
     # │  参数：self, session_id: str, model_config_json: str, model: Optional[str] = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -826,7 +826,7 @@ class SessionSessionsMixin:
         )
 
     # ┌── 函数 def update_system_prompt()
-    # │  作用：Store the full assembled system prompt snapshot.
+    # │  作用：Store full assembled system 提示词 snapshot.
     # │  参数：self, session_id: str, system_prompt: Optional[str]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -841,7 +841,7 @@ class SessionSessionsMixin:
         self._execute_write(_do)
 
     # ┌── 函数 def update_session_tool_names()
-    # │  作用：Persist the resolved ``tools[]`` name order so a rebuilt AIAgent can't fork the cached tool
+    # │  作用：持久化 resolved ``工具[]`` 名称 order 从而 rebuilt AIAgent 无法 fork cached 工具
     # │  参数：self, session_id: str, tool_names: Optional[List[str]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -852,7 +852,7 @@ class SessionSessionsMixin:
         self._write_sql("UPDATE sessions SET tool_names = ? WHERE id = ?", (payload, session_id))
 
     # ┌── 函数 def update_session_model()
-    # │  作用：Set the model after a mid-session /model switch (unconditionally), null system_prompt so
+    # │  作用：设置模型在…之后 mid-会话 /模型切换 (unconditionally), 空 system_prompt 从而
     # │  参数：self, session_id: str, model: str, provider: Optional[str] = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -881,7 +881,7 @@ class SessionSessionsMixin:
         )
 
     # ┌── 函数 def _write_model_config_patch()
-    # │  作用：Merge ``patch`` into model_config then run ``sql`` with ``params(merged)`` in one write
+    # │  作用：Merge ``patch`` 进入 model_config 然后运行 ``sql`` 带 ``params(merged)`` 在 one 写入
     # │  参数：self, session_id: str, patch: Dict[str, Any], sql: str = 'UPDATE sessions SET model_config = ? WHERE id = ?', params: Optional[Callable[[Optional[str]], tuple]] = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -902,7 +902,7 @@ class SessionSessionsMixin:
         self._execute_write(_do)
 
     # ┌── 函数 def _merge_model_config_json()
-    # │  作用：SELECT + tolerant-parse + merge ``patch`` into model_config (the one place that keeps
+    # │  作用：SELECT + tolerant-解析 + merge ``patch`` 进入 model_config ( one place 那个保留
     # │  参数：self, conn, session_id: str, patch: Dict[str, Any], on_missing: str = ...
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -929,7 +929,7 @@ class SessionSessionsMixin:
         return json.dumps(config) if config else None
 
     # ┌── 函数 def patch_session_model_config()
-    # │  作用：Merge ``patch`` into model_config atomically (``None`` removes a key);
+    # │  作用：Merge ``patch`` 进入 model_config atomically (``None`` 移除键);
     # │  参数：self, session_id: str, patch: Dict[str, Any]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -941,7 +941,7 @@ class SessionSessionsMixin:
         self._write_model_config_patch(session_id, patch)
 
     # ┌── 函数 def get_session_model_config_value()
-    # │  作用：Read one key out of a session's model_config JSON (tolerant parse).
+    # │  作用：读取 one 键 out 的会话's model_config JSON (tolerant 解析).
     # │  参数：self, session_id: str, key: str, default: Any = None
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -952,7 +952,7 @@ class SessionSessionsMixin:
         return _parse_model_config(session.get("model_config")).get(key, default)
 
     # ┌── 函数 def update_session_runtime_lock()
-    # │  作用：Persist a Browser / API-client runtime lock into model_config (lineage markers survive); null
+    # │  作用：持久化 Browser / API-客户端运行时锁 进入 model_config (lineage markers survive); 空
     # │  参数：self, session_id: str, model: Optional[str] = ..., provider: Optional[str] = ..., model_options: Optional[Dict[str, Any]] = ..., route_source: Optional[str] = ..., confirmed: bool = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -979,7 +979,7 @@ class SessionSessionsMixin:
         )
 
     # ┌── 函数 def set_session_yolo()
-    # │  作用：Persist the per-session YOLO flag so ``/yolo`` survives ``--resume``; no-op without a row.
+    # │  作用：持久化 per-会话 YOLO 免审批标志从而 ``/YOLO 免审批`` survives ``--resume``; 无-op 不 row.
     # │  参数：self, session_id: str, enabled: bool
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -990,7 +990,7 @@ class SessionSessionsMixin:
         self._write_model_config_patch(session_id, {"yolo_mode": bool(enabled)})
 
     # ┌── 函数 def session_yolo_enabled()
-    # │  作用：Persisted YOLO flag; False on any parse failure (resume must never enable the bypass).
+    # │  作用：已持久化的 YOLO 免审批标志; False 在…上任意解析 failure (resume 必须 never enable bypass).
     # │  参数：session_meta: Optional[Dict[str, Any]]
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1002,7 +1002,7 @@ class SessionSessionsMixin:
         return bool(_parse_model_config((session_meta or {}).get("model_config")).get("yolo_mode"))
 
     # ┌── 函数 def get_session()
-    # │  作用：Get a session by ID (drains queued token deltas first so cost readers see exact totals).
+    # │  作用：获取会话由 ID (drains queued 令牌 deltas first 从而 cost readers see exact totals).
     # │  参数：self, session_id: str
     # │  返回：Optional[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1018,7 +1018,7 @@ class SessionSessionsMixin:
         return self._session_row_dict(row) if row else None
 
     # ┌── 函数 def get_recent_session_model_route()
-    # │  作用：Most recently used main-loop model route as one coherent per-call tuple
+    # │  作用：Most recently used main-循环模型路由作为 one coherent 每次调用的 tuple
     # │  参数：self, session_id: str
     # │  返回：Optional[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1046,7 +1046,7 @@ class SessionSessionsMixin:
         return dict(row) if row else None
 
     # ┌── 函数 def resolve_session_id()
-    # │  作用：Exact id, else the single unambiguous prefix match, else None.
+    # │  作用：Exact id, 否则 single unambiguous prefix match, 否则 None.
     # │  参数：self, session_id_or_prefix: str
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -1064,7 +1064,7 @@ class SessionSessionsMixin:
         return matches[0]["id"] if len(matches) == 1 else None
 
     # ┌── 函数 def backfill_null_session_profiles()
-    # │  作用：Stamp this store's own profile onto legacy ``profile_name IS NULL`` rows, which the fail-closed
+    # │  作用：Stamp 这个 store's 持有配置档 onto legacy ``profile_name 是空`` rows, 其 fail-已关闭
     # │  参数：self, profile_name: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -1090,7 +1090,7 @@ class SessionSessionsMixin:
         ) or 0)
 
     # ┌── 函数 def _set_lineage_column()
-    # │  作用：Set one ``sessions`` column across a whole compression lineage: Desktop projects roots
+    # │  作用：设置 one ``会话`` column across whole compression lineage: Desktop 投射 roots
     # │  参数：self, column: str, session_id: str, value: Any
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1132,7 +1132,7 @@ class SessionSessionsMixin:
         ) > 0
 
     # ┌── 函数 def set_session_archived()
-    # │  作用：Soft-hide (or unhide) a session and its compression lineage; messages are kept.
+    # │  作用：Soft-hide (或 unhide) 会话且 其 compression lineage; 消息是 保留.
     # │  参数：self, session_id: str, archived: bool
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1146,7 +1146,7 @@ class SessionSessionsMixin:
     RECOVERABLE_END_REASONS = _RECOVERABLE_END_REASONS
 
     # ┌── 函数 def unarchive_recoverable_session()
-    # │  作用：Un-archive a session archived by a recoverable accident (ws_orphan_reap, agent_close);
+    # │  作用：Un-archive 会话 archived 由 recoverable accident (ws_orphan_reap, agent_close);
     # │  参数：self, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1196,7 +1196,7 @@ class SessionSessionsMixin:
         return True
 
     # ┌── 函数 def set_session_pinned()
-    # │  作用：Pin/unpin a session and its compression lineage (pins are exempt from the auto_archive sweep).
+    # │  作用：Pin/unpin 会话且 其 compression lineage (pins 是 exempt 从 auto_archive sweep).
     # │  参数：self, session_id: str, pinned: bool
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1219,7 +1219,7 @@ class SessionSessionsMixin:
         return result
 
     # ┌── 函数 def set_session_hidden()
-    # │  作用：Hide/unhide a session and its compression lineage from the default listing; still resumable.
+    # │  作用：Hide/unhide 会话且 其 compression lineage 从默认值 listing; 仍 resumable.
     # │  参数：self, session_id: str, hidden: bool
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1229,7 +1229,7 @@ class SessionSessionsMixin:
         return self._set_lineage_column("hidden", session_id, int(hidden))
 
     # ┌── 函数 def set_session_read()
-    # │  作用：Mark read/unread across the compression lineage. ``last_read_at`` is a watermark: unread when
+    # │  作用：Mark 读取/unread across compression lineage. ``last_read_at`` 是 watermark: unread 当
     # │  参数：self, session_id: str, read: bool = True
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1240,7 +1240,7 @@ class SessionSessionsMixin:
         return self._set_lineage_column("last_read_at", session_id, time.time() if read else 0.0)
 
     # ┌── 函数 def session_unread()
-    # │  作用：Unread = activity postdates the ``last_read_at`` watermark (NULL = read).
+    # │  作用：Unread = activity postdates ``last_read_at`` watermark (空 = 读取).
     # │  参数：session_row: Dict[str, Any]
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1263,7 +1263,7 @@ class SessionSessionsMixin:
     _session_compact_cols_sql: Optional[str] = None
 
     # ┌── 函数 def _chain_search_where()
-    # │  作用：Extend ``where_sql`` with the id_query / search_query filters: a row is admitted when its own
+    # │  作用：Extend ``where_sql`` 带 id_query / search_query filters: row 是 admitted 当其 持有
     # │  参数：where_sql: str, id_needle: str, search_needle: str
     # │  返回：Tuple[str, List[Any]]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1307,7 +1307,7 @@ class SessionSessionsMixin:
         return (f"{where_sql} AND {combined}" if where_sql else f"WHERE {combined}"), params
 
     # ┌── 函数 def _project_compression_tips()
-    # │  作用：Replace each compression root's surfaced fields with its live tip's (root ``started_at`` kept
+    # │  作用：Replace 每个 compression root's 已上报字段带 其当前活跃的 tip's (root ``started_at`` 保留
     # │  参数：self, sessions: List[Dict[str, Any]], compact_rows: bool
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1352,7 +1352,7 @@ class SessionSessionsMixin:
         return projected
 
     # ┌── 函数 def list_recent_sessions_bounded()
-    # │  作用：Latency-bounded recent-conversation browse (``session_search()``): preselect a small candidate set
+    # │  作用：Latency-bounded recent-conversation browse (``session_search()``): preselect small candidate 设置
     # │  参数：self, limit: int = ..., exclude_sources: List[str] = ..., timeout_seconds: float = ..., candidate_limit: int = ..., lineage_limit: int = ...
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1548,7 +1548,7 @@ class SessionSessionsMixin:
         return sessions
 
     # ┌── 函数 def _list_row()
-    # │  作用：Project a list_sessions_rich row: shape the preview, drop internal ordering columns.
+    # │  作用：投射 list_sessions_rich row: 形态 preview, 丢弃 internal ordering columns.
     # │  参数：cls, row: sqlite3.Row
     # │  返回：Dict[str, Any]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -1563,7 +1563,7 @@ class SessionSessionsMixin:
         return s
 
     # ┌── 函数 def list_sessions_rich()
-    # │  作用：List sessions with preview and ``last_active`` in one query. ``order_by_last_active`` sorts
+    # │  作用：列表会话带 preview 且 ``last_active`` 在 one query. ``order_by_last_active`` sorts
     # │  参数：self, source: str = None, sources: List[str] = None, exclude_sources: List[str] = None, cwd_prefix: str = None, limit: int = 20, offset: int = 0, include_children: bool = False  …共 19 个
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1674,7 +1674,7 @@ class SessionSessionsMixin:
         return sessions
 
     # ┌── 函数 def session_lifecycle_statuses()
-    # │  作用：``{session_id: status}`` from each session's LAST message row (``'empty'`` when none); one
+    # │  作用：``{session_id: status}`` 从每个会话's LAST 消息 row (``'empty'`` 当 None); one
     # │  参数：self, session_ids: List[str]
     # │  返回：Dict[str, str]
     # └──────────────────────────────────────────────────────────────
@@ -1707,7 +1707,7 @@ class SessionSessionsMixin:
         return statuses
 
     # ┌── 函数 def assert_export_safe()
-    # │  作用：Active row count of this segment, or raise SessionExportTooLargeError (the LIMITed subquery
+    # │  作用：Active row count 的这个 segment, 或抛出 SessionExportTooLargeError ( LIMITed subquery
     # │  参数：self, session_id: str, max_messages: Optional[int] = None
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -1736,7 +1736,7 @@ class SessionSessionsMixin:
         return message_count
 
     # ┌── 函数 def _is_explicit_branch_session()
-    # │  作用：Copied user-facing branch (``_branched_from``)? Branches own a copied transcript;
+    # │  作用：已复制面向用户的 branch (``_branched_from``)? Branches 持有已复制 transcript;
     # │  参数：self, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1774,7 +1774,7 @@ class SessionSessionsMixin:
         return list(reversed(chain)) or [session_id]
 
     # ┌── 函数 def search_sessions()
-    # │  作用：Sessions MRU-first with a computed ``last_active``; ``workspace_key`` scopes to one workspace
+    # │  作用：会话 MRU-first 带 computed ``last_active``; ``workspace_key`` scopes one workspace
     # │  参数：self, source: str = None, limit: int = 20, offset: int = 0, workspace_key: str = None
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1803,7 +1803,7 @@ class SessionSessionsMixin:
         )]
 
     # ┌── 函数 def session_count()
-    # │  作用：Count sessions with list_sessions_rich's filters so a paired "load more" total matches.
+    # │  作用：Count 会话带 list_sessions_rich's filters 从而 paired "加载 more" total matches.
     # │  参数：self, source: str = None, sources: List[str] = None, cwd_prefix: str = None, min_message_count: int = 0, include_archived: bool = False, archived_only: bool = False, exclude_children: bool = False  …共 9 个
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -1822,7 +1822,7 @@ class SessionSessionsMixin:
         return self._read_one(f"SELECT COUNT(*) FROM sessions s{_where_sql(where_clauses, ' ')}", params)[0]
 
     # ┌── 函数 def session_count_ge()
-    # │  作用：At least N sessions exist (archived included); LIMIT short-circuits session_count()'s scan.
+    # │  作用：在 least N 会话 exist (archived included); 限制 short-circuits session_count()'s scan.
     # │  参数：self, n: int = 1
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1832,7 +1832,7 @@ class SessionSessionsMixin:
         return len(self._read_all("SELECT 1 FROM sessions LIMIT ?", (n,))) >= n
 
     # ┌── 函数 def session_count_by_source()
-    # │  作用：``{source: count}`` via one GROUP BY; ``exclude_children`` mirrors listing visibility.
+    # │  作用：``{source: count}`` via one GROUP 由; ``exclude_children`` 镜像 listing visibility.
     # │  参数：self, include_archived: bool = ..., archived_only: bool = ..., exclude_children: bool = ...
     # │  返回：Dict[str, int]
     # └──────────────────────────────────────────────────────────────
@@ -1858,7 +1858,7 @@ class SessionSessionsMixin:
         return {str(row["source"]): int(row["count"] or 0) for row in rows}
 
     # ┌── 函数 def declared_scope_identity()
-    # │  作用：(is_fork_child, source) in ONE read (prompt_cache_scope needs both from the same row).
+    # │  作用：(is_fork_child, source) 在 ONE 读取 (prompt_cache_scope needs both 从 same row).
     # │  参数：self, session_id: str
     # │  返回：Tuple[bool, str]
     # └──────────────────────────────────────────────────────────────
@@ -1879,7 +1879,7 @@ class SessionSessionsMixin:
         return self._is_explicit_fork_child_row(session), str(session.get("source") or "").strip()
 
     # ┌── 函数 def _remove_session_files()
-    # │  作用：Remove ``<id>.json``/``.jsonl`` and gateway ``request_dump_<id>_*.json``; OSError is swallowed
+    # │  作用：移除 ``<id>.JSON``/``.JSONL`` 且 gateway ``request_dump_<id>_*.JSON``; OSError 是 swallowed
     # │  参数：sessions_dir: Optional[Path], session_id: str
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1904,7 +1904,7 @@ class SessionSessionsMixin:
                 pass
 
     # ┌── 函数 def get_session_delete_targets()
-    # │  作用：Rows :meth:`delete_session` would remove: the session, then its recursive delegate children
+    # │  作用：Rows :meth:`delete_session` 会移除: 会话, 然后其 recursive 委派给 children
     # │  参数：self, session_id: str
     # │  返回：List[str]
     # └──────────────────────────────────────────────────────────────
@@ -1923,7 +1923,7 @@ class SessionSessionsMixin:
         return [session_id, *sorted(delegate_ids)]
 
     # ┌── 函数 def delete_session()
-    # │  作用：Delete a session and its messages; delegate children cascade, branch/compression children
+    # │  作用：Delete 会话且 其消息; 委派给 children cascade, branch/compression children
     # │  参数：self, session_id: str, sessions_dir: Optional[Path] = None, expected_delete_ids: Optional[List[str]] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1962,7 +1962,7 @@ class SessionSessionsMixin:
         return bool(deleted)
 
     # ┌── 函数 def delete_session_if_empty()
-    # │  作用：Delete *session_id* only if it has no messages, no title and no children; check and delete
+    # │  作用：Delete *session_id* 仅若 它有 无消息, 无 title 且无 children; 检查且 delete
     # │  参数：self, session_id: str, sessions_dir: Optional[Path] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1996,7 +1996,7 @@ class SessionSessionsMixin:
         return deleted
 
     # ┌── 函数 def delete_sessions()
-    # │  作用：Bulk delete with :meth:`delete_session` semantics per row, in ONE transaction. Unknown ids
+    # │  作用：Bulk delete 带 :meth:`delete_session` semantics per row, 在 ONE transaction. Unknown ids
     # │  参数：self, session_ids: List[str], sessions_dir: Optional[Path] = None
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2043,7 +2043,7 @@ class SessionSessionsMixin:
     )
 
     # ┌── 函数 def count_empty_sessions()
-    # │  作用：Count of empty, ended, non-archived sessions; ended_at guards a fresh session's first message.
+    # │  作用：Count 的 empty, ended, non-archived 会话; ended_at 护栏 fresh 会话's first 消息.
     # │  参数：self
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2053,7 +2053,7 @@ class SessionSessionsMixin:
         return self._read_one(f"SELECT COUNT(*) FROM sessions WHERE {self._EMPTY_SESSION_WHERE}")[0]
 
     # ┌── 函数 def delete_empty_sessions()
-    # │  作用：Delete every empty, ended, non-archived session in one transaction, orphaning (not cascading)
+    # │  作用：Delete 每个 empty, ended, non-archived 会话在 one transaction, orphaning (不 cascading)
     # │  参数：self, sessions_dir: Optional[Path] = None
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2086,7 +2086,7 @@ class SessionSessionsMixin:
         return count
 
     # ┌── 函数 def archive_sessions()
-    # │  作用：Bulk soft-hide with prune_sessions' filter surface, via set_session_archived so each lineage
+    # │  作用：Bulk soft-hide 带 prune_sessions' filter 上报, via set_session_archived 从而每个 lineage
     # │  参数：self, older_than_days: Optional[float] = None, source: str = None, **filters
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2103,7 +2103,7 @@ class SessionSessionsMixin:
         return len(rows)
 
     # ┌── 函数 def maybe_auto_archive()
-    # │  作用：Idempotent, non-destructive auto-archive of sessions idle for ``idle_days``; state_meta
+    # │  作用：Idempotent, non-destructive auto-archive 的会话 idle 用于 ``idle_days``; state_meta
     # │  参数：self, idle_days: float = 3, min_interval_hours: int = 24, exclude_pinned: bool = True
     # │  返回：Dict[str, Any]
     # └──────────────────────────────────────────────────────────────

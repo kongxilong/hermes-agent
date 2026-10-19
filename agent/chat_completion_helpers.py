@@ -87,7 +87,7 @@ _FALLBACK_EXHAUSTED_COOLDOWN_S = 5.0
 
 
 # ┌── 函数 def _context_thread_target()
-# │  作用：Bind a no-argument thread target to the caller's ContextVars.
+# │  作用：Bind 无-参数线程 target caller's ContextVars.
 # │  参数：callback
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ def _context_thread_target(callback):
 
 
 # ┌── 函数 def _join_worker_for_relay_teardown()
-# │  作用：Bounded worker join before raising InterruptedError (#81521).
+# │  作用：Bounded 工作线程拼接在…之前抛出 InterruptedError (#81521).
 # │  参数：worker, label: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ def _join_worker_for_relay_teardown(worker, *, label: str) -> None:
 
 
 # ┌── 函数 def _ra()
-# │  作用：Lazy ``run_agent`` reference so ``patch("run_agent.cleanup_vm")`` etc. intercept.
+# │  作用：Lazy ``run_agent`` reference 从而 ``patch("run_agent.cleanup_vm")`` etc. intercept.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ def _ra():
 
 
 # ┌── 类 class ProviderStreamError（继承自：Exception）
-# │  说明：Provider encoded an API error as streaming content instead of an SDK error.
+# │  说明：服务商 encoded API 错误作为 streaming 内容 instead 的 SDK 错误.
 # │  成员：共 2 个方法；全部是下划线开头的内部方法；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class ProviderStreamError(Exception):
@@ -234,7 +234,7 @@ def _json_object_from_text(text: str) -> Optional[dict]:
 
 
 # ┌── 函数 def _parse_provider_sse_events()
-# │  作用：Parse provider text that looks like Server-Sent Events.
+# │  作用：解析服务商文本那个 looks like 服务端-Sent 事件.
 # │  参数：text: str
 # │  返回：list[dict]
 # └──────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ def _parse_provider_sse_events(text: str) -> list[dict]:
 
 
 # ┌── 函数 def _provider_error_body()
-# │  作用：Normalize common provider error payloads to OpenAI-style body.error.
+# │  作用：归一化 common 服务商错误 payloads OpenAI-style body.错误.
 # │  参数：payload: dict, status_code: Optional[int]
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -317,7 +317,7 @@ def _provider_error_body(payload: dict, status_code: Optional[int]) -> dict:
 
 
 # ┌── 函数 def _provider_stream_error_from_json_decode_error()
-# │  作用：Preserve plain-text SSE data rejected inside the OpenAI SDK: on a non-JSON
+# │  作用：Preserve plain-文本 SSE data 已拒绝 inside OpenAI SDK: 在…上 non-JSON
 # │  参数：error: json.JSONDecodeError, response: Any = ...
 # │  返回：ProviderStreamError
 # └──────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ def _provider_stream_error_from_json_decode_error(error: json.JSONDecodeError, *
 
 
 # ┌── 函数 def _iter_provider_stream_chunks()
-# │  作用：Yield SDK chunks while translating SDK-level SSE decode failures.
+# │  作用：Yield SDK chunks 当 translating SDK-级别 SSE decode failures.
 # │  参数：stream, response: Any = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ def _payload_has_error_shape(payload: Any) -> bool:
 
 
 # ┌── 函数 def _provider_stream_text_may_be_sse()
-# │  作用：Return True while pending text still looks like an SSE control block.
+# │  作用：返回 True 当 pending 文本仍 looks like SSE control block.。
 # │  参数：text: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -421,7 +421,7 @@ def _provider_stream_text_may_be_sse(text: str) -> bool:
 
 
 # ┌── 函数 def _provider_stream_error_from_text()
-# │  作用：Convert provider-streamed error text into an exception for retry logic.
+# │  作用：Convert 服务商-streamed 错误文本进入异常用于重试 logic.
 # │  参数：text: str, finish_reason: Optional[str], response: Any = ...
 # │  返回：Optional[ProviderStreamError]
 # └──────────────────────────────────────────────────────────────
@@ -468,7 +468,7 @@ _IMAGE_PART_TYPES = frozenset({"image_url", "input_image", "image"})
 
 
 # ┌── 函数 def _image_part_chars()
-# │  作用：Char-equivalent of one image content part: the per-image cost learned from provider usage
+# │  作用：Char-equivalent 的 one image 内容 part: per-image cost learned 从服务商 usage
 # │  参数：part: Dict[str, Any], image_cost: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -482,7 +482,7 @@ def _image_part_chars(part: Dict[str, Any], image_cost: int) -> int:
 
 
 # ┌── 函数 def _payload_chars()
-# │  作用：``len(str(value))`` with image content parts priced at ``image_cost`` tokens each.
+# │  作用：``len(str(值))`` 带 image 内容 parts priced 在 ``image_cost`` 令牌每个.
 # │  参数：value: Any, image_cost: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -508,7 +508,7 @@ def _payload_chars(value: Any, image_cost: int) -> int:
 
 
 # ┌── 函数 def estimate_request_context_tokens()
-# │  作用：Cheap char/4 context estimate for the stale-call detectors. Handles both
+# │  作用：Cheap char/4 上下文估算用于卡死的-call detectors. Handles both
 # │  参数：api_payload: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -558,7 +558,7 @@ def _is_openai_codex_backend(agent) -> bool:
 
 
 # ┌── 函数 def openai_codex_stale_timeout_floor()
-# │  作用：Minimum wall-clock stale timeout for openai-codex by estimated context:
+# │  作用：Minimum 真实时钟的卡死超时用于 OpenAI-Codex 由 estimated 上下文:
 # │  参数：est_tokens: int
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -576,7 +576,7 @@ def openai_codex_stale_timeout_floor(est_tokens: int) -> float:
 
 
 # ┌── 函数 def _validated_openrouter_provider_sort()
-# │  作用：Return a normalized OpenRouter provider.sort value or None.
+# │  作用：返回 已归一化 OpenRouter 服务商.sort 值或 None.。
 # │  参数：raw_sort: Any
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -599,7 +599,7 @@ def _validated_openrouter_provider_sort(raw_sort: Any) -> Optional[str]:
 
 
 # ┌── 函数 def _provider_preferences_for_agent()
-# │  作用：Build the validated provider-routing object shared by request paths.
+# │  作用：构建已校验服务商-routing 对象 shared 由请求路径.
 # │  参数：agent
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -626,7 +626,7 @@ def _provider_preferences_for_agent(agent) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _prompt_cache_scope_for_agent()
-# │  作用：Rotation-stable logical cache scope for *agent*, or None (transports then
+# │  作用：Rotation-stable logical 缓存 scope 用于 *Agent*, 或 None (transports 然后
 # │  参数：agent
 # │  返回：'str | None'
 # └──────────────────────────────────────────────────────────────
@@ -645,7 +645,7 @@ def _prompt_cache_scope_for_agent(agent) -> "str | None":
 
 
 # ┌── 函数 def _merge_nous_portal_messages_extra_body()
-# │  作用：Merge Portal ``tags`` / ``session_id`` onto an Anthropic Messages kwargs dict.
+# │  作用：Merge Portal ``tags`` / ``session_id`` onto Anthropic 消息 kwargs 字典.
 # │  参数：agent, anthropic_kwargs: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -670,7 +670,7 @@ def _merge_nous_portal_messages_extra_body(agent, anthropic_kwargs: dict) -> dic
 
 
 # ┌── 函数 def _estimate_chunk_bytes()
-# │  作用：Cheap per-chunk size estimate for the stream diagnostic counters: delta
+# │  作用：Cheap per-chunk size 估算用于 stream diagnostic counters: delta
 # │  参数：chunk: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -705,7 +705,7 @@ def _estimate_chunk_bytes(chunk: Any) -> int:
 
 
 # ┌── 函数 def _codex_wait_notice_recovery()
-# │  作用：Describe the earliest enabled Codex watchdog on the call timeline.
+# │  作用：描述 earliest enabled Codex watchdog 在…上 call timeline.
 # │  参数：stale_timeout: float, ttfb_enabled: bool, ttfb_timeout: float, last_event_ts: Optional[float], last_progress_ts: Optional[float], retry_started_ts: Optional[float], call_start: float, idle_enabled: bool  …共 11 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -779,7 +779,7 @@ _INTERRUPTED_WAIT_STALE_SECONDS = 30.0
 
 
 # ┌── 函数 def _record_interrupted_provider_wait()
-# │  作用：Count a user-aborted pre-response stall toward the stale breaker: past the
+# │  作用：Count user-aborted pre-响应 stall toward 卡死的 breaker: past
 # │  参数：agent, elapsed: float, response_started: bool
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -798,7 +798,7 @@ def _record_interrupted_provider_wait(agent, elapsed: float, *, response_started
 
 
 # ┌── 函数 def _report_stale_nonstream_kill()
-# │  作用：Log + status message for a stale non-streaming kill, shared by the worker
+# │  作用：日志 + status 消息用于卡死的 non-streaming kill, shared 由工作线程
 # │  参数：agent, api_kwargs: dict, elapsed: float, stale_timeout: float, inline: bool = ..., hint: Optional[str] = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -833,7 +833,7 @@ def _touch_stale_kill_activity(agent, elapsed: float) -> None:
 
 
 # ┌── 函数 def _check_stale_giveup()
-# │  作用：Raise immediately when the consecutive-stale streak is past the
+# │  作用：抛出 immediately 当 consecutive-卡死的 streak 是 past
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -852,7 +852,7 @@ def _check_stale_giveup(agent) -> None:
 
 
 # ┌── 函数 def _configured_stale_base()
-# │  作用：Per-provider ``stale_timeout_seconds`` config, else HERMES_STREAM_STALE_TIMEOUT (180s).
+# │  作用：Per-服务商 ``stale_timeout_seconds`` 配置, 否则 HERMES_STREAM_STALE_TIMEOUT (180s).
 # │  参数：agent
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -864,7 +864,7 @@ def _configured_stale_base(agent) -> float:
 
 
 # ┌── 函数 def _scale_stale_timeout_for_context()
-# │  作用：Large contexts: slow models think for minutes before the first token;
+# │  作用：Large 上下文: slow 模型 think 用于 minutes 在…之前 first 令牌;
 # │  参数：base: float, est_tokens: int
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -882,7 +882,7 @@ def _scale_stale_timeout_for_context(base: float, est_tokens: int) -> float:
 
 
 # ┌── 函数 def _cloud_stale_timeout()
-# │  作用：Cloud stale-stream patience: ``base`` scaled for context size, then floored for
+# │  作用：Cloud 卡死的-stream patience: ``base`` scaled 用于上下文 size, 然后 floored 用于
 # │  参数：base: float, api_kwargs: dict
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -901,7 +901,7 @@ def _cloud_stale_timeout(base: float, api_kwargs: dict) -> float:
 
 
 # ┌── 函数 def _derive_stream_stale_timeout()
-# │  作用：Stale-stream patience for a provider that is never a local endpoint (Bedrock):
+# │  作用：卡死的-stream patience 用于服务商那个是 never local endpoint (Bedrock):
 # │  参数：agent, api_kwargs: dict
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -913,7 +913,7 @@ def _derive_stream_stale_timeout(agent, api_kwargs: dict) -> float:
 
 
 # ┌── 函数 def _bedrock_reasoning_stale_floor()
-# │  作用：Map a Bedrock inference-profile id to its reasoning stale-timeout floor.
+# │  作用：Map Bedrock inference-配置档 id 其 reasoning 卡死的-超时下取整到.
 # │  参数：model_id: object
 # │  返回：'float | None'
 # └──────────────────────────────────────────────────────────────
@@ -948,7 +948,7 @@ def _bedrock_reasoning_stale_floor(model_id: object) -> "float | None":
 
 
 # ┌── 函数 def _bedrock_converse_call()
-# │  作用：Pop the Hermes routing keys and call ``converse`` / ``converse_stream`` (boto3
+# │  作用：Pop Hermes routing 键且 call ``converse`` / ``converse_stream`` (boto3
 # │  参数：api_kwargs: dict, stream: bool, on_stream_denied = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -987,7 +987,7 @@ def _bedrock_converse_call(api_kwargs: dict, *, stream: bool, on_stream_denied=N
 
 
 # ┌── 函数 def _dispatch_nonstreaming_api_request()
-# │  作用：Run one non-streaming LLM request for the active api_mode and return it.
+# │  作用：运行 one non-streaming LLM 请求用于 active api_mode 且返回它.
 # │  参数：agent, api_kwargs: dict, make_client
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1028,7 +1028,7 @@ def _dispatch_nonstreaming_api_request(agent, api_kwargs: dict, *, make_client):
 
 
 # ┌── 函数 def should_use_direct_api_call()
-# │  作用：Whether an OpenAI-wire request should skip the interrupt worker.
+# │  作用：是否 OpenAI-wire 请求应当 skip interrupt 工作线程.。
 # │  参数：agent
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1065,7 +1065,7 @@ _DIRECT_API_ACTIVITY_HEARTBEAT_SECONDS = 15.0
 
 
 # ┌── 函数 def _managed_local_load_notice()
-# │  作用：Live phase notice ("⏳ loading <model> into memory — N%" / "⚙ processing
+# │  作用：当前活跃的阶段提示 ("⏳ 加载 <模型> 进入内存 — N%" / "⚙ processing
 # │  参数：agent, api_kwargs: dict
 # │  返回：'Optional[str]'
 # └──────────────────────────────────────────────────────────────
@@ -1109,7 +1109,7 @@ def _managed_local_load_notice(agent, api_kwargs: dict) -> "Optional[str]":
 
 
 # ┌── 函数 def _resolve_direct_stale_timeout()
-# │  作用：Stale budget for the inline call via ``agent._compute_non_stream_stale_timeout``.
+# │  作用：卡死的预算用于 inline call via ``Agent._compute_non_stream_stale_timeout``.
 # │  参数：agent, api_kwargs: dict
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -1127,7 +1127,7 @@ def _resolve_direct_stale_timeout(agent, api_kwargs: dict) -> float:
 
 
 # ┌── 函数 def _inline_nonstream_hard_timeout()
-# │  作用：Socket-level backstop for inline non-streaming calls (#85252): the keepalive
+# │  作用：Socket-级别 backstop 用于 inline non-streaming calls (#85252): keepalive
 # │  参数：stale_timeout: float
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1152,7 +1152,7 @@ def _inline_nonstream_hard_timeout(stale_timeout: float):
 
 
 # ┌── 类 class _InlineRequest
-# │  说明：Lifecycle state for one inline non-streaming request (#75301). Every transition
+# │  说明：Lifecycle 状态用于 one inline non-streaming 请求 (#75301). 每个 transition
 # │  成员：共 10 个方法；对外可用 6 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _InlineRequest:
@@ -1208,7 +1208,7 @@ class _InlineRequest:
         _touch_stale_kill_activity(self.agent, elapsed)
 
     # ┌── 函数 def start_watchdogs()
-    # │  作用：Start the activity heartbeat and (for a finite budget) the stale timer.
+    # │  作用：Start activity heartbeat 且 (用于 finite 预算) 卡死的 timer.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1246,7 +1246,7 @@ class _InlineRequest:
             logger.debug(log_msg, exc_info=True)
 
     # ┌── 函数 def abort()
-    # │  作用：Abort the inline request from a watchdog/interrupt thread. Returns True
+    # │  作用：Abort inline 请求从 watchdog/interrupt 线程. 返回 True
     # │  参数：self, reason: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1328,7 +1328,7 @@ class _InlineRequest:
 
 
 # ┌── 函数 def direct_api_call()
-# │  作用：Run a non-streaming LLM call inline on the conversation thread (cron turns,
+# │  作用：运行 non-streaming LLM call inline 在…上 conversation 线程 (cron 轮次,
 # │  参数：agent, api_kwargs: dict
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1400,7 +1400,7 @@ def direct_api_call(agent, api_kwargs: dict):
 
 
 # ┌── 类 class _RequestClientRegistry
-# │  说明：Per-request client / stream-handle registry shared by the request worker
+# │  说明：Per-请求客户端 / stream-handle registry shared 由请求工作线程
 # │  成员：共 6 个方法；对外可用 3 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _RequestClientRegistry:
@@ -1517,7 +1517,7 @@ class _RequestClientRegistry:
 
 
 # ┌── 类 class _NonStreamWatchdogs
-# │  说明：Poll-loop thresholds for one non-streaming request.
+# │  说明：Poll-循环阈值用于 one non-streaming 请求.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1534,7 +1534,7 @@ class _NonStreamWatchdogs:
 
 
 # ┌── 函数 def _resolve_nonstream_watchdogs()
-# │  作用：Stale-call timeout plus the Codex Responses stream watchdogs.
+# │  作用：卡死的-call 超时 plus Codex 响应 stream watchdogs.
 # │  参数：agent, api_kwargs: dict
 # │  返回：_NonStreamWatchdogs
 # └──────────────────────────────────────────────────────────────
@@ -1629,7 +1629,7 @@ def _codex_silent_hang_hint(agent, api_kwargs: dict) -> Optional[str]:
 
 
 # ┌── 函数 def interruptible_api_call()
-# │  作用：Run the API call on a worker thread so the caller can detect interrupts
+# │  作用：运行 API call 在…上工作线程从而 caller 可以检测 interrupts
 # │  参数：agent, api_kwargs: dict
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1652,7 +1652,7 @@ def interruptible_api_call(agent, api_kwargs: dict):
 
 
 # ┌── 函数 def _consume_ephemeral_reasoning_off()
-# │  作用：Consume the one-shot "answer without thinking" continuation flag.
+# │  作用：消费 one-shot "answer 不 thinking" 续接标志.
 # │  参数：agent
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1675,7 +1675,7 @@ def _consume_ephemeral_reasoning_off(agent) -> bool:
 
 
 # ┌── 函数 def _reasoning_config_for_wire()
-# │  作用：``agent.reasoning_config`` with the one-shot reasoning-off override applied.
+# │  作用：``Agent.reasoning_config`` 带 one-shot reasoning-off 覆盖值 applied.
 # │  参数：agent
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1710,7 +1710,7 @@ def _reasoning_config_for_wire(agent):
 
 
 # ┌── 函数 def _alias_tool_search_bridge_for_xai()
-# │  作用：xAI chat-completions reserves ``tool_search`` and 400s when the bridge declares
+# │  作用：xAI chat-completions reserves ``tool_search`` 且 400s 当 bridge declares
 # │  参数：agent, transport, tools_for_api
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1744,7 +1744,7 @@ def _alias_tool_search_bridge_for_xai(agent, transport, tools_for_api):
 
 
 # ┌── 函数 def _consume_ephemeral_max_output()
-# │  作用：Pop the one-shot ephemeral output cap; whichever path builds the request consumes it.
+# │  作用：Pop one-shot ephemeral 输出 cap; whichever 路径构建请求消费它.
 # │  参数：agent
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1907,7 +1907,7 @@ def _build_chat_completions_kwargs(agent, api_messages, tools_for_api, reasoning
 
 
 # ┌── 函数 def build_api_kwargs()
-# │  作用：Build the keyword arguments dict for the active API mode.
+# │  作用：构建 keyword 参数字典用于 active API 模式.
 # │  参数：agent, api_messages: list, tools_for_api: list | None = None
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1960,7 +1960,7 @@ def _build_api_kwargs_for_mode(agent, api_messages: list, tools_for_api: list | 
 
 
 # ┌── 函数 def _model_dump_safe()
-# │  作用：``model_dump(warnings=False)`` (avoids pydantic serializer UserWarnings on
+# │  作用：``model_dump(warnings=False)`` (avoids pydantic serializer UserWarnings 在…上
 # │  参数：obj
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1987,7 +1987,7 @@ def _dump_if_model(value):
 
 
 # ┌── 函数 def _assistant_reasoning_text()
-# │  作用：Structured reasoning, else inline ``<think>`` blocks embedded in content.
+# │  作用：结构化的 reasoning, 否则 inline ``<think>`` blocks embedded 在内容.
 # │  参数：agent, assistant_message
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2083,7 +2083,7 @@ def _assistant_tool_call_dict(agent, tool_call, index: int) -> dict:
 
 
 # ┌── 函数 def build_assistant_message()
-# │  作用：Build a normalized assistant message dict (reasoning, reasoning_details,
+# │  作用：构建已归一化 assistant 消息字典 (reasoning, reasoning_details,
 # │  参数：agent, assistant_message, finish_reason: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -2177,7 +2177,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
 
 
 # ┌── 函数 def rewrite_prompt_model_identity()
-# │  作用：Rewrite the cached prompt's ``Model:``/``Provider:`` lines after a provider switch.
+# │  作用：Rewrite cached 提示词's ``模型:``/``服务商:`` lines 在…之后服务商切换.
 # │  参数：agent, model: str, provider: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2212,7 +2212,7 @@ def _fallback_entry_key(fb: dict) -> tuple[str, str, str]:
 
 
 # ┌── 函数 def _fallback_entry_unavailable_without_network()
-# │  作用：Return a skip reason for fallback entries known to be unusable locally.
+# │  作用：返回 skip reason 用于兜底 entries known 是 unusable locally.。
 # │  参数：agent, fb: dict
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2261,7 +2261,7 @@ _FALLBACK_REASON_LABELS = {
 
 
 # ┌── 函数 def _fallback_reason_text()
-# │  作用：Return a concise operator-facing explanation for a fallback switch.
+# │  作用：返回 concise operator-facing explanation 用于兜底切换.。
 # │  参数：reason: 'FailoverReason | None'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2273,7 +2273,7 @@ def _fallback_reason_text(reason: "FailoverReason | None") -> str:
 
 
 # ┌── 函数 def _is_anthropic_wire_url()
-# │  作用：Same Messages-only host match as determine_api_mode() / _detect_api_mode_for_url(): api.anthropic.com,
+# │  作用：Same 消息-仅宿主 match 作为 determine_api_mode() / _detect_api_mode_for_url(): API.anthropic.com,
 # │  参数：url: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2286,7 +2286,7 @@ def _is_anthropic_wire_url(url: str) -> bool:
 
 
 # ┌── 函数 def _fallback_api_mode_hint()
-# │  作用：(explicit, api_mode) for a fallback entry from its ORIGINAL base_url: resolve_provider_client()
+# │  作用：(explicit, api_mode) 用于兜底 entry 从其 ORIGINAL base_url: resolve_provider_client()
 # │  参数：fb: dict, fb_provider: str, fb_base_url_hint: Optional[str]
 # │  返回：tuple[bool, str]
 # └──────────────────────────────────────────────────────────────
@@ -2307,7 +2307,7 @@ def _fallback_api_mode_hint(fb: dict, fb_provider: str, fb_base_url_hint: Option
 
 
 # ┌── 函数 def _fallback_api_mode_resolved()
-# │  作用：Re-detect api_mode from provider / resolved base URL / model when the hint pass
+# │  作用：Re-检测 api_mode 从服务商 / resolved base URL / 模型当 hint pass
 # │  参数：agent, fb_provider: str, fb_model: str, fb_base_url: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2341,7 +2341,7 @@ def _fallback_api_mode_resolved(agent, fb_provider: str, fb_model: str, fb_base_
 
 
 # ┌── 函数 def _rebind_fallback_credential_pool()
-# │  作用：Rebind the credential pool when the provider changes (else rate_limit/billing/auth recovery
+# │  作用：Rebind credential pool 当服务商 changes (否则 rate_limit/billing/auth recovery
 # │  参数：agent, fb_provider: str, fb_model: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2369,7 +2369,7 @@ def _rebind_fallback_credential_pool(agent, fb_provider: str, fb_model: str) -> 
 
 
 # ┌── 函数 def _fallback_chain_exhausted()
-# │  作用：Chain exhausted (always False). A non-empty chain walked on a non-rate-limit failure arms a
+# │  作用：Chain exhausted (always False). non-empty chain walked 在…上 non-rate-限制 failure arms
 # │  参数：agent, reason: 'FailoverReason | None'
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2386,7 +2386,7 @@ def _fallback_chain_exhausted(agent, reason: "FailoverReason | None") -> bool:
 
 
 # ┌── 函数 def _should_skip_fallback_candidate()
-# │  作用：True when the entry is already unavailable, malformed, locally unusable, or resolves
+# │  作用：当 entry 是已 unavailable, 格式非法的, locally unusable, 或 resolves 时返回 True。
 # │  参数：agent, fb: dict, fb_key: tuple, fb_provider: str, fb_model: str, unavailable: set
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2430,7 +2430,7 @@ def _should_skip_fallback_candidate(agent, fb: dict, fb_key: tuple, fb_provider:
 
 
 # ┌── 函数 def _update_fallback_context_compressor()
-# │  作用：Point compression limits at the fallback model's context window (not the primary's),
+# │  作用：Point compression 限制在 兜底模型's 上下文窗口 (不 primary's),
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2455,7 +2455,7 @@ def _update_fallback_context_compressor(agent) -> None:
 
 
 # ┌── 函数 def _reresolve_fallback_reasoning_config()
-# │  作用：Per-model override > global reasoning_effort (YAML False = disabled); a config load
+# │  作用：按模型的覆盖值 > global reasoning_effort (YAML False = disabled); 配置加载
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2475,7 +2475,7 @@ def _reresolve_fallback_reasoning_config(agent) -> None:
 
 
 # ┌── 函数 def _rescope_fallback_extra_body()
-# │  作用：Drop the OLD provider's custom_providers-contributed extra_body keys, then merge the fallback
+# │  作用：丢弃 OLD 服务商's custom_providers-contributed extra_body 键, 然后 merge 兜底
 # │  参数：agent, old_model: str, old_provider: str, old_base_url: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2505,7 +2505,7 @@ def _rescope_fallback_extra_body(agent, old_model: str, old_provider: str, old_b
 
 
 # ┌── 函数 def _buffer_fallback_notice()
-# │  作用：Buffer the switch notice for terminal failure AND retain it as a durable one-shot for
+# │  作用：Buffer 切换提示用于终端 failure 且 retain 它作为 durable one-shot 用于
 # │  参数：agent, notice: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2521,7 +2521,7 @@ def _buffer_fallback_notice(agent, notice: str) -> None:
 
 
 # ┌── 函数 def try_activate_fallback()
-# │  作用：Switch to the next fallback model/provider in the chain; False when exhausted. Swaps client,
+# │  作用：切换 next 兜底模型/服务商在 chain; False 当 exhausted. Swaps 客户端,
 # │  参数：agent, reason: 'FailoverReason | None' = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2646,7 +2646,7 @@ _EMPTY_SUMMARY_RESPONSE = "I reached the iteration limit and couldn't generate a
 
 
 # ┌── 函数 def _iteration_summary_api_messages()
-# │  作用：Wire-ready messages for the summary call, mirroring the main loop's api_messages build
+# │  作用：Wire-ready 消息用于摘要 call, mirroring main 循环's api_messages 构建
 # │  参数：agent, messages: list
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -2807,7 +2807,7 @@ _SUMMARY_ATTEMPT_BUILDERS = {"codex_responses": _codex_summary_attempt, "anthrop
 
 
 # ┌── 函数 def handle_max_iterations()
-# │  作用：Request a summary when max iterations are reached. Returns the final response text.
+# │  作用：请求摘要当 max iterations 是 reached. 返回 final 响应文本.
 # │  参数：agent, messages: list, api_call_count: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2863,7 +2863,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
 
 
 # ┌── 函数 def cleanup_task_resources()
-# │  作用：Per-turn VM + browser cleanup for a task. Skips ``cleanup_vm`` for persistent
+# │  作用：Per-轮次 VM + browser cleanup 用于 task. Skips ``cleanup_vm`` 用于 persistent
 # │  参数：agent, task_id: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2898,7 +2898,7 @@ def cleanup_task_resources(agent, task_id: str) -> None:
 
 
 # ┌── 函数 def _build_partial_stream_stub()
-# │  作用：Stub for an SSE stream that ended without ``finish_reason`` after
+# │  作用：Stub 用于 SSE stream 那个 ended 不 ``finish_reason`` 在…之后
 # │  参数：role, full_content, full_reasoning, model_name, usage_obj, dropped_tool_names = ..., overflow_terminal = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2940,7 +2940,7 @@ _SSE_CONN_PHRASES = ("connection lost", "connection reset", "connection closed",
 
 
 # ┌── 函数 def _rejects_stream_options()
-# │  作用：A 400/422 whose body names ``stream_options`` as an unknown/extra field: strict
+# │  作用：400/422 whose body 名称 ``stream_options`` 作为 unknown/extra 字段: strict
 # │  参数：exc: BaseException
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2974,7 +2974,7 @@ def _is_sse_connection_error(exc: BaseException) -> bool:
 
 
 # ┌── 函数 def _relay_stream_identity()
-# │  作用：``session_id``/``name``/``model_name`` kwargs for ``relay_llm.stream``.
+# │  作用：``session_id``/``名称``/``model_name`` kwargs 用于 ``relay_llm.stream``.
 # │  参数：agent, name_default: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -3025,7 +3025,7 @@ def _stream_final_text(response) -> str:
 
 
 # ┌── 函数 def _with_stream_emitters()
-# │  作用：Bracket ``run()`` with the agent's ``_emit_stream_start`` / ``_emit_stream_end``
+# │  作用：Bracket ``运行()`` 带 Agent's ``_emit_stream_start`` / ``_emit_stream_end``
 # │  参数：agent, run
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3053,7 +3053,7 @@ def _with_stream_emitters(agent, run):
 
 
 # ┌── 函数 def _stream_codex_passthrough()
-# │  作用：Codex streams internally via _run_codex_stream (reached through
+# │  作用：Codex 通过 _run_codex_stream 在内部流式输出（经由……到达）。
 # │  参数：agent, api_kwargs: dict, on_first_delta
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3071,7 +3071,7 @@ def _stream_codex_passthrough(agent, api_kwargs: dict, on_first_delta):
 
 
 # ┌── 类 class _BedrockStream
-# │  说明：Bedrock Converse streaming: boto3 ``converse_stream()`` on a worker thread
+# │  说明：Bedrock Converse streaming: boto3 ``converse_stream()`` 在…上工作线程
 # │  成员：共 11 个方法；对外可用 1 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _BedrockStream:
@@ -3123,7 +3123,7 @@ class _BedrockStream:
                 self.on_first_delta()
 
     # ┌── 函数 def _after_first()
-    # │  作用：Wrap a delta callback so the first delivered event also fires ``on_first_delta``.
+    # │  作用：Wrap delta 回调从而 first delivered 事件也 fires ``on_first_delta``.
     # │  参数：self, fire
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3233,7 +3233,7 @@ class _BedrockStream:
         raise InterruptedError(message)
 
     # ┌── 函数 def _on_stale()
-    # │  作用：No event past the stale timeout = wedged stream (the worker would
+    # │  作用：无事件 past 卡死超时 = wedged stream ( 工作线程会
     # │  参数：self, stale_elapsed: float
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3305,7 +3305,7 @@ class _BedrockStream:
 
 
 # ┌── 类 class _ToolCallAccumulator
-# │  说明：Assemble streamed tool-call deltas into complete ``tool_calls`` entries
+# │  说明：Assemble streamed 工具调用 deltas 进入 complete ``tool_calls`` entries
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _ToolCallAccumulator:
@@ -3329,7 +3329,7 @@ class _ToolCallAccumulator:
         self._argument_parts: dict[int, list[str]] = {}
 
     # ┌── 函数 def materialize()
-    # │  作用：Join buffered argument deltas into each entry's ``arguments``; idempotent. Returns ``acc``.
+    # │  作用：拼接 buffered 参数 deltas 进入每个 entry's ``参数``; idempotent. 返回 ``acc``.
     # │  参数：self
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -3341,7 +3341,7 @@ class _ToolCallAccumulator:
         return self.acc
 
     # ┌── 函数 def feed()
-    # │  作用：Merge one delta; return the tool name the first time it is complete.
+    # │  作用：Merge one delta; 返回工具名称 first time 它是 complete.
     # │  参数：self, tc_delta
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -3391,7 +3391,7 @@ class _ToolCallAccumulator:
 
 
 # ┌── 类 class _StreamingCall（继承自：StreamingWaitMonitor）
-# │  说明：One streaming request on the chat_completions / anthropic_messages wire.
+# │  说明：One streaming 请求在…上 chat_completions / anthropic_messages wire.
 # │  成员：共 39 个方法；对外可用 1 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _StreamingCall(StreamingWaitMonitor):
@@ -3431,7 +3431,7 @@ class _StreamingCall(StreamingWaitMonitor):
     # ── shared small helpers ────────────────────────────────────────────
 
     # ┌── 函数 def _quiet()
-    # │  作用：Best-effort callback: never let a display hook break the stream.
+    # │  作用：尽最大努力回调: never let 展示 hook break stream.
     # │  参数：fn, *args
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3578,7 +3578,7 @@ class _StreamingCall(StreamingWaitMonitor):
         self.agent._fire_tool_gen_started(name)
 
     # ┌── 函数 def _route_suppressed_text()
-    # │  作用：Tool-call turns suppress content streaming (no chatty preamble), but
+    # │  作用：工具调用轮次 suppress 内容 streaming (无 chatty preamble), 但
     # │  参数：self, text: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3602,7 +3602,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return diag
 
     # ┌── 函数 def _count_chunk()
-    # │  作用：Stamp liveness for a real chunk; diagnostics are best-effort.
+    # │  作用：Stamp liveness 用于 real chunk; diagnostics 是尽最大努力.
     # │  参数：self, diag, chunk
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3620,7 +3620,7 @@ class _StreamingCall(StreamingWaitMonitor):
     # ── chat_completions wire ───────────────────────────────────────────
 
     # ┌── 函数 def _stream_timeouts()
-    # │  作用：``(write, read, connect/pool)`` socket timeouts. Per-provider
+    # │  作用：``(写入, 读取, connect/pool)`` socket 超时. Per-服务商
     # │  参数：self
     # │  返回：tuple[float, float, float]
     # └──────────────────────────────────────────────────────────────
@@ -3648,7 +3648,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return base, read, 30.0
 
     # ┌── 函数 def _choiceless_chunk()
-    # │  作用：Chunk with empty ``choices`` -> ``(usage, finish_reason)``. Raises
+    # │  作用：Chunk 带 empty ``choices`` -> ``(usage, finish_reason)``. 抛出
     # │  参数：chunk, finish_reason
     # │  返回：（未标注类型）
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3745,7 +3745,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return True
 
     # ┌── 函数 def _writer_still_current()
-    # │  作用：Single-writer fence: False (with a warning) once a newer stream claimed the writer slot.
+    # │  作用：Single-writer fence: False (带警告) 一旦 newer stream claimed writer slot.
     # │  参数：self, label: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3762,7 +3762,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return False
 
     # ┌── 函数 def _call_chat_completions()
-    # │  作用：Stream a chat completions response.
+    # │  作用：Stream chat completions 响应.
     # │  参数：self, stream_attempt_id: int
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3899,7 +3899,7 @@ class _StreamingCall(StreamingWaitMonitor):
             response_id=response_id, upstream_provider=upstream_provider, reasoning_details=reasoning_details)
 
     # ┌── 函数 def _adopt_final_response()
-    # │  作用：Adapter returned a completed response for ``stream=True``: switch the
+    # │  作用：适配器 returned completed 响应用于 ``stream=True``: 切换
     # │  参数：self, final_response
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3924,7 +3924,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return final_response
 
     # ┌── 函数 def _assemble_tool_calls()
-    # │  作用：Materialize accumulated tool calls; flag truncated/unrepairable args.
+    # │  作用：Materialize accumulated 工具调用; 标志 truncated/unrepairable args.
     # │  参数：tool_calls_acc, finish_reason
     # │  返回：（未标注类型）
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3959,7 +3959,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return mock_tool_calls or None, has_truncated_tool_args
 
     # ┌── 函数 def _finish_chat_stream()
-    # │  作用：Assemble the non-streaming-shaped response after the chunk loop. A
+    # │  作用：Assemble non-streaming-shaped 响应在…之后 chunk 循环.
     # │  参数：self, stream, role, content_parts, reasoning_parts, tool_calls_acc, finish_reason, model_name  …共 13 个
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4019,7 +4019,7 @@ class _StreamingCall(StreamingWaitMonitor):
     # ── anthropic_messages wire ─────────────────────────────────────────
 
     # ┌── 函数 def _check_anthropic_message()
-    # │  作用：Raise EmptyStreamError for a message the stream never completed: no
+    # │  作用：抛出 EmptyStreamError 用于消息 stream never completed: 无
     # │  参数：message, tool_drop: bool = ...
     # │  返回：（未标注类型）
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4046,7 +4046,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return message
 
     # ┌── 函数 def _call_anthropic()
-    # │  作用：Stream an Anthropic Messages API response; fires delta callbacks but
+    # │  作用：Stream Anthropic 消息 API 响应; fires delta 回调但
     # │  参数：self, request_client
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4147,7 +4147,7 @@ class _StreamingCall(StreamingWaitMonitor):
     # ── retry loop ──────────────────────────────────────────────────────
 
     # ┌── 函数 def _retry_after_drop()
-    # │  作用：Warn about the drop and tear down the request-local client. Shared
+    # │  作用：警告 about 丢弃且 tear down 请求-local 客户端. Shared
     # │  参数：self, e, attempt: int, max_retries: int, mid_tool_call: bool, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4164,7 +4164,7 @@ class _StreamingCall(StreamingWaitMonitor):
         self.clients.close_once(reason)
 
     # ┌── 函数 def _maybe_disable_streaming()
-    # │  作用：Flip to non-streaming when the provider rejects streaming outright or
+    # │  作用：Flip non-streaming 当服务商拒绝 streaming outright 或
     # │  参数：self, e
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4189,7 +4189,7 @@ class _StreamingCall(StreamingWaitMonitor):
             )
 
     # ┌── 函数 def _handle_stream_error()
-    # │  作用：Classify a failed attempt: True = retry; False = stop with
+    # │  作用：Classify failed 尝试: True = 重试; False = stop 带
     # │  参数：self, e: Exception, attempt: int, max_retries: int
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4338,7 +4338,7 @@ class _StreamingCall(StreamingWaitMonitor):
             self._call_done.set()
 
     # ┌── 函数 def _kill_stale_stream()
-    # │  作用：SSE pings but no chunks: cancel the attempt and abort the request-local
+    # │  作用：SSE pings 但无 chunks: cancel 尝试且 abort 请求-local
     # │  参数：self, elapsed: float
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4366,7 +4366,7 @@ class _StreamingCall(StreamingWaitMonitor):
         self.agent._touch_activity(f"stale stream detected after {int(elapsed)}s, reconnecting")
 
     # ┌── 函数 def _abort_for_interrupt()
-    # │  作用：/stop seen by the monitor: mark cancelled, abort the request-local
+    # │  作用：/stop seen 由 monitor: mark cancelled, abort 请求-local
     # │  参数：self, stale_elapsed: float
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4393,7 +4393,7 @@ class _StreamingCall(StreamingWaitMonitor):
     # ── orchestration ───────────────────────────────────────────────────
 
     # ┌── 函数 def _resolve_stale_timeout()
-    # │  作用：Set ``_stream_stale_timeout``. Local endpoints (unless the env is set) get
+    # │  作用：设置 ``_stream_stale_timeout``. Local endpoints (unless env 是设置) 获取
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4420,7 +4420,7 @@ class _StreamingCall(StreamingWaitMonitor):
         self._stream_stale_timeout = _cloud_stale_timeout(base, self.api_kwargs)
 
     # ┌── 函数 def _partial_stream_stub()
-    # │  作用：Tokens already reached the platform: a finish_reason="length" stub fires the
+    # │  作用：令牌已 reached 平台: finish_reason="length" stub fires
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4480,7 +4480,7 @@ class _StreamingCall(StreamingWaitMonitor):
         return _stub
 
     # ┌── 函数 def run()
-    # │  作用：Resolve the stale timeout, run the request (worker thread or inline),
+    # │  作用：Resolve 卡死超时, 运行请求 (工作线程或 inline),
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4530,7 +4530,7 @@ class _StreamingCall(StreamingWaitMonitor):
 
 
 # ┌── 函数 def interruptible_streaming_api_call()
-# │  作用：Streaming variant of _interruptible_api_call: fires the delta callbacks per
+# │  作用：Streaming variant 的 _interruptible_api_call: fires delta 回调 per
 # │  参数：agent, api_kwargs: dict, on_first_delta = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

@@ -67,7 +67,7 @@ _CHECKPOINT_PATH_AT_IMPORT = CHECKPOINT_PATH
 
 
 # ┌── 函数 def _checkpoint_path()
-# │  作用：Active profile's checkpoint file at call time: the patched ``CHECKPOINT_PATH`` when a test
+# │  作用：Active 配置档's 检查点文件在 call time: patched ``CHECKPOINT_PATH`` 当测试
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ _WORKER_MEMORY_MAX_CAP_BYTES = 4 * 1024 * 1024 * 1024
 
 
 # ┌── 函数 def _worker_memory_max_bytes()
-# │  作用：Finite per-worker cgroup limit that can never widen host risk.
+# │  作用：Finite per-工作线程 cgroup 限制那个可以 never widen 宿主 risk.
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ def _worker_memory_max_bytes() -> int:
 
 
 # ┌── 函数 def _systemd_scope_argv()
-# │  作用：``systemd-run --user --scope`` argv shared by the probe and real spawns.
+# │  作用：``systemd-运行 --user --scope`` argv shared 由 probe 且 real spawns.
 # │  参数：binary: str, unit_name: str, *argv
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ def _systemd_scope_argv(binary: str, unit_name: str, *argv: str) -> List[str]:
 
 
 # ┌── 函数 def _default_user_runtime_dir()
-# │  作用：``/run/user/<uid>``; a function so tests can point it at a temp dir with a real socket.
+# │  作用：``/运行/user/<uid>``; 函数从而测试可以 point 它在 temp dir 带 real socket.
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ def _default_user_runtime_dir() -> Path:
 
 
 # ┌── 函数 def _secure_user_runtime_dir()
-# │  作用：Accept only an absolute, owned, non-writable real directory.
+# │  作用：接受仅 absolute, 持有的, non-writable real directory.
 # │  参数：path: Path
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ def _secure_user_runtime_dir(path: Path) -> bool:
 
 
 # ┌── 函数 def systemd_user_bus_env()
-# │  作用：Build an environment that can reach this user's lingering systemd manager.
+# │  作用：构建 environment 那个可以 reach 这个 user's lingering systemd manager.
 # │  参数：base_env: Optional[Dict[str, str]] = None
 # │  返回：Dict[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ def systemd_user_bus_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str,
 
 
 # ┌── 函数 def _systemd_scope_cached()
-# │  作用：Cached probe verdict, or None when a (re)probe is due. True is permanent; False
+# │  作用：Cached probe verdict, 或 None 当 (re)probe 是 due. True 是 permanent; False
 # │  参数：无
 # │  返回：Optional[bool]
 # └──────────────────────────────────────────────────────────────
@@ -288,7 +288,7 @@ def _systemd_scope_cached() -> Optional[bool]:
 
 
 # ┌── 函数 def _systemd_run_user_scope_available()
-# │  作用：True if ``systemd-run --user --scope`` can create a cgroup.
+# │  作用：True 若 ``systemd-运行 --user --scope`` 可以创建 cgroup.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ def _systemd_run_user_scope_available() -> bool:
 
 
 # ┌── 函数 def _is_supervised_gateway_process()
-# │  作用：Whether this process is the live, supervised Hermes gateway itself.
+# │  作用：是否 这个进程是 当前活跃的, supervised Hermes gateway itself.。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -370,7 +370,7 @@ def _is_supervised_gateway_process() -> bool:
 
 
 # ┌── 函数 def _build_systemd_scope_argv()
-# │  作用：Wrap *shell_argv* in a ``systemd-run --user --scope`` invocation with its own
+# │  作用：Wrap *shell_argv* 在 ``systemd-运行 --user --scope`` invocation 带其 持有
 # │  参数：shell_argv: List[str], unit_suffix: str
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -396,7 +396,7 @@ _scope_degraded_warned = False
 
 
 # ┌── 函数 def _warn_scope_degraded_once()
-# │  作用：Warn once per process: the condition is host-level and the probe verdict
+# │  作用：警告一旦 per 进程: condition 是宿主-级别且 probe verdict
 # │  参数：detail: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -417,7 +417,7 @@ def _warn_scope_degraded_once(detail: str) -> None:
 
 
 # ┌── 类 class GatewayChildDispatch（继承自：NamedTuple）
-# │  说明：How a managed-gateway child is launched.
+# │  说明：如何 managed-gateway child 是 launched.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class GatewayChildDispatch(NamedTuple):
@@ -436,7 +436,7 @@ class GatewayChildDispatch(NamedTuple):
 
 
 # ┌── 函数 def restart_safe_gateway_child_argv()
-# │  作用：Place a managed-systemd gateway child outside the gateway cgroup.
+# │  作用：把受管 systemd 的网关子进程放到网关 cgroup 之外。
 # │  参数：command: List[str], unit_suffix: str, require_restart_safe_scope: bool
 # │  返回：GatewayChildDispatch
 # └──────────────────────────────────────────────────────────────
@@ -484,7 +484,7 @@ def restart_safe_gateway_child_argv(
 
 
 # ┌── 函数 def _stop_systemd_unit()
-# │  作用：Stop a transient systemd user scope by unit name.
+# │  作用：Stop transient systemd user scope 由 unit 名称.
 # │  参数：unit_name: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -558,7 +558,7 @@ def _not_found(session_id: str) -> dict:
 
 
 # ┌── 函数 def _output_tail()
-# │  作用：Last *n* chars of the session output with ANSI sequences stripped.
+# │  作用：Last *n* chars 的会话输出带 ANSI sequences stripped.
 # │  参数：session: 'ProcessSession', n: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -571,7 +571,7 @@ def _output_tail(session: "ProcessSession", n: int) -> str:
 
 
 # ┌── 类 class ProcessSession
-# │  说明：A tracked background process with output buffering.
+# │  说明：tracked background 进程带 输出 buffering.
 # │  成员：共 2 个方法；对外可用 2 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -628,7 +628,7 @@ class ProcessSession:
     _pty: Any = field(default=None, repr=False)  # ptyprocess handle (use_pty=True)
 
     # ┌── 函数 def append_output()
-    # │  作用：Append to the rolling output buffer under the session lock, keeping the tail.
+    # │  作用：追加 rolling 输出 buffer under 会话锁, 保留 tail.
     # │  参数：self, text: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -640,7 +640,7 @@ class ProcessSession:
                 self.output_buffer = self.output_buffer[-self.max_output_chars:]
 
     # ┌── 函数 def mark_exited()
-    # │  作用：Record an exit. A kill that raced the observer already recorded its own
+    # │  作用：Record exit. kill 那个 raced observer 已 recorded 其持有
     # │  参数：self, exit_code, reason: str = 'exited', source: str = ''
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -672,7 +672,7 @@ _CHECKPOINT_DEFAULTS = {
 
 
 # ┌── 类 class ProcessRegistry（继承自：ProcessCheckpointMixin）
-# │  说明：In-memory registry of running and finished background processes.
+# │  说明：在-内存 registry 的运行且 finished background 进程.
 # │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
 # │  成员：共 73 个方法；对外可用 27 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
@@ -728,7 +728,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         self.on_close = None
 
     # ┌── 函数 def _clean_shell_noise()
-    # │  作用：Strip shell startup warnings from the beginning of output.
+    # │  作用：Strip shell startup warnings 从 beginning 的输出.
     # │  参数：text: str
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -743,7 +743,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return "\n".join(lines)
 
     # ┌── 函数 def _emit_output()
-    # │  作用：Forward a chunk to the live-output sink; called from reader threads, never raises.
+    # │  作用：Forward chunk 当前活跃的-输出 sink; called 从 reader 线程, never 抛出.
     # │  参数：self, session: ProcessSession, chunk: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -756,7 +756,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             sink(session, chunk)
 
     # ┌── 函数 def _check_watch_patterns()
-    # │  作用：Scan a freshly-read chunk for watch patterns and queue notifications.
+    # │  作用：Scan freshly-读取 chunk 用于 watch patterns 且队列 notifications.
     # │  参数：self, session: ProcessSession, new_text: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -835,7 +835,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             )
 
     # ┌── 函数 def _emit_watch_disabled()
-    # │  作用：Queue the one-shot watch_disabled summary (strike-limit or lifetime-cap path).
+    # │  作用：队列 one-shot watch_disabled 摘要 (strike-限制或 lifetime-cap 路径).
     # │  参数：self, session: ProcessSession, suppressed: int, why: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -852,7 +852,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         })
 
     # ┌── 函数 def _watch_event_base()
-    # │  作用：Session identity + watcher routing fields shared by every watch event.
+    # │  作用：会话身份 + watcher routing 字段 shared 由每个 watch 事件.
     # │  参数：session: ProcessSession
     # │  返回：dict
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -871,7 +871,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         }
 
     # ┌── 函数 def _global_watch_event()
-    # │  作用：Unaddressed (all-sessions) watch breaker event.
+    # │  作用：Unaddressed (全部-会话) watch breaker 事件.
     # │  参数：type_: str, message: str, **extra
     # │  返回：dict
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -887,7 +887,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         }
 
     # ┌── 函数 def _global_watch_admit()
-    # │  作用：True if this watch_match may pass the global breaker.
+    # │  作用：True 若这个 watch_match 可以 pass global breaker.
     # │  参数：self, now: float
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -935,7 +935,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return admit
 
     # ┌── 函数 def _is_host_pid_alive()
-    # │  作用：Best-effort liveness check for host-visible PIDs.
+    # │  作用：尽最大努力 liveness 检查用于宿主-visible PIDs.
     # │  参数：pid: Optional[int]
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -953,7 +953,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return _pid_exists(pid)
 
     # ┌── 函数 def _safe_host_start_time()
-    # │  作用：Kernel start ticks for a host PID, or None when unavailable.
+    # │  作用：Kernel start ticks 用于宿主进程 ID, 或 None 当 unavailable.
     # │  参数：pid: Optional[int]
     # │  返回：Optional[int]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -971,7 +971,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return None
 
     # ┌── 函数 def _host_pid_is_ours()
-    # │  作用：True only if ``pid`` is alive AND still the process we spawned.
+    # │  作用：True 仅若 ``进程 ID`` 是 alive 且仍 进程我们 spawned.
     # │  参数：cls, pid: Optional[int], expected_start: Optional[int]
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -988,7 +988,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             expected_start is None or cls._safe_host_start_time(pid) == expected_start)
 
     # ┌── 函数 def _refresh_detached_session()
-    # │  作用：Update recovered host-PID sessions when the underlying process has exited.
+    # │  作用：更新 recovered 宿主-进程 ID 会话当 underlying 进程有 exited.
     # │  参数：self, session: Optional[ProcessSession]
     # │  返回：Optional[ProcessSession]
     # └──────────────────────────────────────────────────────────────
@@ -1013,7 +1013,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return session
 
     # ┌── 函数 def _proc_alive()
-    # │  作用：True if a psutil.Process is running and not a zombie (already dead, just unreaped).
+    # │  作用：True 若 psutil.进程是 运行且 不 zombie (已 dead, just unreaped).
     # │  参数：proc
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1031,7 +1031,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return False
 
     # ┌── 函数 def _config_value()
-    # │  作用：``config.yaml`` value for ``section.key``, else the DEFAULT_CONFIG value.
+    # │  作用：``配置.YAML`` 值用于 ``section.键``, 否则 DEFAULT_CONFIG 值.
     # │  参数：section: str, key: str, fallback
     # │  返回：（未标注类型）
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1048,7 +1048,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return DEFAULT_CONFIG[section][key] if val is None else val
 
     # ┌── 函数 def _config_seconds()
-    # │  作用：``terminal.<key>`` as a non-negative float (0 disables); *fallback* if unreadable.
+    # │  作用：``终端.<键>`` 作为 non-negative 浮点数 (0 disables); *兜底* 若 unreadable.
     # │  参数：key: str, fallback: float
     # │  返回：float
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1065,7 +1065,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return fallback
 
     # ┌── 函数 def _daemon_term_grace_seconds()
-    # │  作用：Grace (s) between SIGTERM and escalated SIGKILL; 0 disables escalation.
+    # │  作用：Grace (s) between SIGTERM 且 escalated SIGKILL; 0 disables escalation.
     # │  参数：无
     # │  返回：float
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1077,7 +1077,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return ProcessRegistry._config_seconds("daemon_term_grace_seconds", 2.0)
 
     # ┌── 函数 def _terminate_host_pid()
-    # │  作用：Terminate a host-visible PID and its descendants.
+    # │  作用：Terminate 宿主-visible 进程 ID 且其 descendants.
     # │  参数：cls, pid: int, expected_start: Optional[int] = None
     # │  返回：None
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -1168,7 +1168,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             started_at=time.time(), **extra)
 
     # ┌── 函数 def _env_temp_dir()
-    # │  作用：Return the writable sandbox temp dir for env-backed background tasks.
+    # │  作用：返回 writable sandbox temp dir 用于 env-backed background tasks.。
     # │  参数：env: Any
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1190,7 +1190,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return "/tmp"
 
     # ┌── 函数 def _scope_argv()
-    # │  作用：Login-shell argv for *safe_command* (parity with LocalEnvironment: rc files
+    # │  作用：Login-shell argv 用于 *safe_command* (parity 带 LocalEnvironment: rc 文件
     # │  参数：self, session: ProcessSession, safe_command: str, unit_suffix: str, label: str
     # │  返回：List[str]
     # └──────────────────────────────────────────────────────────────
@@ -1216,7 +1216,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return argv
 
     # ┌── 函数 def _spawn_env()
-    # │  作用：Sanitized child env; PYTHONUNBUFFERED so tqdm/datasets-style buffering
+    # │  作用：Sanitized child env; PYTHONUNBUFFERED 从而 tqdm/datasets-style buffering
     # │  参数：env_vars: dict
     # │  返回：dict
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1231,7 +1231,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return env
 
     # ┌── 函数 def _track_started()
-    # │  作用：Register before the reader can publish completion, even for an exited child.
+    # │  作用：Register 在…之前 reader 可以 publish completion, even 用于 exited child.
     # │  参数：self, session: ProcessSession, reader_target, reader_name: str, extra_args = ()
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1252,7 +1252,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         self._write_checkpoint()
 
     # ┌── 函数 def _spawn_local_pty()
-    # │  作用：PTY spawn for interactive CLI tools (Codex, Claude Code, REPLs).
+    # │  作用：PTY spawn 用于 interactive CLI 工具 (Codex, Claude Code, REPLs).
     # │  参数：self, session: ProcessSession, safe_command: str, env_vars: dict
     # │  返回：ProcessSession
     # └──────────────────────────────────────────────────────────────
@@ -1281,7 +1281,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return session
 
     # ┌── 函数 def spawn_local()
-    # │  作用：Spawn a background process locally (TERMINAL_ENV=local; other backends use
+    # │  作用：Spawn background 进程 locally (TERMINAL_ENV=local; other backends use
     # │  参数：self, command: str, cwd: str = None, task_id: str = '', session_key: str = '', env_vars: dict = None, use_pty: bool = False, owner_task_id: str = ''
     # │  返回：ProcessSession
     # └──────────────────────────────────────────────────────────────
@@ -1348,7 +1348,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return session
 
     # ┌── 函数 def _reap_untracked()
-    # │  作用：Post-Popen setup failed: kill the orphaned subprocess (and any setsid
+    # │  作用：Post-Popen setup failed: kill orphaned 子进程 (且任意 setsid
     # │  参数：self, session: ProcessSession, proc: subprocess.Popen
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1377,7 +1377,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             proc.wait(timeout=5)
 
     # ┌── 函数 def adopt_local()
-    # │  作用：Take over a still-running foreground Popen as a tracked background session
+    # │  作用：Take over 仍-运行 foreground Popen 作为 tracked background 会话
     # │  参数：self, proc: subprocess.Popen, command: str, cwd: Optional[str], task_id: str = ..., session_key: str = ..., owner_task_id: str = ..., output_so_far: str = ...  …共 9 个
     # │  返回：ProcessSession
     # └──────────────────────────────────────────────────────────────
@@ -1402,7 +1402,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return session
 
     # ┌── 函数 def spawn_via_env()
-    # │  作用：Spawn a background process inside a non-local backend's sandbox.
+    # │  作用：Spawn background 进程 inside non-local backend's sandbox.
     # │  参数：self, env: Any, command: str, cwd: str = None, task_id: str = '', session_key: str = '', timeout: int = 10, owner_task_id: str = ''
     # │  返回：ProcessSession
     # └──────────────────────────────────────────────────────────────
@@ -1447,7 +1447,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
     # ----- Reader / Poller Threads -----
 
     # ┌── 函数 def _reader_loop()
-    # │  作用：Background thread: read stdout from a local Popen process.
+    # │  作用：Background 线程: 读取标准输出从 local Popen 进程.
     # │  参数：self, session: ProcessSession
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1540,7 +1540,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
                 lambda: session.process.wait(timeout=5), lambda: session.process.returncode)
 
     # ┌── 函数 def _finish_reader()
-    # │  作用：Reader-thread teardown: flush the decoder (a truncated multibyte tail becomes
+    # │  作用：Reader-线程 teardown: 冲刷 decoder ( truncated multibyte tail becomes
     # │  参数：self, session, decoder, append, label, wait, exit_code
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1559,7 +1559,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         self._finish_exited(session, exit_code())
 
     # ┌── 函数 def _log_delta_command()
-    # │  作用：Shell command that reads only the log bytes written since ``offset``
+    # │  作用：Shell 命令那个读取仅 日志 bytes 已写入 since ``offset``
     # │  参数：quoted_log_path: str, offset: int
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1599,7 +1599,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         )
 
     # ┌── 函数 def _env_poller_loop()
-    # │  作用：Background thread: poll a sandbox log file for non-local backends.
+    # │  作用：Background 线程: poll sandbox 日志文件用于 non-local backends.
     # │  参数：self, session: ProcessSession, env: Any, log_path: str, pid_path: str, exit_path: str
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1663,7 +1663,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
                 return
 
     # ┌── 函数 def _pty_reader_loop()
-    # │  作用：Background thread: read output from a PTY process.
+    # │  作用：Background 线程: 读取输出从 PTY 进程.
     # │  参数：self, session: ProcessSession
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1718,7 +1718,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             pty.wait, lambda: pty.exitstatus if hasattr(pty, 'exitstatus') else -1)
 
     # ┌── 函数 def _ingest_output()
-    # │  作用：Buffer a freshly-read chunk, then scan watch patterns and stream it live.
+    # │  作用：Buffer freshly-读取 chunk, 然后 scan watch patterns 且 stream 它当前活跃的.
     # │  参数：self, session: ProcessSession, text: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1729,7 +1729,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         self._emit_output(session, text)
 
     # ┌── 函数 def _finish_exited()
-    # │  作用：Mark a reader-observed exit (a raced kill keeps its own code/reason) and finish.
+    # │  作用：Mark reader-observed exit ( raced kill 保留其 持有 code/reason) 且 finish.
     # │  参数：self, session: ProcessSession, exit_code
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1739,7 +1739,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         self._move_to_finished(session)
 
     # ┌── 函数 def _move_to_finished()
-    # │  作用：Move a session from running to finished.
+    # │  作用：Move 会话从 运行 finished.
     # │  参数：self, session: ProcessSession
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1801,7 +1801,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         }
 
     # ┌── 函数 def _release_finished_handles()
-    # │  作用：Close a finished session's OS handles (Popen pipes / PTY master).
+    # │  作用：关闭 finished 会话's OS handles (Popen pipes / PTY master).
     # │  参数：self, session: ProcessSession
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1830,7 +1830,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
     # ----- Query Methods -----
 
     # ┌── 函数 def is_completion_consumed()
-    # │  作用：Check if a completion notification was already consumed via wait/log.
+    # │  作用：检查若 completion notification 是已 已消费 via wait/日志.
     # │  参数：self, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1840,7 +1840,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return session_id in self._completion_consumed
 
     # ┌── 函数 def is_session_waiting()
-    # │  作用：Whether a goal loop (``hermes_cli.goals`` wait barrier) should stay parked on
+    # │  作用：是否 goal 循环 (``hermes_cli.goals`` wait barrier) 应当 stay parked 在…上。
     # │  参数：self, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1861,7 +1861,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             session.watch_patterns and not session._watch_disabled and session._watch_hits > 0)
 
     # ┌── 函数 def wait_for_pending_completions()
-    # │  作用：Bounded linger for ``notify_on_complete`` background processes at one-shot exit.
+    # │  作用：Bounded linger 用于 ``notify_on_complete`` background 进程在 one-shot exit.
     # │  参数：self, task_id: Optional[str] = None, timeout: float | None = ..., poll_interval: float = ...
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -1951,7 +1951,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return result
 
     # ┌── 函数 def _oneshot_completion_wait_seconds()
-    # │  作用：Linger (s) for one-shot exits with pending notify_on_complete processes; 0 disables.
+    # │  作用：Linger (s) 用于 one-shot exits 带 pending notify_on_complete 进程; 0 disables.
     # │  参数：无
     # │  返回：float
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1963,7 +1963,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return ProcessRegistry._config_seconds("oneshot_completion_wait_seconds", 600.0)
 
     # ┌── 函数 def _drain_should_skip()
-    # │  作用：Skip a completion the CLI agent already has this turn — consumed via wait/log
+    # │  作用：Skip completion CLI Agent 已有 这个轮次 — 已消费 via wait/日志
     # │  参数：self, session_id: str, skip_poll_observed: bool = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1980,7 +1980,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return session_id in self._completion_consumed or (skip_poll_observed and session_id in self._poll_observed)
 
     # ┌── 函数 def _surface_child_process_notifications()
-    # │  作用：``delegation.surface_child_process_notifications``; False on any config
+    # │  作用：``delegation.surface_child_process_notifications``; False 在…上任意配置
     # │  参数：无
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1998,7 +1998,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return False
 
     # ┌── 函数 def _owns_event()
-    # │  作用：Routing verdict for one drained event (see drain_notifications); False = requeue.
+    # │  作用：Routing verdict 用于 one drained 事件 (see drain_notifications); False = requeue.
     # │  参数：evt: dict, session_key: str, owns_event, is_async_delegation: bool
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -2025,7 +2025,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return not (is_async_delegation and evt.get("restored"))
 
     # ┌── 函数 def drain_notifications()
-    # │  作用：Pop all pending events and return ``(raw_event, formatted_text)`` pairs.
+    # │  作用：Pop 全部 pending 事件且 返回 ``(raw_event, formatted_text)`` pairs.
     # │  参数：self, session_key: str = '', owns_event = None, skip_poll_observed: bool = ...
     # │  返回：'list[tuple[dict, str]]'
     # └──────────────────────────────────────────────────────────────
@@ -2089,7 +2089,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
     _MIN_PREFIX_CHARS = 4
 
     # ┌── 函数 def get()
-    # │  作用：Session by full ID or unique prefix (``proc_4dae`` / bare ``4dae``, like git
+    # │  作用：会话由 full ID 或 unique prefix (``proc_4dae`` / bare ``4dae``, like git
     # │  参数：self, session_id: str
     # │  返回：Optional[ProcessSession]
     # └──────────────────────────────────────────────────────────────
@@ -2107,7 +2107,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return self._refresh_detached_session(session if session is not None else self._resolve_prefix(session_id))
 
     # ┌── 函数 def _resolve_prefix()
-    # │  作用：Resolve a unique session-ID prefix (a bare hex tail is normalized to
+    # │  作用：Resolve unique 会话-ID prefix ( bare hex tail 是已归一化
     # │  参数：self, session_id: str
     # │  返回：Optional[ProcessSession]
     # └──────────────────────────────────────────────────────────────
@@ -2133,7 +2133,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return next(iter(matches.values())) if len(matches) == 1 else None
 
     # ┌── 函数 def _reconcile_local_exit()
-    # │  作用：Reconcile ``session.exited`` against the real child state.
+    # │  作用：Reconcile ``会话.exited`` against real child 状态.
     # │  参数：self, session: 'ProcessSession'
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2203,7 +2203,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return {"session_id": session.id, "command": session.command, "status": "exited" if session.exited else "running"}
 
     # ┌── 函数 def poll()
-    # │  作用：Check status and get new output for a background process.
+    # │  作用：检查 status 且获取 new 输出用于 background 进程.
     # │  参数：self, session_id: str
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2231,7 +2231,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return result
 
     # ┌── 函数 def read_log()
-    # │  作用：Read the full output log with optional pagination by lines.
+    # │  作用：读取 full 输出日志带 optional pagination 由 lines.
     # │  参数：self, session_id: str, offset: int | None = None, limit: int = 200
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2269,7 +2269,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return result
 
     # ┌── 函数 def wait()
-    # │  作用：Block until the process exits, the timeout elapses, the user interrupts, or a
+    # │  作用：Block until 进程 exits, 超时 elapses, user interrupts, 或
     # │  参数：self, session_id: str, timeout: int = None
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2351,7 +2351,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return result
 
     # ┌── 函数 def _exit_snapshot()
-    # │  作用：Result dict for an exited session: exit metadata + last 2000 chars of output.
+    # │  作用：结果字典用于 exited 会话: exit metadata + last 2000 chars 的输出.
     # │  参数：session: ProcessSession, status: str
     # │  返回：dict
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -2365,7 +2365,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             **ProcessRegistry._exit_fields(session), "output": _output_tail(session, 2000)}
 
     # ┌── 函数 def kill_process()
-    # │  作用：Kill a background process and return its output snapshot.
+    # │  作用：Kill background 进程且 返回其 输出 snapshot.
     # │  参数：self, session_id: str, source: str = ..., consume_output: bool = ...
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2431,7 +2431,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return {"status": "error", "error": str(e)}
 
     # ┌── 函数 def _signal_kill()
-    # │  作用：Deliver the kill via PTY, local Popen tree, sandbox exec or recovered host
+    # │  作用：Deliver kill via PTY, local Popen tree, sandbox exec 或 recovered 宿主
     # │  参数：self, session: ProcessSession, session_id: str, consume_output: bool
     # │  返回：Optional[dict]
     # └──────────────────────────────────────────────────────────────
@@ -2487,7 +2487,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return None
 
     # ┌── 函数 def _stdin_op()
-    # │  作用：Run a stdin operation on a running session — ``pty_op(pty)`` under PTY mode,
+    # │  作用：运行标准输入 operation 在…上运行会话 — ``pty_op(pty)`` under PTY 模式,
     # │  参数：self, session_id: str, pty_op, pipe_op, ok: dict
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2517,7 +2517,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return {"status": "error", "error": str(e)}
 
     # ┌── 函数 def write_stdin()
-    # │  作用：Send raw data to a running process's stdin (no newline appended).
+    # │  作用：Send raw data 运行进程's 标准输入 (无 newline 已追加).
     # │  参数：self, session_id: str, data: str
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2540,7 +2540,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return self._stdin_op(session_id, via_pty, via_pipe, {"status": "ok", "bytes_written": len(data)})
 
     # ┌── 函数 def submit_stdin()
-    # │  作用：Send data + newline to stdin (like pressing Enter).
+    # │  作用：Send data + newline 标准输入 (like pressing Enter).
     # │  参数：self, session_id: str, data: str = ''
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2555,7 +2555,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return self.write_stdin(session_id, data + ("\r\n" if _IS_WINDOWS and session and session._pty else "\n"))
 
     # ┌── 函数 def request_close_terminal()
-    # │  作用：Ask the desktop GUI to close this process's read-only terminal tab. Does NOT
+    # │  作用：Ask desktop GUI 关闭这个进程's 读取-仅终端 tab. 不
     # │  参数：self, session_id: str
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2582,7 +2582,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
                     "from the status stack."}
 
     # ┌── 函数 def close_stdin()
-    # │  作用：Close a running process's stdin / send EOF without killing the process.
+    # │  作用：关闭运行进程's 标准输入 / send EOF 不 killing 进程.
     # │  参数：self, session_id: str
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -2595,7 +2595,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             session_id, lambda pty: pty.sendeof(), lambda stdin: stdin.close(), {"status": "ok", "message": msg})
 
     # ┌── 函数 def count_running()
-    # │  作用：O(1) running count for status-bar polling; dict ``len()`` is atomic, no lock.
+    # │  作用：O(1) 运行 count 用于 status-bar polling; 字典 ``len()`` 是 atomic, 无锁.
     # │  参数：self
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2605,7 +2605,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return len(self._running)
 
     # ┌── 函数 def list_sessions()
-    # │  作用：Running and recently-finished processes for ``task_id`` and/or ``session_key``;
+    # │  作用：运行且 recently-finished 进程用于 ``task_id`` 且/或 ``session_key``;
     # │  参数：self, task_id: str = None, session_key: str = None, include_retained: bool = ...
     # │  返回：list
     # └──────────────────────────────────────────────────────────────
@@ -2667,7 +2667,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
     # ----- Session/Task Queries (for gateway integration) -----
 
     # ┌── 函数 def _any_running()
-    # │  作用：True if any still-running session satisfies *predicate*, after refreshing
+    # │  作用：True 若任意仍-运行会话 satisfies *predicate*, 在…之后 refreshing
     # │  参数：self, predicate
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2683,7 +2683,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return any(not s.exited and predicate(s) for s in self._running.values())
 
     # ┌── 函数 def has_active_processes()
-    # │  作用：Whether any process for ``task_id`` is still running.
+    # │  作用：是否 任意进程用于 ``task_id`` 是仍 运行.。
     # │  参数：self, task_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2693,7 +2693,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return self._any_running(lambda s: s.task_id == task_id)
 
     # ┌── 函数 def running_owned_by()
-    # │  作用：Running processes whose RAW spawning owner is ``owner_task_id``.
+    # │  作用：运行进程 whose RAW spawning owner 是 ``owner_task_id``.
     # │  参数：self, owner_task_id: str
     # │  返回：List[ProcessSession]
     # └──────────────────────────────────────────────────────────────
@@ -2704,7 +2704,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return [s for s in self._running.values() if s.owner_task_id == owner_task_id and not s.exited]
 
     # ┌── 函数 def unread_completions_owned_by()
-    # │  作用：Exited ``notify_on_complete`` processes of ``owner_task_id`` whose result nobody read (no wait/log/poll).
+    # │  作用：Exited ``notify_on_complete`` 进程的 ``owner_task_id`` whose 结果 nobody 读取 (无 wait/日志/poll).
     # │  参数：self, owner_task_id: str
     # │  返回：List[ProcessSession]
     # └──────────────────────────────────────────────────────────────
@@ -2718,7 +2718,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
                     and s.id not in self._completion_consumed and s.id not in self._poll_observed]
 
     # ┌── 函数 def transfer_ownership()
-    # │  作用：Move a RUNNING process from one owner to another under the registry lock. Ownership is the ``owner_task_id``
+    # │  作用：Move 运行进程从 one owner another under registry 锁. Ownership 是 ``owner_task_id``
     # │  参数：self, session_id: str, from_owner: str, to_owner: str, to_task_id: str, to_session_key: str, note: str = ...
     # │  返回：Optional[ProcessSession]
     # └──────────────────────────────────────────────────────────────
@@ -2741,7 +2741,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return session
 
     # ┌── 函数 def has_active_for_session()
-    # │  作用：Active processes for a gateway session key. Processes older than
+    # │  作用：Active 进程用于 gateway 会话键. 进程 older 比
     # │  参数：self, session_key: str, max_active_age: Optional[float] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2757,7 +2757,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             and (max_active_age is None or (now - s.started_at) < max_active_age))
 
     # ┌── 函数 def has_any_active()
-    # │  作用：Whether ANY background process is running — scale-to-zero must not
+    # │  作用：是否 任意 background 进程是 运行 — scale--zero 必须不。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2768,7 +2768,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return self._any_running(lambda s: True)
 
     # ┌── 函数 def snapshot_running_ids()
-    # │  作用：Running IDs owned by ``task_id`` — a turn-boundary marker: on timeout
+    # │  作用：运行 IDs 持有的由 ``task_id`` — 轮次-boundary marker: 在…上超时
     # │  参数：self, task_id: str
     # │  返回：frozenset[str]
     # └──────────────────────────────────────────────────────────────
@@ -2781,7 +2781,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
             return frozenset(s.id for s in self._running.values() if s.task_id == task_id and not s.exited)
 
     # ┌── 函数 def kill_started_since()
-    # │  作用：Kill ``task_id`` processes created after ``baseline_ids``. Output is
+    # │  作用：Kill ``task_id`` 进程已创建在…之后 ``baseline_ids``. 输出是
     # │  参数：self, task_id: str, baseline_ids, source: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2793,7 +2793,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
         return self.kill_all(task_id, exclude_ids=frozenset(baseline_ids or ()), source=source, consume_output=True)
 
     # ┌── 函数 def kill_all()
-    # │  作用：Kill all running processes, optionally filtered by task_id. Returns count killed.
+    # │  作用：Kill 全部运行进程, optionally filtered 由 task_id. 返回 count killed.
     # │  参数：self, task_id: Optional[str] = None, exclude_ids: frozenset = ..., source: str = ..., consume_output: bool = ...
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2815,7 +2815,7 @@ class ProcessRegistry(ProcessCheckpointMixin):
     # ----- Cleanup / Pruning -----
 
     # ┌── 函数 def _prune_if_needed()
-    # │  作用：Drop expired finished sessions, then the oldest survivor while over
+    # │  作用：丢弃 expired finished 会话, 然后 oldest survivor 当 over
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -2904,7 +2904,7 @@ PROCESS_SCHEMA = {
 
 
 # ┌── 函数 def _redact_process_result()
-# │  作用：Redact secrets from background-process output before it reaches the model,
+# │  作用：Redact secrets 从 background-进程输出在…之前它 reaches 模型,
 # │  参数：result: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -2965,7 +2965,7 @@ _SESSION_ACTIONS = {
 
 
 # ┌── 函数 def _handoff_process()
-# │  作用：Subagent-only: transfer a running background process to the parent agent so its completion is delivered THERE
+# │  作用：Subagent-仅: transfer 运行 background 进程 parent Agent 从而其 completion 是 delivered 那里
 # │  参数：session_id: str, args: dict, task_id: Optional[str]
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────

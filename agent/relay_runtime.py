@@ -62,7 +62,7 @@ _SCOPE_OP_TIMEOUT = 10.0
 
 
 # ┌── 类 class _Lazy
-# │  说明：Double-checked, thread-safe once-only factory; ``reset()`` re-arms it (tests).
+# │  说明：Double-已检查, 线程-safe 一旦-仅 factory; ``reset()`` re-arms 它 (测试).
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _Lazy:
@@ -116,7 +116,7 @@ _scope_op_executor = _SCOPE_OP_EXECUTOR.get
 
 
 # ┌── 函数 def runtime_metadata()
-# │  作用：Return the scope metadata that stamps every Hermes-owned Relay scope.
+# │  作用：返回 scope metadata 那个 stamps 每个 Hermes-持有的 Relay scope.。
 # │  参数：runtime_id: str, **extra
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ def runtime_metadata(runtime_id: str, **extra: Any) -> dict[str, Any]:
 
 
 # ┌── 函数 def _run_on_daemon_thread()
-# │  作用：Run ``fn`` on a fresh daemon thread; re-raise its error or return its result.
+# │  作用：运行 ``fn`` 在…上 fresh daemon 线程; re-抛出其 错误或 返回其 结果.
 # │  参数：fn: Callable[[], Any], name: str, timeout: float | None = ..., timeout_message: str = ...
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ def _run_on_daemon_thread(
 
 
 # ┌── 函数 def pop_relay_scope()
-# │  作用：Pop a Relay scope, forwarding only the kwargs the live binding accepts.
+# │  作用：Pop Relay scope, forwarding 仅 kwargs 当前活跃的 binding 接受.
 # │  参数：relay: Any, handle: Any, output: Any = ..., metadata: Any = ..., timestamp: Any = ...
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ def pop_relay_scope(relay: Any, handle: Any, *, output: Any = None, metadata: An
 
 
 # ┌── 函数 def _current_top()
-# │  作用：Return the current top-of-stack scope handle, or None.
+# │  作用：返回 current top-的-stack scope handle, 或 None.。
 # │  参数：relay: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -218,7 +218,7 @@ _RelayPluginConfigurationState = Enum("_RelayPluginConfigurationState", "UNINITI
 
 
 # ┌── 类 class _RelayPluginConfigurationLoadError（继承自：RuntimeError）
-# │  说明：An explicitly selected Relay plugin configuration could not be loaded.
+# │  说明：explicitly selected Relay plugin configuration 可以不 是已加载.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _RelayPluginConfigurationLoadError(RuntimeError):
@@ -226,7 +226,7 @@ class _RelayPluginConfigurationLoadError(RuntimeError):
 
 
 # ┌── 类 class RelaySession
-# │  说明：One isolated Relay scope stack owned by a Hermes session.
+# │  说明：One isolated Relay scope stack 持有的由 Hermes 会话.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -248,7 +248,7 @@ class RelaySession:
 
 
 # ┌── 函数 def _load_segments_config()
-# │  作用：gateway.telemetry.session_segments; both defaults OFF => rotation never fires.
+# │  作用：gateway.telemetry.session_segments; both 默认值 OFF => rotation never fires.
 # │  参数：无
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -279,7 +279,7 @@ _reset_segments_config_for_tests = _SEGMENTS_CONFIG.reset
 
 
 # ┌── 类 class RelayOperationLease
-# │  说明：Keep process-wide Relay plugins alive across a deferred operation.
+# │  说明：保留进程-wide Relay plugins alive across deferred operation.
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class RelayOperationLease:
@@ -294,7 +294,7 @@ class RelayOperationLease:
         self._lock, self._runtime = threading.Lock(), runtime
 
     # ┌── 函数 def run_in_session()
-    # │  作用：Run cleanup while this lease still owns the runtime lifetime.
+    # │  作用：运行 cleanup 当这个 lease 仍持有运行时 lifetime.
     # │  参数：self, session: RelaySession, callback: Callable[..., Any], *args, **kwargs
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -308,7 +308,7 @@ class RelayOperationLease:
             return self._runtime._run_in_session_untracked(session, callback, *args, **kwargs)
 
     # ┌── 函数 def release()
-    # │  作用：Release this lease exactly once.
+    # │  作用：Release 这个 lease exactly 一旦.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -321,7 +321,7 @@ class RelayOperationLease:
 
 
 # ┌── 类 class _ProcessRelayPluginConfiguration
-# │  说明：Own one Relay plugin configuration across profile-scoped hosts.
+# │  说明：持有 one Relay plugin configuration across 配置档-scoped 宿主.
 # │  成员：共 9 个方法；对外可用 4 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _ProcessRelayPluginConfiguration:
@@ -340,7 +340,7 @@ class _ProcessRelayPluginConfiguration:
         self._activation: Any = None
 
     # ┌── 函数 def acquire()
-    # │  作用：Join the process configuration, initializing it for the first host.
+    # │  作用：拼接进程 configuration, initializing 它用于 first 宿主.
     # │  参数：self, owner: Any, relay: Any
     # │  返回：_RelayPluginConfigurationState
     # └──────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ class _ProcessRelayPluginConfiguration:
         return _RelayPluginConfigurationState.ACTIVE
 
     # ┌── 函数 def _preflight()
-    # │  作用：Return a terminal state when the process cannot take ownership; None to proceed.
+    # │  作用：当 进程无法 take ownership; None proceed. 时返回 终端状态。
     # │  参数：self, relay: Any
     # │  返回：_RelayPluginConfigurationState | None
     # └──────────────────────────────────────────────────────────────
@@ -412,7 +412,7 @@ class _ProcessRelayPluginConfiguration:
         return None
 
     # ┌── 函数 def _initialize()
-    # │  作用：Initialize Relay from the selected plugins.toml; False when none is selected.
+    # │  作用：Initialize Relay 从 selected plugins.toml; False 当 None 是 selected.
     # │  参数：self, relay: Any
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -443,7 +443,7 @@ class _ProcessRelayPluginConfiguration:
         return True
 
     # ┌── 函数 def release()
-    # │  作用：Release one host and clear Relay after the final host exits.
+    # │  作用：Release one 宿主且 清除 Relay 在…之后 final 宿主 exits.
     # │  参数：self, owner: Any
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -455,7 +455,7 @@ class _ProcessRelayPluginConfiguration:
                 self.retry_pending_cleanup()
 
     # ┌── 函数 def reset_for_tests()
-    # │  作用：Clear process-global state left by directly constructed test hosts.
+    # │  作用：清除进程-global 状态 left 由 directly constructed 测试宿主.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -466,7 +466,7 @@ class _ProcessRelayPluginConfiguration:
             self.retry_pending_cleanup()
 
     # ┌── 函数 def retry_pending_cleanup()
-    # │  作用：Retry a failed final cleanup without disrupting live owners.
+    # │  作用：重试 failed final cleanup 不 disrupting 当前活跃的 owners.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -517,7 +517,7 @@ atexit.register(_PLUGIN_CONFIGURATION.retry_pending_cleanup)
 
 
 # ┌── 类 class RelayRuntime
-# │  说明：Own Relay session scopes and optional process plugin configuration.
+# │  说明：持有 Relay 会话 scopes 且 optional 进程 plugin configuration.
 # │  成员：共 28 个方法；对外可用 14 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class RelayRuntime:
@@ -558,7 +558,7 @@ class RelayRuntime:
         return self._plugin_configuration_state is _RelayPluginConfigurationState.ACTIVE
 
     # ┌── 函数 def retain_managed_execution()
-    # │  作用：Keep managed LLM and tool execution active for one consumer.
+    # │  作用：保留 managed LLM 且工具 execution active 用于 one consumer.
     # │  参数：self, consumer: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -571,7 +571,7 @@ class RelayRuntime:
             self._execution_consumers.add(consumer)
 
     # ┌── 函数 def release_managed_execution()
-    # │  作用：Release a consumer's managed-execution requirement.
+    # │  作用：释放消费者侧的「受管执行」要求。
     # │  参数：self, consumer: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -581,7 +581,7 @@ class RelayRuntime:
             self._execution_consumers.discard(consumer)
 
     # ┌── 函数 def managed_execution_enabled()
-    # │  作用：Return whether a Hermes-managed consumer needs the Relay pipeline.
+    # │  作用：返回 是否 Hermes-managed consumer needs Relay pipeline.。。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -592,7 +592,7 @@ class RelayRuntime:
             return bool(self._execution_consumers)
 
     # ┌── 函数 def _open_session_scope()
-    # │  作用：Push a fresh SESSION_SCOPE for ``session`` (bounded by ``_SCOPE_OP_TIMEOUT``); record handle + context.
+    # │  作用：Push fresh SESSION_SCOPE 用于 ``会话`` (bounded 由 ``_SCOPE_OP_TIMEOUT``); record handle + 上下文.
     # │  参数：self, session: RelaySession, scope_metadata: dict[str, Any], resolve_parent: bool, exit_fallback: bool = ..., **push_kwargs
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -627,7 +627,7 @@ class RelayRuntime:
         session.context = context
 
     # ┌── 函数 def ensure_session()
-    # │  作用：Return the existing session scope or create it once.
+    # │  作用：返回 existing 会话 scope 或创建它 一旦.。
     # │  参数：self, event: dict[str, Any], data: Any = ..., metadata: dict[str, Any] | None = ...
     # │  返回：RelaySession | None
     # └──────────────────────────────────────────────────────────────
@@ -661,7 +661,7 @@ class RelayRuntime:
         return session
 
     # ┌── 函数 def rotate_session_scope()
-    # │  作用：Close the current session scope and open the next segment (turn boundary ONLY: LIFO).
+    # │  作用：关闭 current 会话 scope 且打开 next segment (轮次 boundary 仅: LIFO).
     # │  参数：self, session: RelaySession, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -700,7 +700,7 @@ class RelayRuntime:
                 )
 
     # ┌── 函数 def register_subagent()
-    # │  作用：Open a child Agent scope under its spawning turn when available.
+    # │  作用：打开 child Agent scope under 其 spawning 轮次当 available.
     # │  参数：self, event: dict[str, Any], metadata: dict[str, Any] | None = ...
     # │  返回：RelaySession | None
     # └──────────────────────────────────────────────────────────────
@@ -729,7 +729,7 @@ class RelayRuntime:
         return self.ensure_session({"session_id": child_session_id}, metadata=metadata)
 
     # ┌── 函数 def unregister_subagent()
-    # │  作用：Close a delegated session and forget its parent relationship.
+    # │  作用：关闭 delegated 会话且 forget 其 parent relationship.
     # │  参数：self, event: dict[str, Any]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -751,7 +751,7 @@ class RelayRuntime:
             self._subagent_parent_handles.pop(session_id, None)
 
     # ┌── 函数 def _lookup()
-    # │  作用：Registry lookup (closing sessions included) without creating one.
+    # │  作用：Registry lookup (关闭会话 included) 不创建 one.
     # │  参数：self, session_id: str
     # │  返回：RelaySession | None
     # └──────────────────────────────────────────────────────────────
@@ -762,7 +762,7 @@ class RelayRuntime:
             return self._sessions.get(session_id)
 
     # ┌── 函数 def get_session()
-    # │  作用：Return an active Hermes Relay session without creating one.
+    # │  作用：返回 active Hermes Relay 会话不 创建 one.。
     # │  参数：self, session_id: str
     # │  返回：RelaySession | None
     # └──────────────────────────────────────────────────────────────
@@ -778,7 +778,7 @@ class RelayRuntime:
             return None if session.closing else session
 
     # ┌── 函数 def _session_context()
-    # │  作用：Copy the current context and overlay the session's saved Relay vars (a copy: re-entrant from callbacks).
+    # │  作用：复制 current 上下文且 叠加会话's saved Relay vars ( 复制: 可重入的从 回调).
     # │  参数：self, session: RelaySession, allow_closing: bool
     # │  返回：contextvars.Context
     # └──────────────────────────────────────────────────────────────
@@ -799,7 +799,7 @@ class RelayRuntime:
         return context
 
     # ┌── 函数 def run_in_session()
-    # │  作用：Run a Relay operation against a session's isolated scope stack.
+    # │  作用：运行 Relay operation against 会话's isolated scope stack.
     # │  参数：self, session: RelaySession, callback: Callable[..., Any], *args, allow_closing: bool = ..., timeout: float | None = ..., **kwargs
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -817,7 +817,7 @@ class RelayRuntime:
             )
 
     # ┌── 函数 def _run_in_session_untracked()
-    # │  作用：Run inside a session whose host-level lifetime is already held.
+    # │  作用：运行 inside 会话 whose 宿主-级别 lifetime 是已 held.
     # │  参数：self, session: RelaySession, callback: Callable[..., Any], *args, allow_closing: bool = ..., timeout: float | None = ..., **kwargs
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -860,7 +860,7 @@ class RelayRuntime:
             ) from exc
 
     # ┌── 异步函数（协程） def run_in_session_async()
-    # │  作用：Create and await an operation inside the session's saved context.
+    # │  作用：创建且 await operation inside 会话's saved 上下文.
     # │  参数：self, session: RelaySession, callback: Callable[..., Any], *args, allow_closing: bool = ..., **kwargs
     # │  返回：Any
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -885,7 +885,7 @@ class RelayRuntime:
             return await context.run(asyncio.create_task, invoke())
 
     # ┌── 函数 def _begin_operation()
-    # │  作用：Admit one Relay call while keeping process plugins alive.
+    # │  作用：Admit one Relay call 当保留进程 plugins alive.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -910,7 +910,7 @@ class RelayRuntime:
                 self._operations_idle.set()
 
     # ┌── 函数 def _operation()
-    # │  作用：``_begin_operation`` / ``_end_operation`` around one tracked Relay call.
+    # │  作用：在一次被追踪的 Relay 调用外层包裹 ``_begin_operation`` / ``_end_operation``。
     # │  参数：self
     # │  返回：（未标注类型）
     # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -927,7 +927,7 @@ class RelayRuntime:
             self._end_operation()
 
     # ┌── 函数 def acquire_operation_lease()
-    # │  作用：Retain plugin lifetime for work that outlives one Relay await.
+    # │  作用：Retain plugin lifetime 用于 work 那个 outlives one Relay await.
     # │  参数：self
     # │  返回：RelayOperationLease
     # └──────────────────────────────────────────────────────────────
@@ -938,7 +938,7 @@ class RelayRuntime:
         return RelayOperationLease(self)
 
     # ┌── 函数 def apply_tool_request_intercepts()
-    # │  作用：Apply Relay request rewriting before Hermes authorizes a tool call.
+    # │  作用：Apply Relay 请求 rewriting 在…之前 Hermes authorizes 工具 call.
     # │  参数：self, session_id: str, tool_name: str, args: dict[str, Any]
     # │  返回：dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -955,7 +955,7 @@ class RelayRuntime:
         return result if isinstance(result, dict) else args
 
     # ┌── 函数 def _pop_with_drain()
-    # │  作用：Pop ``handle``; if that fails, drain orphans above it and retry once; return the retry's error.
+    # │  作用：Pop ``handle``; 若那个 fails, drain orphans above 它且 重试一旦; 返回重试's 错误.
     # │  参数：self, handle: Any, output: dict[str, Any], metadata: dict[str, Any], session_root: Any, drain_limit: int
     # │  返回：BaseException | None
     # └──────────────────────────────────────────────────────────────
@@ -996,7 +996,7 @@ class RelayRuntime:
             return retry_exc
 
     # ┌── 函数 def _close_scope_handle()
-    # │  作用：Pop ``handle``, draining orphaned children in the same session context; failure string or None.
+    # │  作用：Pop ``handle``, draining orphaned children 在 same 会话上下文; failure 字符串或 None.
     # │  参数：self, session: RelaySession, handle: Any, output: dict[str, Any] | None = ..., allow_closing: bool = ..., failure_label: str = ..., drain_limit: int = ..., operation_already_held: bool = ...
     # │  返回：str | None
     # └──────────────────────────────────────────────────────────────
@@ -1024,7 +1024,7 @@ class RelayRuntime:
         return None if failure is None else f"{failure_label}: {failure}"
 
     # ┌── 函数 def close_session()
-    # │  作用：Close one session scope and remove it from the core registry (no-op once shutting down).
+    # │  作用：关闭 one 会话 scope 且移除它 从 core registry (无-op 一旦 shutting down).
     # │  参数：self, event: dict[str, Any]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1034,7 +1034,7 @@ class RelayRuntime:
             self._close_session(event)
 
     # ┌── 函数 def _close_session()
-    # │  作用：Close one session already admitted by the host lifecycle gate.
+    # │  作用：关闭 one 会话已 admitted 由宿主 lifecycle gate.
     # │  参数：self, event: dict[str, Any]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1065,7 +1065,7 @@ class RelayRuntime:
             logger.warning("Hermes Relay session %s closed with errors: %s", session_id, failure)
 
     # ┌── 函数 def shutdown()
-    # │  作用：Close core scopes and release process plugin configuration.
+    # │  作用：关闭 core scopes 且 release 进程 plugin configuration.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1120,7 +1120,7 @@ class RelayRuntime:
 
 
 # ┌── 类 class NoopRelayRuntime
-# │  说明：Explicit reduced-capability host for platforms without Relay wheels.
+# │  说明：Explicit reduced-capability 宿主用于平台不 Relay wheels.
 # │  成员：共 2 个方法；对外可用 2 个
 # └──────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -1158,7 +1158,7 @@ RelayHost = RelayRuntime | NoopRelayRuntime
 
 
 # ┌── 类 class RelayHostRegistry
-# │  说明：Own exactly one Relay host for each canonical Hermes profile.
+# │  说明：持有 exactly one Relay 宿主用于每个 canonical Hermes 配置档.
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class RelayHostRegistry:
@@ -1211,7 +1211,7 @@ HOST_REGISTRY = RelayHostRegistry()
 
 
 # ┌── 类 class ConversationLease
-# │  说明：A resumable reference to one profile-scoped conversation scope.
+# │  说明：resumable reference one 配置档-scoped conversation scope.
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1227,7 +1227,7 @@ class ConversationLease:
     released: bool = False
 
     # ┌── 函数 def live_runtime()
-    # │  作用：Return the real Relay host when this lease owns an open session.
+    # │  作用：当 这个 lease 持有打开会话. 时返回 real Relay 宿主。
     # │  参数：self
     # │  返回：RelayRuntime | None
     # └──────────────────────────────────────────────────────────────
@@ -1238,7 +1238,7 @@ class ConversationLease:
 
 
 # ┌── 类 class RelayTurnContext
-# │  说明：Runtime-only context for one Hermes turn or top-level task.
+# │  说明：运行时-仅上下文用于 one Hermes 轮次或 top-级别 task.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1272,7 +1272,7 @@ _MANAGED_CALLBACK_DEPTH: contextvars.ContextVar[int] = contextvars.ContextVar(
 
 
 # ┌── 函数 def managed_callback_guard()
-# │  作用：Mark the current context as inside a managed Relay callback: everything the wrapped ``invoke()``
+# │  作用：Mark current 上下文作为 inside managed Relay 回调: everything wrapped ``invoke()``
 # │  参数：无
 # │  返回：（未标注类型）
 # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -1291,7 +1291,7 @@ def managed_callback_guard():
 
 
 # ┌── 函数 def _warn_on_error()
-# │  作用：Run fail-open telemetry work: log ``Hermes Relay <what> failed`` and return None on error.
+# │  作用：运行 fail-打开 telemetry work: 日志 ``Hermes Relay <什么> failed`` 且返回 None 在…上错误.
 # │  参数：what: str, callback: Callable[..., Any], *args, **kwargs
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1308,7 +1308,7 @@ def _warn_on_error(what: str, callback: Callable[..., Any], *args: Any, **kwargs
 
 
 # ┌── 函数 def _fail_open()
-# │  作用：Decorator form of ``_warn_on_error`` for telemetry hooks that must never block the caller.
+# │  作用：Decorator 形态的 ``_warn_on_error`` 用于 telemetry hooks 那个必须 never block caller.
 # │  参数：what: str
 # │  返回：Callable[[Callable[..., Any]], Callable[..., Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1326,7 +1326,7 @@ def _fail_open(what: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
 
 
 # ┌── 函数 def _flag_open_session()
-# │  作用：Set a pending-rotation/close flag unless the session is already closing.
+# │  作用：设置 pending-rotation/关闭标志 unless 会话是 已关闭.
 # │  参数：session: RelaySession, flag: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1338,7 +1338,7 @@ def _flag_open_session(session: RelaySession, flag: str) -> None:
 
 
 # ┌── 类 class RelaySessionCoordinator
-# │  说明：Own semantic conversation and turn lifetimes for Hermes core.
+# │  说明：持有 semantic conversation 且轮次 lifetimes 用于 Hermes core.
 # │  成员：共 18 个方法；对外可用 9 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class RelaySessionCoordinator:
@@ -1357,7 +1357,7 @@ class RelaySessionCoordinator:
         self._active_turns: dict[tuple[str, str], set[int]] = {}
 
     # ┌── 函数 def register_session_initializer()
-    # │  作用：Register idempotent profile/session preparation before scope creation.
+    # │  作用：Register idempotent 配置档/会话 preparation 在…之前 scope creation.
     # │  参数：self, name: str, callback: Callable[[RelayRuntime, dict[str, Any]], None]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1471,7 +1471,7 @@ class RelaySessionCoordinator:
         return turn
 
     # ┌── 函数 def _maybe_rotate_segment()
-    # │  作用：Rotate the session scope when compaction flagged it or the turn cap is hit.
+    # │  作用：Rotate 会话 scope 当压缩 flagged 它或 轮次 cap 是 hit.
     # │  参数：host: RelayRuntime, session: RelaySession
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1521,7 +1521,7 @@ class RelaySessionCoordinator:
                 self._consume_deferred_close(lease)
 
     # ┌── 函数 def _close_turn_scope()
-    # │  作用：Pop the turn's logical LLM children, then the turn scope itself (LIFO).
+    # │  作用：Pop 轮次's logical LLM children, 然后轮次 scope itself (LIFO).
     # │  参数：self, host: RelayRuntime, turn: RelayTurnContext, outcome: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1535,7 +1535,7 @@ class RelaySessionCoordinator:
             logger.warning("Hermes Relay turn finalization failed: %s", failure)
 
     # ┌── 函数 def _consume_deferred_close()
-    # │  作用：Close a session whose rotating-compaction close was deferred (``close_pending``).
+    # │  作用：关闭会话 whose rotating-压缩关闭是 deferred (``close_pending``).
     # │  参数：self, lease: ConversationLease
     # │  返回：None
     # │  【语法】带 @_fail_open 装饰器：调用本函数时，等价于 _consume_deferred_close = _fail_open(_consume_deferred_close)，即先经过一层包装。
@@ -1553,7 +1553,7 @@ class RelaySessionCoordinator:
             host.close_session({"session_id": lease.session_id})
 
     # ┌── 函数 def notify_session_compacted()
-    # │  作用：React to a completed compaction, per compaction mode; unknown sessions / disabled config are no-ops.
+    # │  作用：React completed 压缩, per 压缩模式; unknown 会话 / disabled 配置是 无-ops.
     # │  参数：self, profile_key: str, session_id: str, old_session_id: str = ...
     # │  返回：None
     # │  【语法】带 @_fail_open 装饰器：调用本函数时，等价于 notify_session_compacted = _fail_open(notify_session_compacted)，即先经过一层包装。
@@ -1582,7 +1582,7 @@ class RelaySessionCoordinator:
             _flag_open_session(session, "rotate_pending")
 
     # ┌── 函数 def has_active_turn()
-    # │  作用：Return whether a turn is still running for one profile/session.
+    # │  作用：返回 是否 轮次是 仍运行用于 one 配置档/会话.。。
     # │  参数：self, profile_key: str, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1610,7 +1610,7 @@ class RelaySessionCoordinator:
             turn._active_registered = False
 
     # ┌── 函数 def finish_logical_calls()
-    # │  作用：Close logical LLM children before sibling task aggregation scopes.
+    # │  作用：关闭 logical LLM children 在…之前 sibling task aggregation scopes.
     # │  参数：self, turn: RelayTurnContext, outcome: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1652,7 +1652,7 @@ class RelaySessionCoordinator:
             break
 
     # ┌── 函数 def _reset_turn_context()
-    # │  作用：Unwind ``turn`` without disturbing a newer context-local turn.
+    # │  作用：Unwind ``轮次`` 不 disturbing newer 上下文-local 轮次.
     # │  参数：turn: RelayTurnContext
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1671,7 +1671,7 @@ class RelaySessionCoordinator:
         _CURRENT_TURN.set(previous)
 
     # ┌── 函数 def release_conversation()
-    # │  作用：Release a caller lease without closing a resumable conversation.
+    # │  作用：Release caller lease 不关闭 resumable conversation.
     # │  参数：lease: ConversationLease
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1696,7 +1696,7 @@ SESSION_COORDINATOR = RelaySessionCoordinator()
 
 
 # ┌── 函数 def current_turn()
-# │  作用：Return the turn context inherited by current async and thread work.
+# │  作用：返回 轮次上下文 inherited 由 current 异步且 线程 work.。
 # │  参数：无
 # │  返回：RelayTurnContext | None
 # └──────────────────────────────────────────────────────────────
@@ -1707,7 +1707,7 @@ def current_turn() -> RelayTurnContext | None:
 
 
 # ┌── 函数 def relay_instrumentation_enabled()
-# │  作用：Return whether this inherited turn may create Relay instrumentation.
+# │  作用：返回 是否 这个 inherited 轮次可以创建 Relay instrumentation.。。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1719,7 +1719,7 @@ def relay_instrumentation_enabled() -> bool:
 
 
 # ┌── 函数 def active_turn()
-# │  作用：Return a live turn only when it belongs to the active profile/session.
+# │  作用：当 它 belongs active 配置档/会话. 时返回 当前活跃的轮次仅。
 # │  参数：session_id: str | None = None
 # │  返回：RelayTurnContext | None
 # └──────────────────────────────────────────────────────────────
@@ -1743,7 +1743,7 @@ def active_turn(session_id: str | None = None) -> RelayTurnContext | None:
 
 
 # ┌── 函数 def resolve_execution_context()
-# │  作用：Resolve one active turn/session parent for managed Relay execution.
+# │  作用：Resolve one 活跃轮次/会话 parent 用于 managed Relay execution.
 # │  参数：session_id: str
 # │  返回：tuple[RelayRuntime | None, RelaySession | None, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1779,7 +1779,7 @@ def resolve_execution_context(session_id: str) -> tuple[RelayRuntime | None, Rel
 
 
 # ┌── 函数 def apply_tool_request_intercepts()
-# │  作用：Return Relay-rewritten arguments at Hermes's authorization boundary.
+# │  作用：返回 Relay-rewritten 参数在 Hermes's authorization boundary.。
 # │  参数：session_id: str, tool_name: str, args: dict[str, Any]
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1794,7 +1794,7 @@ def apply_tool_request_intercepts(*, session_id: str, tool_name: str, args: dict
 
 
 # ┌── 函数 def _is_relay_wrapped_callback_error()
-# │  作用：Match Relay's native callback wrapper without masking policy errors.
+# │  作用：Match Relay's native 回调包装器不 masking 策略错误.
 # │  参数：relay_error: BaseException, callback_error: BaseException
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1813,7 +1813,7 @@ def _is_relay_wrapped_callback_error(relay_error: BaseException, callback_error:
 
 
 # ┌── 函数 def get_runtime()
-# │  作用：Return the Relay host for the active Hermes profile.
+# │  作用：返回 Relay 宿主用于 active Hermes 配置档.。
 # │  参数：create: bool = ..., profile_key: str | None = ...
 # │  返回：RelayRuntime | None
 # └──────────────────────────────────────────────────────────────
@@ -1825,7 +1825,7 @@ def get_runtime(*, create: bool = True, profile_key: str | None = None) -> Relay
 
 
 # ┌── 函数 def current_profile_key()
-# │  作用：Return the canonical profile identity used for runtime isolation.
+# │  作用：返回 canonical 配置档身份 used 用于运行时 isolation.。
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1840,7 +1840,7 @@ def current_profile_key() -> str:
 
 
 # ┌── 函数 def _load_nemo_relay()
-# │  作用：Load the binding only when a producer or consumer needs Relay.
+# │  作用：加载 binding 仅当 producer 或 consumer needs Relay.
 # │  参数：无
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1851,7 +1851,7 @@ def _load_nemo_relay() -> Any:
 
 
 # ┌── 函数 def _configured_plugin_inputs()
-# │  作用：Load selected plugin inputs, or return ``None`` when none were selected.
+# │  作用：加载 selected plugin 输入, 或返回 ``None`` 当 None 是 selected.
 # │  参数：relay: Any
 # │  返回：tuple[dict[str, Any], list[Any]] | None
 # └──────────────────────────────────────────────────────────────
@@ -1886,7 +1886,7 @@ def _configured_plugin_inputs(relay: Any) -> tuple[dict[str, Any], list[Any]] | 
 
 
 # ┌── 函数 def _resolve_plugin_awaitable()
-# │  作用：Resolve Relay's async plugin API from synchronous host construction.
+# │  作用：Resolve Relay's 异步 plugin API 从 synchronous 宿主 construction.
 # │  参数：value: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1918,7 +1918,7 @@ def _session_id(event: dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _reset_for_tests()
-# │  作用：Reset all profile-scoped Relay hosts for isolated tests.
+# │  作用：Reset 全部配置档-scoped Relay 宿主用于 isolated 测试.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1938,7 +1938,7 @@ def _reset_for_tests() -> None:
 from enum import auto  # noqa: F401,E402
 
 # ┌── 函数 def emit_mark()
-# │  作用：Emit a fail-open Relay mark under a Hermes session.
+# │  作用：Emit fail-打开 Relay mark under Hermes 会话.
 # │  参数：name: str, session_id: str, data: Any = ..., metadata: Any = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1969,7 +1969,7 @@ def emit_mark(
         return False
 
 # ┌── 函数 def ensure_session()
-# │  作用：Create or return the shared Relay session used by Hermes core.
+# │  作用：创建或 返回 shared Relay 会话 used 由 Hermes core.
 # │  参数：session_id: str, **context
 # │  返回：RelaySession | None
 # └──────────────────────────────────────────────────────────────
@@ -1989,7 +1989,7 @@ def ensure_session(*, session_id: str, **context: Any) -> RelaySession | None:
         return None
 
 # ┌── 函数 def get_host()
-# │  作用：Return the explicit real or reduced-capability host for a profile.
+# │  作用：返回 explicit real 或 reduced-capability 宿主用于配置档.。
 # │  参数：create: bool = ..., profile_key: str | None = ...
 # │  返回：RelayHost | None
 # └──────────────────────────────────────────────────────────────
@@ -2003,7 +2003,7 @@ def get_host(
     return HOST_REGISTRY.for_profile(profile_key, create=create)
 
 # ┌── 函数 def get_session_handle()
-# │  作用：Return the shared Relay handle for direct core instrumentation.
+# │  作用：返回 shared Relay handle 用于 direct core instrumentation.。
 # │  参数：session_id: str
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -2014,7 +2014,7 @@ def get_session_handle(session_id: str) -> Any:
     return None if runtime is None else runtime.get_session_handle(session_id)
 
 # ┌── 函数 def run_in_session()
-# │  作用：Run a scope, LLM, or tool API against a shared Hermes session.
+# │  作用：运行 scope, LLM, 或工具 API against shared Hermes 会话.
 # │  参数：session_id: str, callback: Callable[..., Any], *args, **kwargs
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -2039,7 +2039,7 @@ def run_in_session(
     return runtime.run_in_session(session, callback, *args, **kwargs)
 
 # ┌── 异步函数（协程） def run_in_session_async()
-# │  作用：Await a Relay operation inside a shared Hermes session context.
+# │  作用：Await Relay operation inside shared Hermes 会话上下文.
 # │  参数：session_id: str, callback: Callable[..., Any], *args, **kwargs
 # │  返回：Any
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。

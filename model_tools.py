@@ -57,7 +57,7 @@ _post_tool_call_hook_suppressed: ContextVar[bool] = ContextVar("post_tool_call_h
 
 
 # ┌── 函数 def suppress_post_tool_call_hook()
-# │  作用：Let an outer executor own the terminal post-tool event.
+# │  作用：让外层执行器来负责「工具执行后」的终局事件。
 # │  参数：无
 # │  返回：（未标注类型）
 # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -94,7 +94,7 @@ def _is_delegated_child_context() -> bool:
 
 
 # ┌── 函数 def _is_dispatcher_owned_worker()
-# │  作用：False when HERMES_KANBAN_* is present but this execution does not own it
+# │  作用：当存在 HERMES_KANBAN_* 但本次执行并不持有它时返回 False……
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ _worker_thread_local = threading.local()  # per-worker-thread persistent loops
 
 
 # ┌── 函数 def _get_tool_loop()
-# │  作用：Long-lived event loop for async tool handlers on the main thread.
+# │  作用：主线程上供异步工具处理器使用的长生命周期事件循环。
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ def _get_tool_loop():
 
 
 # ┌── 函数 def _get_worker_loop()
-# │  作用：Persistent event loop for the current worker thread (thread-local).
+# │  作用：当前工作线程的持久化事件循环（线程局部）。
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -154,7 +154,7 @@ def _get_worker_loop():
 
 
 # ┌── 函数 def _run_async()
-# │  作用：Run a coroutine from sync code; safe under a running loop (gateway/RL env).
+# │  作用：从同步代码里运行一个协程；在已有事件循环运行时也安全（网关/强化学习环境）。
 # │  参数：coro
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -280,7 +280,7 @@ _TOOL_DEFS_CACHE_MAX = 8
 
 
 # ┌── 函数 def _clear_tool_defs_cache()
-# │  作用：Drop memoized results when a dynamic-schema dependency changes (discord caps, sandbox mode).
+# │  作用：当某个动态结构的依赖发生变化时（Discord 上限、沙箱模式），丢弃已记忆化的结果。
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ def _clear_tool_defs_cache() -> None:
 
 
 # ┌── 函数 def get_tool_definitions()
-# │  作用：Tool definitions for model API calls, filtered by toolset.
+# │  作用：供模型 API 调用使用的工具定义，已按工具集过滤。
 # │  参数：enabled_toolsets: Optional[List[str]] = None, disabled_toolsets: Optional[List[str]] = None, quiet_mode: bool = False, skip_tool_search_assembly: bool = False
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -343,7 +343,7 @@ def get_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disabled_
 
 
 # ┌── 函数 def _tool_defs_cache_key()
-# │  作用：Memo key for get_tool_definitions, or None when caching must be bypassed.
+# │  作用：get_tool_definitions 的记忆化键；当必须绕过缓存时返回 None。
 # │  参数：enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]], skip_tool_search_assembly: bool
 # │  返回：Optional[tuple]
 # └──────────────────────────────────────────────────────────────
@@ -377,7 +377,7 @@ def _tool_defs_cache_key(
 
 
 # ┌── 函数 def _apply_toolset_selection()
-# │  作用：Add (or subtract) every toolset in *names* to/from *tools*, printing the selection unless quiet.
+# │  作用：把 *names* 里的每个工具集加入（或移出）*tools*，除非 quiet 否则打印选择结果。
 # │  参数：tools: set, names: List[str], quiet_mode: bool, disable: bool
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -415,7 +415,7 @@ def _apply_toolset_selection(tools: set, names: List[str], quiet_mode: bool, *, 
 
 
 # ┌── 函数 def _select_tool_names()
-# │  作用：Tool names requested by the toolset selection (before check_fn filtering).
+# │  作用：工具集选择所请求的工具名（尚未经过 check_fn 过滤）。
 # │  参数：enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]], quiet_mode: bool
 # │  返回：set
 # └──────────────────────────────────────────────────────────────
@@ -463,7 +463,7 @@ def _fn_def(schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _rewrite_execute_code()
-# │  作用：List only sandbox tools that are actually available.
+# │  作用：只列出实际可用的沙箱工具。
 # │  参数：td: Dict[str, Any], available: set
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -477,7 +477,7 @@ def _rewrite_execute_code(td: Dict[str, Any], available: set) -> Optional[Dict[s
 
 
 # ┌── 函数 def _discord_rewriter()
-# │  作用：Schema depends on the bot's privileged intents and the config action allowlist; None drops the tool.
+# │  作用：结构定义取决于机器人的特权意图和配置的动作白名单；为 None 时则去掉该工具。
 # │  参数：schema_fn_name: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -497,7 +497,7 @@ def _discord_rewriter(schema_fn_name: str):
 
 
 # ┌── 函数 def _rewrite_browser_navigate()
-# │  作用：Drop the "prefer web_search or web_extract" hint when neither web tool is present (else the model hallucinates them).
+# │  作用：当 web_search 和 web_extract 都不存在时，去掉「优先用 web_search 或 web_extract」的提示（否则模型会幻觉出这两个工具）。
 # │  参数：td: Dict[str, Any], available: set
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -512,7 +512,7 @@ def _rewrite_browser_navigate(td: Dict[str, Any], available: set) -> Optional[Di
 
 
 # ┌── 函数 def _rewrite_browser_exec()
-# │  作用：browser_exec runs arbitrary host Python: a session without the terminal surface
+# │  作用：browser_exec 会执行任意宿主机 Python：一个没有终端界面的会话……
 # │  参数：td: Dict[str, Any], available: set
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -525,7 +525,7 @@ def _rewrite_browser_exec(td: Dict[str, Any], available: set) -> Optional[Dict[s
 
 
 # ┌── 函数 def _rewrite_delegate_task()
-# │  作用：Trim the child-restrictions line to sibling tools actually present, or drop
+# │  作用：把「子进程限制」那一行裁剪到实际存在的同级工具，否则去掉……
 # │  参数：td: Dict[str, Any], available: set
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -563,7 +563,7 @@ _VAULT_INPUT_TOOL_HINT = "the browser's input tool"
 
 
 # ┌── 函数 def _rewrite_browser_vault()
-# │  作用：Name the concrete input tool for typing the login identifier: `fill_input` inside browser_exec code, or
+# │  作用：为「填写登录标识」指定具体的输入工具：browser_exec 代码里的 `fill_input`，或者……
 # │  参数：td: Dict[str, Any], available: set
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -590,7 +590,7 @@ _VAULT_NO_PASSWORD_NOTE = (" Vault note: on a login/checkout form call browser_v
 
 
 # ┌── 函数 def _rewrite_input_tool_for_vault()
-# │  作用：The model reads the input tool's description at the moment it decides how to fill a password field; the
+# │  作用：模型在决定如何填写密码框的那一刻，会读取输入工具的描述；因此……
 # │  参数：td: Dict[str, Any], available: set
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -638,7 +638,7 @@ _DYNAMIC_SCHEMA_REWRITERS = {
 
 
 # ┌── 函数 def _apply_dynamic_schemas()
-# │  作用：Apply _DYNAMIC_SCHEMA_REWRITERS in list order; the availability set is a
+# │  作用：按列表顺序应用 _DYNAMIC_SCHEMA_REWRITERS；可用性集合是一个……
 # │  参数：tool_defs: List[Dict[str, Any]]
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -667,7 +667,7 @@ _TOOL_SEARCH_LISTING_FORMS = {
 
 
 # ┌── 函数 def _compute_tool_definitions()
-# │  作用：Uncached implementation of :func:`get_tool_definitions`.
+# │  作用：:func:`get_tool_definitions` 的不走缓存的实现。
 # │  参数：enabled_toolsets: Optional[List[str]] = None, disabled_toolsets: Optional[List[str]] = None, quiet_mode: bool = False, skip_tool_search_assembly: bool = False
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -720,7 +720,7 @@ def _compute_tool_definitions(enabled_toolsets: Optional[List[str]] = None, disa
 
 
 # ┌── 函数 def _active_model_config()
-# │  作用：(model_id, model section) from config.yaml; model_id is "" when unset.
+# │  作用：来自 config.yaml 的 (model_id, 模型段落)；未设置时 model_id 为 ""。
 # │  参数：无
 # │  返回：Tuple[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -738,7 +738,7 @@ def _active_model_config() -> Tuple[str, Dict[str, Any]]:
 
 
 # ┌── 函数 def _resolve_active_context_length()
-# │  作用：Active model's context length for the tool-search gate (0 if unresolvable).
+# │  作用：供「工具搜索」关卡使用的当前模型上下文长度（无法解析时为 0）。
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -823,7 +823,7 @@ _TOOL_ERROR_STRIP_RES = (
 
 
 # ┌── 函数 def _sanitize_tool_error()
-# │  作用：Strip structural framing tokens from a tool error before the model sees it.
+# │  作用：在模型看到工具错误之前，先剥离其中的结构性框架令牌。
 # │  参数：error_msg: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -842,7 +842,7 @@ def _sanitize_tool_error(error_msg: str) -> str:
 
 
 # ┌── 类 class _CallIds
-# │  说明：Identity fields of one tool call, threaded through hooks and middleware.
+# │  说明：一次工具调用的身份字段，会贯穿各个钩子与中间件。
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -855,7 +855,7 @@ class _CallIds:
     api_request_id: Optional[str] = None
 
     # ┌── 函数 def hook_kwargs()
-    # │  作用：Same fields with None -> "" (hook/middleware wire contract).
+    # │  作用：同样的字段，但把 None 换成 ""（钩子/中间件的线格式契约）。
     # │  参数：self
     # │  返回：Dict[str, str]
     # └──────────────────────────────────────────────────────────────
@@ -866,7 +866,7 @@ class _CallIds:
 
 
 # ┌── 函数 def _tool_result_observer_fields()
-# │  作用：Derive (status, error_type, error_message) from a tool result for observer hooks.
+# │  作用：从工具结果里派生出 (status, error_type, error_message)，供观察者钩子使用。
 # │  参数：tool_name: str, result: Any
 # │  返回：tuple[str, Optional[str], Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -894,7 +894,7 @@ def _tool_result_observer_fields(tool_name: str, result: Any) -> tuple[str, Opti
 
 
 # ┌── 函数 def _emit_post_tool_call_hook()
-# │  作用：Emit the ``post_tool_call`` observer hook; gated on has_hook, and ok/error
+# │  作用：发出 ``post_tool_call`` 观察者钩子；以 has_hook 为开关，并区分 ok/error……
 # │  参数：function_name: str, function_args: Dict[str, Any], result: Any, task_id: Optional[str] = ..., session_id: Optional[str] = ..., tool_call_id: Optional[str] = ..., turn_id: Optional[str] = ..., api_request_id: Optional[str] = ...  …共 13 个
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -927,7 +927,7 @@ def _emit_post_tool_call_hook(
 
 
 # ┌── 函数 def _dispatch_bridge_tool()
-# │  作用：Handle a Tool Search bridge call (tool_search / tool_describe / tool_call).
+# │  作用：处理一次「工具搜索」桥接调用（tool_search / tool_describe / tool_call）。
 # │  参数：function_name: str, function_args: Dict[str, Any], enabled_toolsets: Optional[List[str]], disabled_toolsets: Optional[List[str]]
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -984,7 +984,7 @@ def _dispatch_bridge_tool(function_name: str, function_args: Dict[str, Any],
 
 
 # ┌── 函数 def _apply_request_middleware()
-# │  作用：tool_request middleware: returns (args, original_args, trace); fail-open.
+# │  作用：tool_request 中间件：返回 (args, original_args, trace)；采用 fail-open（放开）策略。
 # │  参数：function_name: str, function_args: Dict[str, Any], ids: _CallIds, trace: List[Dict[str, Any]]
 # │  返回：Tuple[Dict[str, Any], Dict[str, Any], List[Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -1005,7 +1005,7 @@ def _apply_request_middleware(
 
 
 # ┌── 函数 def _pre_dispatch_guards()
-# │  作用：Plugin pre_tool_call hook, then ACP edit approval.
+# │  作用：先运行插件的 pre_tool_call 钩子，再做 ACP 编辑审批。
 # │  参数：function_name: str, function_args: Dict[str, Any], skip_pre_tool_call_hook: bool, ids: _CallIds, middleware_trace: List[Dict[str, Any]]
 # │  返回：Tuple[Dict[str, Any], Optional[Tuple[Any, str, Optional[str]]]]
 # └──────────────────────────────────────────────────────────────
@@ -1054,7 +1054,7 @@ def _pre_dispatch_guards(function_name: str, function_args: Dict[str, Any], skip
 
 
 # ┌── 函数 def _approval_observability()
-# │  作用：Bind the approval observability context (turn/tool_call/session ids) for the block.
+# │  作用：为这一段逻辑绑定审批可观测上下文（轮次/工具调用/会话 id）。
 # │  参数：ids: _CallIds
 # │  返回：（未标注类型）
 # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -1084,7 +1084,7 @@ def _approval_observability(ids: _CallIds):
 
 
 # ┌── 函数 def _execute_tool()
-# │  作用：Run the registry handler (through tool-execution middleware unless skipped)
+# │  作用：运行注册表里的处理器（除非被跳过，否则会经过工具执行中间件）。
 # │  参数：function_name: str, function_args: Dict[str, Any], original_args: Dict[str, Any], ids: _CallIds, user_task: Optional[str], enabled_tools: Optional[List[str]], skip_tool_execution_middleware: bool
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1119,7 +1119,7 @@ def _execute_tool(function_name: str, function_args: Dict[str, Any], original_ar
 
 
 # ┌── 函数 def _apply_transform_tool_result_hook()
-# │  作用：transform_tool_result: plugins may replace the final result string.
+# │  作用：transform_tool_result：插件可以替换最终的结果字符串。
 # │  参数：function_name: str, function_args: Dict[str, Any], result: Any, duration_ms: int, ids: _CallIds
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1157,7 +1157,7 @@ def _elapsed_ms(start: float) -> int:
 
 
 # ┌── 函数 def handle_function_call()
-# │  作用：Route a tool call through hooks/middleware to the registry; returns a JSON string.
+# │  作用：把一个工具调用经过钩子/中间件路由到注册表；返回一个 JSON 字符串。
 # │  参数：function_name: str, function_args: Dict[str, Any], task_id: Optional[str] = None, tool_call_id: Optional[str] = None, session_id: Optional[str] = None, turn_id: Optional[str] = None, api_request_id: Optional[str] = None, user_task: Optional[str] = None  …共 15 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1288,7 +1288,7 @@ def get_toolset_for_tool(tool_name: str) -> Optional[str]:
 
 
 # ┌── 函数 def get_available_toolsets()
-# │  作用：Toolset availability info for UI display.
+# │  作用：供 UI 展示用的工具集可用性信息。
 # │  参数：无
 # │  返回：Dict[str, dict]
 # └──────────────────────────────────────────────────────────────
@@ -1299,7 +1299,7 @@ def get_available_toolsets() -> Dict[str, dict]:
 
 
 # ┌── 函数 def check_toolset_requirements()
-# │  作用：{toolset: available_bool} for every registered toolset.
+# │  作用：为每一个已注册工具集给出 {toolset: 是否可用}。
 # │  参数：无
 # │  返回：Dict[str, bool]
 # └──────────────────────────────────────────────────────────────
@@ -1310,7 +1310,7 @@ def check_toolset_requirements() -> Dict[str, bool]:
 
 
 # ┌── 函数 def check_tool_availability()
-# │  作用：(available_toolsets, unavailable_info).
+# │  作用：返回 (可用的工具集, 不可用原因信息)。
 # │  参数：quiet: bool = False
 # │  返回：Tuple[List[str], List[dict]]
 # └──────────────────────────────────────────────────────────────

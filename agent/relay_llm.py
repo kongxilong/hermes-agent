@@ -66,7 +66,7 @@ def _api_mode(metadata: dict[str, Any] | None) -> str:
 
 
 # ┌── 函数 def _relay_operation_name()
-# │  作用：Return Relay's canonical operation name when Hermes knows the API mode.
+# │  作用：当 Hermes knows API 模式. 时返回 Relay's canonical operation 名称。
 # │  参数：provider_name: str, metadata: dict[str, Any] | None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ def _relay_operation_name(provider_name: str, metadata: dict[str, Any] | None) -
 
 
 # ┌── 函数 def _relay_metadata()
-# │  作用：Preserve the physical provider when the operation name is canonicalized.
+# │  作用：Preserve physical 服务商当 operation 名称是 canonicalized.
 # │  参数：provider_name: str, metadata: dict[str, Any] | None
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -91,14 +91,14 @@ def _relay_metadata(provider_name: str, metadata: dict[str, Any] | None) -> dict
 
 
 # ┌── 类 class _ManagedAttempt
-# │  说明：Relay request state shared by the sync, async, and streaming adapters.
+# │  说明：Relay 请求状态 shared 由同步, 异步, 且 streaming adapters.
 # │  成员：共 12 个方法；对外可用 8 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _ManagedAttempt:
     """Relay request state shared by the sync, async, and streaming adapters."""
 
     # ┌── 函数 def resolve()
-    # │  作用：Return the managed attempt for ``session_id`` (None: the inherited turn's), or None to run unmanaged.
+    # │  作用：返回 managed 尝试用于 ``session_id`` (None: inherited 轮次's), 或 None 运行 unmanaged.。
     # │  参数：cls, session_id: str | None, request: dict[str, Any], metadata: dict[str, Any] | None, name: str, model_name: str
     # │  返回：'_ManagedAttempt | None'
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -160,7 +160,7 @@ class _ManagedAttempt:
         )
 
     # ┌── 函数 def run_callback()
-    # │  作用：Run a Hermes callback in a fresh copy of the captured context.
+    # │  作用：运行 Hermes 回调在 fresh 复制的 captured 上下文.
     # │  参数：self, callback: Callable[..., Any], *args
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ class _ManagedAttempt:
             raise
 
     # ┌── 函数 def invoke()
-    # │  作用：Provider callback handed to Relay: run ``callback`` on Relay's (possibly rewritten) request.
+    # │  作用：服务商回调 handed Relay: 运行 ``回调`` 在…上 Relay's (possibly rewritten) 请求.
     # │  参数：self, callback: Callable[..., Any], next_request: Any
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -241,7 +241,7 @@ class _ManagedAttempt:
         return self._record(raw)
 
     # ┌── 函数 def run_managed()
-    # │  作用：Return the awaitable running ``relay_call`` inside the session context.
+    # │  作用：返回 awaitable 运行 ``relay_call`` inside 会话上下文.。
     # │  参数：self, relay_call: Callable[..., Any], *callbacks
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ class _ManagedAttempt:
         )
 
     # ┌── 函数 def resolve_failure()
-    # │  作用：Re-raise the provider's own error, or recover a completed provider result.
+    # │  作用：Re-抛出服务商's 持有错误, 或 recover completed 服务商结果.
     # │  参数：self, exc: BaseException, defer_logical_completion: bool
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ class _ManagedAttempt:
 
 
 # ┌── 函数 def _current_session_id()
-# │  作用：Return the inherited Hermes turn's session id, or None outside a live turn.
+# │  作用：返回 inherited Hermes 轮次's 会话 id, 或 None outside 当前活跃的轮次.。
 # │  参数：无
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -311,7 +311,7 @@ def _current_session_id() -> str | None:
 
 
 # ┌── 函数 def execute()
-# │  作用：Run one non-streaming physical provider attempt through Relay.
+# │  作用：运行 one non-streaming physical 服务商尝试 through Relay.
 # │  参数：request: dict[str, Any], callback: Callable[[dict[str, Any]], Any], name: str, model_name: str, session_id: str | None = ..., metadata: dict[str, Any] | None = ..., defer_logical_completion: bool = ...
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ def execute(
 
 
 # ┌── 异步函数（协程） def execute_async()
-# │  作用：Async ``execute``.
+# │  作用：异步 ``执行``.
 # │  参数：request: dict[str, Any], callback: Callable[[dict[str, Any]], Any], name: str, model_name: str, session_id: str | None = ..., metadata: dict[str, Any] | None = ..., defer_logical_completion: bool = ...
 # │  返回：Any
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -383,7 +383,7 @@ def _has_running_event_loop() -> bool:
 
 
 # ┌── 函数 def stream_current()
-# │  作用：Run a provider stream under the inherited Hermes turn when present.
+# │  作用：运行服务商 stream under inherited Hermes 轮次当 present.
 # │  参数：request: dict[str, Any], stream_factory: Callable[[dict[str, Any]], Any], name: str, model_name: str, finalizer: Callable[[], Any], metadata: dict[str, Any] | None = ..., defer_logical_completion: bool = ..., completed_response_predicate: Callable[[Any], bool] | None = ...
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -423,7 +423,7 @@ def stream_current(
 
 
 # ┌── 函数 def _aclose_on_loop()
-# │  作用：Await ``stream.aclose()`` on ``loop`` when the stream exposes one.
+# │  作用：Await ``stream.aclose()`` 在…上 ``循环`` 当 stream exposes one.
 # │  参数：loop: asyncio.AbstractEventLoop, stream: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ def _aclose_on_loop(loop: asyncio.AbstractEventLoop, stream: Any) -> None:
 
 
 # ┌── 类 class ManagedLlmStream（继承自：Iterator[Any]）
-# │  说明：Synchronous view of one Relay-managed provider stream, driven from the worker thread.
+# │  说明：Synchronous view 的 one Relay-managed 服务商 stream, driven 从工作线程.
 # │  成员：共 17 个方法；对外可用 1 个；含魔术方法 __init__, __iter__, __next__, __del__
 # └──────────────────────────────────────────────────────────────
 class ManagedLlmStream(Iterator[Any]):
@@ -503,7 +503,7 @@ class ManagedLlmStream(Iterator[Any]):
         self._stream = iter(raw_stream)
 
     # ┌── 异步函数（协程） def _provider_stream()
-    # │  作用：Relay's provider callback: run the factory and yield JSON-encoded chunks.
+    # │  作用：Relay's 服务商回调: 运行 factory 且 yield JSON-encoded chunks.
     # │  参数：self, attempt: _ManagedAttempt, next_request: Any
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -577,7 +577,7 @@ class ManagedLlmStream(Iterator[Any]):
             raise
 
     # ┌── 函数 def _start_managed()
-    # │  作用：Open Relay's stream on a private event loop owned by this iterator.
+    # │  作用：打开 Relay's stream 在…上 private 事件循环持有的由 这个 iterator.
     # │  参数：self, attempt: _ManagedAttempt
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -623,7 +623,7 @@ class ManagedLlmStream(Iterator[Any]):
         return self
 
     # ┌── 函数 def _prime_completed_response()
-    # │  作用：Advance once while preserving a genuine first chunk.
+    # │  作用：Advance 一旦当 preserving genuine first chunk.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -634,7 +634,7 @@ class ManagedLlmStream(Iterator[Any]):
                 self._prefetched_chunks.append(next(self))
 
     # ┌── 函数 def _recoverable_relay_failure()
-    # │  作用：Relay post-processing failed after the provider already succeeded.
+    # │  作用：Relay post-processing failed 在…之后服务商已 succeeded.
     # │  参数：self, exc: BaseException
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -650,7 +650,7 @@ class ManagedLlmStream(Iterator[Any]):
         return recoverable
 
     # ┌── 函数 def _finish_logical()
-    # │  作用：Complete the logical LLM scope unless the caller deferred it.
+    # │  作用：Complete logical LLM scope unless caller deferred 它.
     # │  参数：self, outcome: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -719,7 +719,7 @@ class ManagedLlmStream(Iterator[Any]):
         return self._chunk_adapter(chunk)
 
     # ┌── 函数 def close()
-    # │  作用：Close an explicitly abandoned stream and cancel its logical call.
+    # │  作用：关闭 explicitly abandoned stream 且 cancel 其 logical call.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -732,7 +732,7 @@ class ManagedLlmStream(Iterator[Any]):
             raise close_error
 
     # ┌── 函数 def _preserve_pending_provider_chunks()
-    # │  作用：Switch a failed Relay stream to its undelivered provider chunks.
+    # │  作用：切换 failed Relay stream 其 undelivered 服务商 chunks.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -765,7 +765,7 @@ class ManagedLlmStream(Iterator[Any]):
             self._close_error = exc
 
     # ┌── 函数 def _close_provider_resources()
-    # │  作用：Close the unmanaged provider stream/resource once each (they may be the same object).
+    # │  作用：关闭 unmanaged 服务商 stream/resource 一旦每个 (它们可以是 same 对象).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -837,7 +837,7 @@ _ANTHROPIC_APPEND_DELTAS = {"text_delta": "text", "thinking_delta": "thinking", 
 
 
 # ┌── 类 class AnthropicStreamAccumulator
-# │  说明：Rebuild an Anthropic Message from post-intercept SSE events.
+# │  说明：Rebuild Anthropic 消息从 post-intercept SSE 事件.
 # │  成员：共 8 个方法；对外可用 3 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class AnthropicStreamAccumulator:
@@ -940,7 +940,7 @@ class AnthropicStreamAccumulator:
         return {**self._message, "content": blocks}
 
     # ┌── 函数 def response()
-    # │  作用：Return the attribute-shaped response consumed by Hermes.
+    # │  作用：返回 属性-shaped 响应已消费由 Hermes.。
     # │  参数：self, base: Any = None
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -956,7 +956,7 @@ class AnthropicStreamAccumulator:
 
 
 # ┌── 函数 def _logical_parent()
-# │  作用：Return (turn, handle, request_id) for the turn's logical LLM scope, pushing it once.
+# │  作用：返回 (轮次, handle, request_id) 用于轮次's logical LLM scope, pushing 它一旦.。
 # │  参数：runtime: relay_runtime.RelayRuntime, session: Any, parent: Any, metadata: dict[str, Any] | None
 # │  返回：_LogicalCall | None
 # └──────────────────────────────────────────────────────────────
@@ -1038,7 +1038,7 @@ def _is_cancellation(error: BaseException) -> bool:
 
 
 # ┌── 函数 def complete_logical_call()
-# │  作用：Complete the active turn's logical LLM call after caller validation.
+# │  作用：Complete 活跃轮次's logical LLM call 在…之后 caller validation.
 # │  参数：api_request_id: str, outcome: str, model_name: str | None = ..., provider_name: str | None = ..., response_model_name: str | None = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1060,7 +1060,7 @@ def complete_logical_call(
 
 
 # ┌── 函数 def _response_model_name()
-# │  作用：Return a provider-reported model name when one is available.
+# │  作用：当 one 是 available. 时返回 服务商-reported 模型名。
 # │  参数：response: Any
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -1111,7 +1111,7 @@ def _provider_request(
 
 
 # ┌── 函数 def _rewrite_tools()
-# │  作用：Rewrite each dict tool that ``match``es (in place on ``body["tools"]`` when it is a list).
+# │  作用：Rewrite 每个字典工具那个 ``match``es (在 place 在…上 ``body["工具"]`` 当它 是列表).
 # │  参数：body: dict[str, Any], match: Callable[[dict], bool], rewrite: Callable[[dict], dict]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1168,7 +1168,7 @@ def _relay_request_body(request: dict[str, Any], metadata: dict[str, Any] | None
 
 
 # ┌── 函数 def _restore_provider_message_extensions()
-# │  作用：Restore provider wire fields that Relay's typed codec cannot represent.
+# │  作用：恢复服务商 wire 字段那个 Relay's typed codec 无法 represent.
 # │  参数：original: dict[str, Any], final: dict[str, Any], baseline: dict[str, Any], intercepted: dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1191,7 +1191,7 @@ def _restore_provider_message_extensions(
 
 
 # ┌── 函数 def _codec_round_trip_request_body()
-# │  作用：Return the codec-only request shape used to identify real rewrites.
+# │  作用：返回 codec-仅请求形态 used identify real rewrites.。
 # │  参数：relay: Any, relay_request: Any, relay_request_body: dict[str, Any], metadata: dict[str, Any] | None
 # │  返回：dict[str, Any] | None
 # └──────────────────────────────────────────────────────────────
@@ -1284,7 +1284,7 @@ def _jsonable(value: Any) -> Any:
 
 
 # ┌── 函数 def _jsonable_dict()
-# │  作用：``_jsonable`` for values that must be a JSON object; anything else becomes ``{}``.
+# │  作用：``_jsonable`` 用于值 那个必须是 JSON 对象; anything 否则 becomes ``{}``.
 # │  参数：value: Any
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────

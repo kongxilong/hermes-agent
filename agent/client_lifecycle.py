@@ -43,7 +43,7 @@ _NO_SOCKETS_SUFFIX = " — no sockets found; in-flight request may keep running 
 
 
 # ┌── 函数 def _routermint_headers()
-# │  作用：User-Agent RouterMint needs to avoid Cloudflare 1010 blocks.
+# │  作用：User-Agent RouterMint 需要规避 Cloudflare 1010 拦截。
 # │  参数：无
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ def _valid_credential_pair(api_key: Any, base_url: Any) -> bool:
 
 
 # ┌── 函数 def _swap_fallback_clients()
-# │  作用：Install the fallback client(s) in place, honoring request_timeout_seconds (None = SDK default).
+# │  作用：安装兜底客户端(s) 在 place, honoring request_timeout_seconds (None = SDK 默认值).
 # │  参数：agent, fb_client, fb_provider: str, fb_model: str, fb_base_url: str, fb_api_mode: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ def _swap_fallback_clients(agent, fb_client, fb_provider: str, fb_model: str, fb
 # └──────────────────────────────────────────────────────────────
 class ClientLifecycleMixin:
     # ┌── 函数 def _close_task_resources()
-    # │  作用：Release task resources without treating a shared environment as process ownership.
+    # │  作用：Release task resources 不 treating shared environment 作为进程 ownership.
     # │  参数：self, task_id: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ class ClientLifecycleMixin:
         return self._client_lock
 
     # ┌── 函数 def _is_openai_client_closed()
-    # │  作用：Check if an OpenAI client is closed.
+    # │  作用：检查若 OpenAI 客户端是 已关闭.
     # │  参数：client: Any
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -258,7 +258,7 @@ class ClientLifecycleMixin:
         return False
 
     # ┌── 函数 def _build_keepalive_http_client()
-    # │  作用：Build the shared OpenAI httpx client used by main and aux paths.
+    # │  作用：构建 shared OpenAI httpx 客户端 used 由 main 且 aux 路径.
     # │  参数：base_url: str = '', verify: Any = ...
     # │  返回：Any
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -295,7 +295,7 @@ class ClientLifecycleMixin:
             logger.debug("OpenAI client close failed (%s, shared=%s) %s error=%s", reason, shared, ctx, exc)
 
     # ┌── 函数 def _retire_shared_openai_client()
-    # │  作用：Ownership-safe retirement of a replaced shared OpenAI client: ``shutdown()`` sockets only, FDs to GC.
+    # │  作用：Ownership-safe retirement 的 replaced shared OpenAI 客户端: ``shutdown()`` sockets 仅, FDs GC.
     # │  参数：self, client: Any, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -325,7 +325,7 @@ class ClientLifecycleMixin:
             logger.debug("Shared OpenAI client retire failed (%s) %s error=%s", reason, self._client_log_context(), exc)
 
     # ┌── 函数 def _drain_transports_after_abandonment()
-    # │  作用：FD-safe transport drain for an abandoned (timed-out) worker; returns sockets shut down.
+    # │  作用：FD-safe transport drain 用于 abandoned (timed-out) 工作线程; 返回 sockets shut down.
     # │  参数：self, reason: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -450,7 +450,7 @@ class ClientLifecycleMixin:
         return new_client
 
     # ┌── 函数 def _api_kwargs_have_image_parts()
-    # │  作用：True when the outbound request still has native image parts (Chat ``messages`` / Responses ``input``).
+    # │  作用：当 outbound 请求仍 有 native image parts (Chat ``消息`` / 响应 ``输入``). 时返回 True。
     # │  参数：api_kwargs: dict
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -500,7 +500,7 @@ class ClientLifecycleMixin:
         return cache
 
     # ┌── 函数 def _checkout_request_slot()
-    # │  作用：Return ``(reusable_client, stale_client)``; at most one is non-None.
+    # │  作用：返回 ``(reusable_client, stale_client)``; 在 most one 是 non-None.。
     # │  参数：self, slot_attr: str, key: Any
     # │  返回：tuple
     # └──────────────────────────────────────────────────────────────
@@ -535,7 +535,7 @@ class ClientLifecycleMixin:
             # else: a concurrent call holds the slot — hand this client out untracked (fully closed later).
 
     # ┌── 函数 def _release_request_slot()
-    # │  作用：Owner-thread release; True when the client stays cached (clean finish, not poisoned).
+    # │  作用：Owner-线程 release; True 当客户端 stays cached (clean finish, 不 poisoned).
     # │  参数：self, slot_attr: str, client: Any, reason: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -553,7 +553,7 @@ class ClientLifecycleMixin:
         return False
 
     # ┌── 函数 def _take_request_slot()
-    # │  作用：Teardown: empty the slot and return ``(client, was_in_use)``.
+    # │  作用：Teardown: empty slot 且返回 ``(客户端, was_in_use)``.
     # │  参数：self, slot_attr: str
     # │  返回：tuple
     # └──────────────────────────────────────────────────────────────
@@ -568,7 +568,7 @@ class ClientLifecycleMixin:
         return client, in_use
 
     # ┌── 函数 def _abort_request_slot_client()
-    # │  作用：Cross-thread abort (interrupt loop, stale detector): ``shutdown(SHUT_RDWR)`` without releasing FDs.
+    # │  作用：Cross-线程 abort (interrupt 循环, 卡死的 detector): ``shutdown(SHUT_RDWR)`` 不 releasing FDs.
     # │  参数：self, slot_attr: str, client: Any, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -646,7 +646,7 @@ class ClientLifecycleMixin:
             self._close_openai_client(client, reason=reason, shared=False)
 
     # ┌── 函数 def _close_cached_request_openai_client()
-    # │  作用：Teardown hook: really close the cached per-request wire client.
+    # │  作用：Teardown hook: really 关闭 cached per-请求 wire 客户端.
     # │  参数：self, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -671,7 +671,7 @@ class ClientLifecycleMixin:
         self._abort_request_slot_client(_OPENAI_SLOT, client, reason=reason)
 
     # ┌── 函数 def _request_anthropic_client_key()
-    # │  作用：Cache key over everything forcing a fresh client: credential, base URL/region, timeout, 1M-beta flag.
+    # │  作用：缓存键 over everything forcing fresh 客户端: credential, base URL/region, 超时, 1M-beta 标志.
     # │  参数：self
     # │  返回：tuple
     # └──────────────────────────────────────────────────────────────
@@ -687,7 +687,7 @@ class ClientLifecycleMixin:
         )
 
     # ┌── 函数 def _build_direct_anthropic_client()
-    # │  作用：Native Anthropic client for ``token``/``base_url`` with the provider/model request timeout.
+    # │  作用：Native Anthropic 客户端用于 ``令牌``/``base_url`` 带服务商/模型请求超时.
     # │  参数：self, token: str, base_url: Any
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -698,7 +698,7 @@ class ClientLifecycleMixin:
         return build_anthropic_client(token, base_url, timeout=get_provider_request_timeout(self.provider, self.model))
 
     # ┌── 函数 def _anthropic_oauth_flag()
-    # │  作用：OAuth flag only on native Anthropic; third-party Anthropic-protocol endpoints must not trip OAuth paths.
+    # │  作用：OAuth 标志仅 在…上 native Anthropic; third-party Anthropic-protocol endpoints 必须不 trip OAuth 路径.
     # │  参数：self, token: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -722,7 +722,7 @@ class ClientLifecycleMixin:
         return build_anthropic_client(key[1], key[2], timeout=key[3], drop_context_1m_beta=key[4])
 
     # ┌── 函数 def _create_request_anthropic_client()
-    # │  作用：Build (or reuse) a request-local Anthropic client for one in-flight call.
+    # │  作用：构建 (或 reuse) 请求-local Anthropic 客户端用于 one 在-flight call.
     # │  参数：self, reason: str
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -748,7 +748,7 @@ class ClientLifecycleMixin:
         return client
 
     # ┌── 函数 def _close_request_anthropic_client()
-    # │  作用：Owner-thread close: clean finish keeps the pool warm; otherwise force-close sockets (CLOSE-WAIT) + SDK close.
+    # │  作用：Owner-线程关闭: clean finish 保留 pool warm; otherwise force-关闭 sockets (关闭-WAIT) + SDK 关闭.
     # │  参数：self, client: Any, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -767,7 +767,7 @@ class ClientLifecycleMixin:
             )
 
     # ┌── 函数 def _close_cached_request_anthropic_client()
-    # │  作用：Teardown hook: really close the cached per-request Anthropic client.
+    # │  作用：Teardown hook: really 关闭 cached per-请求 Anthropic 客户端.
     # │  参数：self, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -793,7 +793,7 @@ class ClientLifecycleMixin:
 
     # ------------------------------------------------------------------ credential refresh
     # ┌── 函数 def _sync_client_kwargs_credentials()
-    # │  作用：Mirror ``self.api_key`` / ``self.base_url`` into the OpenAI-style client kwargs.
+    # │  作用：镜像 ``self.api_key`` / ``self.base_url`` 进入 OpenAI-style 客户端 kwargs.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -803,7 +803,7 @@ class ClientLifecycleMixin:
         self._client_kwargs["base_url"] = self.base_url
 
     # ┌── 函数 def _adopt_openai_credentials()
-    # │  作用：Apply a fresh key/base_url to the OpenAI-style kwargs and rebuild the shared client.
+    # │  作用：Apply fresh 键/base_url OpenAI-style kwargs 且 rebuild shared 客户端.
     # │  参数：self, api_key: str, base_url: str, reason: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -919,7 +919,7 @@ class ClientLifecycleMixin:
     _NOUS_KEY_ADOPT_SKEW_S = 180
 
     # ┌── 函数 def _adopt_nous_key_before_expiry()
-    # │  作用：Swap in a fresh Nous agent key BEFORE the one in hand expires, so the request never 401s.
+    # │  作用：Swap 在 fresh Nous Agent 键在…之前 one 在 hand expires, 从而请求 never 401s.
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -958,7 +958,7 @@ class ClientLifecycleMixin:
 
 
     # ┌── 函数 def _resolve_env_credentials()
-    # │  作用：Current ``.env``-sourced ``(api_key, base_url, default_base)`` for this provider, or ``None``.
+    # │  作用：Current ``.env``-sourced ``(api_key, base_url, default_base)`` 用于这个服务商, 或 ``None``.
     # │  参数：self
     # │  返回：Optional[tuple]
     # └──────────────────────────────────────────────────────────────
@@ -1017,7 +1017,7 @@ class ClientLifecycleMixin:
         return api_key, base_url, default_base
 
     # ┌── 函数 def _should_adopt_env_credentials()
-    # │  作用：Adopt only env *edits* (resolved value changed since last look), never drift from ``self.*``:
+    # │  作用：Adopt 仅 env *edits* (resolved 值 changed since last look), never drift 从 ``self.*``:
     # │  参数：self, api_key: str, base_url: str, default_base: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1041,7 +1041,7 @@ class ClientLifecycleMixin:
         return (base_url, api_key) != prev and current_base in {default_base, prev[0]} and not unchanged
 
     # ┌── 函数 def _try_refresh_env_client_credentials()
-    # │  作用：Adopt ``~/.hermes/.env`` credential/base-url edits at the turn boundary (a Settings save updates ``.env``
+    # │  作用：Adopt ``~/.hermes/.env`` credential/base-URL edits 在轮次 boundary ( Settings save updates ``.env``
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1093,7 +1093,7 @@ class ClientLifecycleMixin:
         return True
 
     # ┌── 函数 def _try_refresh_vertex_client_credentials()
-    # │  作用：Re-mint the Vertex OAuth2 token (~1h TTL; long sessions 401 on the expired bearer) and rebuild the client.
+    # │  作用：Re-mint Vertex OAuth2 令牌 (~1h TTL; long 会话 401 在…上 expired bearer) 且 rebuild 客户端.
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1133,7 +1133,7 @@ class ClientLifecycleMixin:
         return self._replace_primary_openai_client(reason=reason)
 
     # ┌── 函数 def _try_refresh_copilot_client_credentials()
-    # │  作用：Refresh Copilot credentials and rebuild the shared OpenAI client (caller enforces the single-shot guard).
+    # │  作用：Refresh Copilot credentials 且 rebuild shared OpenAI 客户端 (caller 强制 single-shot 护栏).
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1174,7 +1174,7 @@ class ClientLifecycleMixin:
         return ok
 
     # ┌── 函数 def _try_recover_stale_copilot_credential()
-    # │  作用：Force a fresh Copilot token exchange + client rebuild after a 400 (single-shot, caller-guarded).
+    # │  作用：Force fresh Copilot 令牌 exchange + 客户端 rebuild 在…之后 400 (single-shot, caller-已加护栏).
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1291,7 +1291,7 @@ class ClientLifecycleMixin:
                 logger.debug("custom-provider extra_headers skipped", exc_info=True)
 
     # ┌── 函数 def _apply_user_default_headers()
-    # │  作用：Merge config ``model.default_headers`` onto the OpenAI client (user wins; WAFs rejecting SDK headers).
+    # │  作用：Merge 配置 ``模型.default_headers`` onto OpenAI 客户端 (user wins; WAFs 拒绝 SDK headers).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1306,7 +1306,7 @@ class ClientLifecycleMixin:
             self._client_kwargs["default_headers"] = merged
 
     # ┌── 函数 def _swap_credential()
-    # │  作用：Adopt *entry* as the live credential. Returns False, changing nothing, when the entry's
+    # │  作用：Adopt *entry* 作为当前活跃的 credential. 返回 False, changing nothing, 当 entry's
     # │  参数：self, entry
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1354,7 +1354,7 @@ class ClientLifecycleMixin:
         return True
 
     # ┌── 函数 def _reapply_route_client_config()
-    # │  作用：Recompute route-derived client kwargs (TLS material, default headers) for ``self.base_url``.
+    # │  作用：Recompute 路由-derived 客户端 kwargs (TLS material, 默认值 headers) 用于 ``self.base_url``.
     # │  参数：self, route_changed: bool
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1397,7 +1397,7 @@ class ClientLifecycleMixin:
         )
 
     # ┌── 函数 def _rebuild_anthropic_client()
-    # │  作用：Rebuild the Anthropic client after an interrupt/stale call (Bedrock SDK for bedrock; honors 1M-beta flag).
+    # │  作用：Rebuild Anthropic 客户端在…之后 interrupt/卡死的 call (Bedrock SDK 用于 bedrock; honors 1M-beta 标志).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────

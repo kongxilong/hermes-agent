@@ -38,7 +38,7 @@ _bootstrap_applied = False
 
 
 # ┌── 函数 def apply_windows_utf8_bootstrap()
-# │  作用：Apply the Windows UTF-8 bootstrap once; True only when it was applied this call.
+# │  作用：Apply Windows UTF-8 bootstrap 一旦; True 仅当 它是 applied 这个 call.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ def apply_windows_utf8_bootstrap() -> bool:
 
 
 # ┌── 函数 def suppress_platform_ver_console()
-# │  作用：Stub ``platform._syscmd_ver`` on Windows — decode-crash + console-flash guard.
+# │  作用：Stub ``平台._syscmd_ver`` 在…上 Windows — decode-crash + console-flash 护栏.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ def suppress_platform_ver_console() -> None:
 
 
 # ┌── 函数 def harden_import_path()
-# │  作用：Stop a package in the current directory from shadowing Hermes modules.
+# │  作用：Stop 包在 current directory 从 shadowing Hermes 模块.
 # │  参数：src_root: str | None = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ def harden_import_path(src_root: str | None = None) -> None:
 
 
 # ┌── 函数 def activate_durable_lazy_target()
-# │  作用：Put the durable lazy-install dir (``HERMES_LAZY_INSTALL_TARGET``) on ``sys.path``.
+# │  作用：Put durable lazy-安装 dir (``HERMES_LAZY_INSTALL_TARGET``) 在…上 ``sys.路径``.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────

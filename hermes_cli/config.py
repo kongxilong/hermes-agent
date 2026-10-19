@@ -73,7 +73,7 @@ _CONFIG_PARSE_FAILURES: dict = {}
 
 
 # ┌── 类 class InvalidUserConfigError（继承自：RuntimeError）
-# │  说明：Raised when a run that cannot repair config finds invalid user YAML.
+# │  说明：抛出当 运行那个无法 repair 配置 finds invalid user YAML.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class InvalidUserConfigError(RuntimeError):
@@ -96,7 +96,7 @@ _PARSE_FAILURE_DEFAULTS_MSG = (
 
 
 # ┌── 函数 def _warn_config_parse_failure()
-# │  作用：Surface a config.yaml parse failure to log and stderr (once per file signature).
+# │  作用：上报配置.YAML 解析 failure 日志且 标准错误 (一旦 per 文件 signature).
 # │  参数：config_path: Path, exc: Exception, fallback: str = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ def _warn_config_parse_failure(
 
 
 # ┌── 函数 def get_active_config_parse_failure()
-# │  作用：Return the recorded parse error while the ACTIVE config.yaml is still byte-identical
+# │  作用：返回 recorded 解析错误当 ACTIVE 配置.YAML 是仍 byte-identical。
 # │  参数：无
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ _ENV_VAR_NAME_DENYLIST: frozenset[str] = frozenset({
 
 
 # ┌── 函数 def _env_var_policy_name()
-# │  作用：Name used for env policy comparisons: Windows env names are case-insensitive, POSIX not.
+# │  作用：名称 used 用于环境变量策略 comparisons: Windows env 名称是 case-insensitive, POSIX 不.
 # │  参数：key: str, is_windows: Optional[bool] = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -207,7 +207,7 @@ def _env_var_policy_name(key: str, *, is_windows: Optional[bool] = None) -> str:
 
 
 # ┌── 函数 def validate_env_var_name_for_write()
-# │  作用：Validate an env name before a generic persistence write (exposed for batch callers).
+# │  作用：校验环境变量名在…之前 generic persistence 写入 (exposed 用于 batch callers).
 # │  参数：key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -311,7 +311,7 @@ _MANAGED_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
 
 
 # ┌── 函数 def get_managed_system()
-# │  作用：Return the package manager owning this install, if any.
+# │  作用：返回 包管理器持有这个安装, 若任意.。
 # │  参数：无
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ def get_managed_system() -> Optional[str]:
 
 
 # ┌── 函数 def is_managed()
-# │  作用：Check if Hermes is running in package-manager-managed mode.
+# │  作用：检查若 Hermes 是运行在 包-manager-managed 模式.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -357,7 +357,7 @@ _NIX_UPDATE_MSG = (
 
 
 # ┌── 函数 def get_managed_update_command()
-# │  作用：Return the preferred upgrade command for a managed install.
+# │  作用：返回 preferred 升级命令用于包管理器托管安装.。
 # │  参数：无
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -390,7 +390,7 @@ def _install_method_stamp(path: Path) -> Optional[str]:
 
 
 # ┌── 函数 def detect_install_method()
-# │  作用：Detect how Hermes was installed: apt/docker/nix/nixos/home-manager/git/unknown.
+# │  作用：检测如何 Hermes 是 installed: apt/Docker/Nix/NixOS/home-manager/git/unknown.
 # │  参数：project_root: Optional[Path] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -449,7 +449,7 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
 
 
 # ┌── 函数 def _running_in_container()
-# │  作用：Import-safe wrapper around ``hermes_constants.is_container``.
+# │  作用：导入-safe 包装器 around ``hermes_constants.is_container``.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -467,7 +467,7 @@ def _running_in_container() -> bool:
 
 
 # ┌── 函数 def is_nix_install_method()
-# │  作用：True for every install method Nix owns ("nix", "nixos", "home-manager").
+# │  作用：当 每个安装方法 Nix 持有 ("Nix", "NixOS", "home-manager"). 时返回 True。
 # │  参数：method: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -484,7 +484,7 @@ _UPDATE_COMMAND_BY_METHOD = {
 
 
 # ┌── 函数 def recommended_update_command_for_method()
-# │  作用：Return the update command or guidance for a given install method.
+# │  作用：返回 更新命令或 guidance 用于 given 安装方法.。
 # │  参数：method: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -498,7 +498,7 @@ def recommended_update_command_for_method(method: str) -> str:
 
 
 # ┌── 函数 def recommended_update_command()
-# │  作用：Return the best update command for the current installation.
+# │  作用：返回 best 更新命令用于 current 安装.。
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -542,7 +542,7 @@ Notes:
 
 
 # ┌── 函数 def format_docker_update_message()
-# │  作用：Return the user-facing message for ``hermes update`` inside Docker.
+# │  作用：返回 面向用户的消息用于 ``hermes 更新`` inside Docker.。
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -553,7 +553,7 @@ def format_docker_update_message() -> str:
 
 
 # ┌── 函数 def format_managed_message()
-# │  作用：Build a user-facing error for managed installs.
+# │  作用：构建面向用户的错误用于 managed 安装.
 # │  参数：action: str = 'modify this Hermes installation'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -567,7 +567,7 @@ def format_managed_message(action: str = "modify this Hermes installation") -> s
 
 
 # ┌── 函数 def managed_error()
-# │  作用：Print user-friendly error for managed mode.
+# │  作用：打印 user-friendly 错误用于 managed 模式.
 # │  参数：action: str = 'modify configuration'
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -577,7 +577,7 @@ def managed_error(action: str = "modify configuration"):
 
 
 # ┌── 函数 def get_container_exec_info()
-# │  作用：Read container mode metadata from HERMES_HOME/.container-mode.
+# │  作用：读取 container 模式 metadata 从 HERMES_HOME/.container-模式.
 # │  参数：无
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -620,7 +620,7 @@ def get_container_exec_info() -> Optional[dict]:
 # ---- Config paths / HERMES_HOME skeleton ----
 
 # ┌── 函数 def get_config_path()
-# │  作用：Get the main config file path.
+# │  作用：获取 main 配置文件路径.
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -631,7 +631,7 @@ def get_config_path() -> Path:
 
 
 # ┌── 函数 def require_parseable_user_config()
-# │  作用：Reject an existing invalid config before a non-interactive agent run.
+# │  作用：拒绝 existing invalid 配置在…之前 non-interactive Agent 运行.
 # │  参数：ignore_user_config: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -672,7 +672,7 @@ def require_parseable_user_config(*, ignore_user_config: bool = False) -> None:
 
 
 # ┌── 函数 def get_env_path()
-# │  作用：Get the .env file path (for API keys).
+# │  作用：获取 .env 文件路径 (用于 API 键).
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -683,7 +683,7 @@ def get_env_path() -> Path:
 
 
 # ┌── 函数 def get_project_root()
-# │  作用：Get the project installation directory.
+# │  作用：获取投射安装 directory.
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -694,7 +694,7 @@ def get_project_root() -> Path:
 
 
 # ┌── 函数 def _resolve_hermes_uid_gid()
-# │  作用：Read HERMES_UID / HERMES_GID (set by Docker deployments); (None, None) if unset/invalid/Windows.
+# │  作用：读取 HERMES_UID / HERMES_GID (设置由 Docker deployments); (None, None) 若 unset/invalid/Windows.
 # │  参数：无
 # │  返回：tuple[Optional[int], Optional[int]]
 # └──────────────────────────────────────────────────────────────
@@ -724,7 +724,7 @@ def _resolve_hermes_uid_gid() -> tuple[Optional[int], Optional[int]]:
 
 
 # ┌── 函数 def _chown_to_hermes_uid()
-# │  作用：Chown ``path`` to ``HERMES_UID:HERMES_GID`` when set; EPERM/ENOENT are non-fatal (the
+# │  作用：Chown ``路径`` ``HERMES_UID:HERMES_GID`` 当设置; EPERM/ENOENT 是 non-致命的 (
 # │  参数：path
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -746,7 +746,7 @@ def _chown_to_hermes_uid(path) -> None:
 
 
 # ┌── 函数 def _secure_dir()
-# │  作用：chmod a directory owner-only (0700) and apply HERMES_UID/GID ownership. No-op when managed;
+# │  作用：chmod directory owner-仅 (0700) 且 apply HERMES_UID/GID ownership. 无-op 当 managed;
 # │  参数：path
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -783,7 +783,7 @@ def _secure_dir(path):
 
 
 # ┌── 函数 def _is_container()
-# │  作用：Detect Docker/Podman/LXC (or HERMES_CONTAINER / HERMES_SKIP_CHMOD opt-out).
+# │  作用：检测 Docker/Podman/LXC (或 HERMES_CONTAINER / HERMES_SKIP_CHMOD opt-out).
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -807,7 +807,7 @@ def _is_container() -> bool:
 
 
 # ┌── 函数 def _secure_file()
-# │  作用：chmod a file 0600. Skipped when managed (activation sets 0640 group-readable) or in a
+# │  作用：chmod 文件 0600. Skipped 当 managed (activation 设置 0640 group-readable) 或在
 # │  参数：path
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -825,7 +825,7 @@ def _secure_file(path):
 
 
 # ┌── 函数 def _ensure_default_soul_md()
-# │  作用：Seed DEFAULT_SOUL_MD on first run; upgrade a legacy comment-only scaffold in place.
+# │  作用：Seed DEFAULT_SOUL_MD 在…上 first 运行; 升级 legacy comment-仅 scaffold 在 place.
 # │  参数：home: Path
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -854,7 +854,7 @@ _HERMES_HOME_SUBDIRS = (
 
 
 # ┌── 函数 def ensure_hermes_home()
-# │  作用：Ensure the ~/.hermes directory skeleton exists with secure permissions.
+# │  作用：Ensure ~/.hermes directory skeleton exists 带 secure permissions.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -914,7 +914,7 @@ REQUIRED_ENV_VARS = {}
 
 
 # ┌── 函数 def get_missing_env_vars()
-# │  作用：Check which environment variables are missing.
+# │  作用：检查其 environment variables 是 missing.
 # │  参数：required_only: bool = False
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -932,7 +932,7 @@ def get_missing_env_vars(required_only: bool = False) -> List[Dict[str, Any]]:
 
 
 # ┌── 函数 def _split_key_path()
-# │  作用：Split a dotted config-key path, honoring backslash-escaped dots (``a\.b`` -> ``a.b``).
+# │  作用：Split dotted 配置-键路径, honoring backslash-escaped dots (``\.b`` -> ``.b``).
 # │  参数：key: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -965,7 +965,7 @@ def _split_key_path(key: str) -> list[str]:
 
 
 # ┌── 函数 def _greedy_literal_match()
-# │  作用：Return ``(literal_key, n_consumed)`` for the longest dotted literal key present in
+# │  作用：返回 ``(literal_key, n_consumed)`` 用于 longest dotted literal 键 present 在。
 # │  参数：container: dict, parts: list
 # │  返回：Optional[Tuple[str, int]]
 # └──────────────────────────────────────────────────────────────
@@ -990,7 +990,7 @@ def _greedy_literal_match(container: dict, parts: list) -> Optional[Tuple[str, i
 
 
 # ┌── 函数 def _phantom_sibling()
-# │  作用：Existing literal dotted key that creating an intermediate mapping ``part`` would shadow
+# │  作用：Existing literal dotted 键那个创建 intermediate mapping ``part`` 会 shadow
 # │  参数：container: dict, part: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1010,7 +1010,7 @@ def _phantom_sibling(container: dict, part: str) -> Optional[str]:
 
 
 # ┌── 函数 def _set_nested()
-# │  作用：Set a value at a dotted key path, creating intermediate dicts on demand.
+# │  作用：设置值 在 dotted 键路径, 创建 intermediate dicts 在…上 demand.
 # │  参数：config, dotted_key: str, value
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1080,7 +1080,7 @@ def _set_nested(config, dotted_key: str, value):
 
 
 # ┌── 函数 def clear_model_endpoint_credentials()
-# │  作用：Remove stale inline endpoint credentials from a model config.
+# │  作用：移除卡死的 inline endpoint credentials 从模型配置.
 # │  参数：model_cfg: Dict[str, Any], clear_api_key: bool = ..., clear_api_mode: bool = ..., clear_base_url: bool = ...
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1109,7 +1109,7 @@ _MISSING = object()
 
 
 # ┌── 函数 def _locate_nested()
-# │  作用：Walk *parts* through nested dicts/lists (escape-aware, greedy-literal like ``_set_nested``).
+# │  作用：Walk *parts* through nested dicts/列表 (escape-aware, greedy-literal like ``_set_nested``).
 # │  参数：config, parts: list
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1150,7 +1150,7 @@ def _locate_nested(config, parts: list):
 
 
 # ┌── 函数 def _get_nested()
-# │  作用：Return a dotted-path value (``_MISSING`` when absent); same navigation as ``_set_nested``
+# │  作用：当 absent); same navigation 作为 ``_set_nested`` 时返回 dotted-路径值 (``_MISSING``。
 # │  参数：config, dotted_key: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1172,7 +1172,7 @@ def _get_nested(config, dotted_key: str):
 
 
 # ┌── 函数 def _unset_nested()
-# │  作用：Remove a dotted-path value; True if it existed. Empty dict containers left behind are
+# │  作用：移除 dotted-路径值; True 若它 existed. Empty 字典 containers left behind 是
 # │  参数：config, dotted_key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1213,7 +1213,7 @@ _ENV_CONFIG_KEYS = frozenset({
 
 
 # ┌── 函数 def _is_env_config_key()
-# │  作用：Return whether `hermes config set` routes this key to .env.
+# │  作用：返回 是否 `hermes 配置设置` 路由这个键 .env.。。
 # │  参数：key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1231,7 +1231,7 @@ def _is_env_config_key(key: str) -> bool:
 
 
 # ┌── 函数 def _format_config_get_value()
-# │  作用：Format a config value for command-line output.
+# │  作用：Format 配置值 用于命令-line 输出.
 # │  参数：value, as_json: bool
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1254,7 +1254,7 @@ def _format_config_get_value(value, *, as_json: bool) -> str:
 
 
 # ┌── 函数 def get_missing_config_fields()
-# │  作用：Check which config fields are missing or outdated (recursive).
+# │  作用：检查其 配置字段是 missing 或 outdated (recursive).
 # │  参数：无
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1279,7 +1279,7 @@ def get_missing_config_fields() -> List[Dict[str, Any]]:
 
 
 # ┌── 函数 def get_missing_skill_config_vars()
-# │  作用：Return skill-declared config vars (``skills.config.<key>``) that are missing or empty.
+# │  作用：返回 skill-declared 配置 vars (``skills.配置.<键>``) 那个是 missing 或 empty.。
 # │  参数：无
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1311,7 +1311,7 @@ def get_missing_skill_config_vars() -> List[Dict[str, Any]]:
 
 
 # ┌── 函数 def _coerce_config_version()
-# │  作用：Return a safe integer config version, treating invalid values as legacy.
+# │  作用：返回 safe 整数配置版本, treating invalid 值作为 legacy.。
 # │  参数：value: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1331,7 +1331,7 @@ def _coerce_config_version(value: Any) -> int:
 
 
 # ┌── 函数 def check_config_version()
-# │  作用：Return ``(current_version, latest_version)`` from the raw on-disk config.
+# │  作用：返回 ``(current_version, latest_version)`` 从 raw 在…上-disk 配置.。
 # │  参数：raise_on_parse_error: bool = ...
 # │  返回：Tuple[int, int]
 # └──────────────────────────────────────────────────────────────
@@ -1417,7 +1417,7 @@ _CUSTOM_PROVIDER_LIKE_FIELDS = {"base_url", "api_key", "rate_limit_delay", "api_
 
 
 # ┌── 类 class ConfigIssue
-# │  说明：A detected config structure problem.
+# │  说明：检测到配置 structure problem.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1438,7 +1438,7 @@ def _issue(issues: List["ConfigIssue"], severity: str, message: str, hint: str) 
 
 
 # ┌── 函数 def _require_fields()
-# │  作用：Append a warning for every falsy ``field`` of *entry* (message: ``<label> is missing '<f>' field``).
+# │  作用：追加警告用于每个 falsy ``字段`` 的 *entry* (消息: ``<label> 是 missing '<f>' 字段``).
 # │  参数：issues: List['ConfigIssue'], entry: Dict[str, Any], label: str, fields: Tuple[Tuple[str, str], ...], suffix: str = ''
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1479,7 +1479,7 @@ def _validate_voice(config: Dict[str, Any], issues: List[ConfigIssue]) -> None:
 
 
 # ┌── 函数 def _validate_entry_list()
-# │  作用：Validate each list entry: ``non_dict`` = (severity, message-with-{i}-and-{type}, hint) for
+# │  作用：校验每个列表 entry: ``non_dict`` = (severity, 消息-带-{i}-且-{类型}, hint) 用于
 # │  参数：entries: list, label: str, issues: List[ConfigIssue], fields, non_dict: Tuple[str, str, str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1497,7 +1497,7 @@ def _validate_entry_list(
 
 
 # ┌── 函数 def _validate_custom_providers()
-# │  作用：custom_providers must be a list of dicts, not a dict.
+# │  作用：custom_providers 必须是 列表的 dicts, 不字典.
 # │  参数：cp: Any, issues: List[ConfigIssue]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1520,7 +1520,7 @@ def _validate_custom_providers(cp: Any, issues: List[ConfigIssue]) -> None:
 
 
 # ┌── 函数 def _validate_fallback_model()
-# │  作用：fallback_model: single dict OR list of dicts (chain).
+# │  作用：fallback_model: single 字典或 列表的 dicts (chain).
 # │  参数：fb: Any, issues: List[ConfigIssue]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1539,7 +1539,7 @@ def _validate_fallback_model(fb: Any, issues: List[ConfigIssue]) -> None:
 
 
 # ┌── 函数 def _validate_web_backends()
-# │  作用：A stale web backend selection otherwise fails only at the first web_search/web_extract
+# │  作用：卡死的 web backend selection otherwise fails 仅在 first web_search/web_extract
 # │  参数：config: Dict[str, Any], issues: List[ConfigIssue]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1570,7 +1570,7 @@ def _validate_web_backends(config: Dict[str, Any], issues: List[ConfigIssue]) ->
 
 
 # ┌── 函数 def validate_config_structure()
-# │  作用：Validate config.yaml structure and return detected issues (accepts a pre-loaded dict).
+# │  作用：校验配置.YAML structure 且返回检测到 issues (接受 pre-已加载字典).
 # │  参数：config: Optional[Dict[str, Any]] = None
 # │  返回：List['ConfigIssue']
 # └──────────────────────────────────────────────────────────────
@@ -1619,7 +1619,7 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
 
 
 # ┌── 函数 def print_config_warnings()
-# │  作用：Print config structure warnings to stderr at startup; nothing if config is healthy.
+# │  作用：打印配置 structure warnings 标准错误在 startup; nothing 若配置是 healthy.
 # │  参数：config: Optional[Dict[str, Any]] = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1642,7 +1642,7 @@ def print_config_warnings(config: Optional[Dict[str, Any]] = None) -> None:
 
 
 # ┌── 函数 def warn_deprecated_cwd_env_vars()
-# │  作用：Warn if MESSAGING_CWD / TERMINAL_CWD is set in .env (canonical: terminal.cwd in config.yaml).
+# │  作用：警告若 MESSAGING_CWD / TERMINAL_CWD 是设置在 .env (canonical: 终端.cwd 在配置.YAML).
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1674,7 +1674,7 @@ def warn_deprecated_cwd_env_vars() -> None:
 
 
 # ┌── 函数 def _persist_migration()
-# │  作用：Persist a migrated config under THE migration write invariant: a migration may only
+# │  作用：持久化 migrated 配置 under migration 写入不变量: migration 可以仅
 # │  参数：config: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1687,7 +1687,7 @@ def _persist_migration(config: Dict[str, Any]) -> None:
 
 
 # ┌── 函数 def _prompt_and_save_env()
-# │  作用：Prompt for one env var (masked when ``info['password']``), save it, record it; False if skipped.
+# │  作用：提示词用于 one 环境变量 (masked 当 ``信息['password']``), save 它, record 它; False 若 skipped.
 # │  参数：name: str, info: Dict[str, Any], prompt: str, results: Dict[str, Any]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1720,7 +1720,7 @@ def _ask_yes_no(prompt: str) -> bool:
 
 
 # ┌── 函数 def migrate_config()
-# │  作用：Migrate config to latest version, prompting for new required fields.
+# │  作用：Migrate 配置 latest 版本, prompting 用于 new required 字段.
 # │  参数：interactive: bool = True, quiet: bool = False
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1807,7 +1807,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
 
 
 # ┌── 函数 def _disable_suspicious_mcp_servers()
-# │  作用：Post-migration: disable exfiltration-shaped MCP stdio entries (hand-edited or from older
+# │  作用：Post-migration: disable exfiltration-shaped MCP stdio entries (hand-edited 或从 older
 # │  参数：results: Dict[str, Any], quiet: bool
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1843,7 +1843,7 @@ def _disable_suspicious_mcp_servers(results: Dict[str, Any], quiet: bool) -> Non
 
 
 # ┌── 函数 def _warn_invalid_platform_toolsets()
-# │  作用：Surface invalid toolset names in platform_toolsets: ``resolve_toolset()`` returns [] for an
+# │  作用：上报 invalid 工具集名称在 platform_toolsets: ``resolve_toolset()`` 返回 [] 用于
 # │  参数：results: Dict[str, Any], quiet: bool
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1866,7 +1866,7 @@ def _warn_invalid_platform_toolsets(results: Dict[str, Any], quiet: bool) -> Non
 
 
 # ┌── 函数 def _offer_list()
-# │  作用：Print a bulleted offer list and ask; False (with the "set later" hint) when declined.
+# │  作用：打印 bulleted offer 列表且 ask; False (带 "设置 later" hint) 当 declined.
 # │  参数：heading: str, items: List[str], question: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1886,7 +1886,7 @@ def _offer_list(heading: str, items: List[str], question: str) -> bool:
 
 
 # ┌── 函数 def _offer_new_optional_env_vars()
-# │  作用：Interactively offer env vars that are NEW since the user's previous config version.
+# │  作用：Interactively offer env vars 那个是 NEW since user's previous 配置版本.
 # │  参数：current_ver: int, latest_ver: int, results: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1913,7 +1913,7 @@ def _offer_new_optional_env_vars(current_ver: int, latest_ver: int, results: Dic
 
 
 # ┌── 函数 def _offer_skill_config_vars()
-# │  作用：Prompt for skill-declared settings that are missing/empty and persist the answers.
+# │  作用：提示词用于 skill-declared settings 那个是 missing/empty 且持久化 answers.
 # │  参数：missing_skill_config: List[Dict[str, Any]], results: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1946,7 +1946,7 @@ def _offer_skill_config_vars(missing_skill_config: List[Dict[str, Any]], results
 
 
 # ┌── 函数 def _merge_partial_save()
-# │  作用：Merge *override* over *raw* for partial ``save_config`` writes.
+# │  作用：Merge *覆盖值* over *raw* 用于 partial ``save_config`` 写入.
 # │  参数：raw: dict, override: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1966,7 +1966,7 @@ def _merge_partial_save(raw: dict, override: dict) -> dict:
 
 
 # ┌── 函数 def _deep_merge()
-# │  作用：Recursively merge *override* into *base*: dict-over-dict recurses (so overriding one leaf
+# │  作用：Recursively merge *覆盖值* 进入 *base*: 字典-over-字典 recurses (从而 overriding one leaf
 # │  参数：base: dict, override: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1990,7 +1990,7 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 # ┌── 函数 def _strip_dotted_keys()
-# │  作用：Remove dotted leaf keys from *cfg* in place -> ``(cfg, keys_actually_present)``.
+# │  作用：移除 dotted leaf 键从 *cfg* 在 place -> ``(cfg, keys_actually_present)``.
 # │  参数：cfg: dict, dotted_keys: set
 # │  返回：Tuple[dict, set]
 # └──────────────────────────────────────────────────────────────
@@ -2013,7 +2013,7 @@ _ENV_REF_RE = re.compile(r"\${([^}]+)}")
 
 
 # ┌── 函数 def _env_ref_lookup()
-# │  作用：Resolve the env var behind a ``${VAR}`` / ``${env:VAR}`` ref — plain ``os.environ`` outside
+# │  作用：Resolve 环境变量 behind ``${VAR}`` / ``${env:VAR}`` ref — plain ``os.environ`` outside
 # │  参数：name: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2041,7 +2041,7 @@ def _env_ref_lookup(name: str) -> Optional[str]:
 
 
 # ┌── 函数 def _env_expand_match()
-# │  作用：Expand one ``${VAR}`` (legacy bare name) or ``${env:VAR}`` (Cursor-style SecretRef).
+# │  作用：Expand one ``${VAR}`` (legacy bare 名称) 或 ``${env:VAR}`` (Cursor-style SecretRef).
 # │  参数：m: re.Match
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2076,7 +2076,7 @@ def _env_expand_match(m: re.Match) -> str:
 
 
 # ┌── 函数 def _is_non_env_secret_ref()
-# │  作用：True for a SecretRef body with a non-``env`` source (``bitwarden:FOO``, ``vault:...``).
+# │  作用：当 SecretRef body 带 non-``env`` source (``bitwarden:FOO``, ``vault:...``). 时返回 True。
 # │  参数：ref: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2087,7 +2087,7 @@ def _is_non_env_secret_ref(ref: str) -> bool:
 
 
 # ┌── 函数 def _env_ref_var_name()
-# │  作用：Env-var name a ``${...}`` body reads, or None for a non-env source / empty ``env:``.
+# │  作用：Env-var 名称 ``${...}`` body 读取, 或 None 用于 non-env source / empty ``env:``.
 # │  参数：ref: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2105,7 +2105,7 @@ def _env_ref_var_name(ref: str) -> Optional[str]:
 
 
 # ┌── 函数 def _expand_env_vars()
-# │  作用：Recursively expand ``${VAR}`` / ``${env:VAR}`` in string values (keys/non-strings untouched).
+# │  作用：Recursively expand ``${VAR}`` / ``${env:VAR}`` 在字符串值 (键/non-strings untouched).
 # │  参数：obj
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2125,7 +2125,7 @@ def _expand_env_vars(obj):
 
 
 # ┌── 函数 def _env_ref_snapshot()
-# │  作用：Map each env-sourced ``${...}`` ref in *obj* to its current value.
+# │  作用：Map 每个 env-sourced ``${...}`` ref 在 *obj* 其 current 值.
 # │  参数：obj, snapshot = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2155,7 +2155,7 @@ def _env_ref_snapshot(obj, snapshot=None):
 
 
 # ┌── 函数 def _items_by_unique_name()
-# │  作用：Return a name-indexed dict only when all items have unique string names.
+# │  作用：当 全部 items 有 unique 字符串名称. 时返回 名称-indexed 字典仅。
 # │  参数：items
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2179,7 +2179,7 @@ def _items_by_unique_name(items):
 
 
 # ┌── 函数 def _preserve_env_ref_templates()
-# │  作用：Restore raw ``${VAR}`` templates where the value is otherwise unchanged, so persisting a
+# │  作用：恢复 raw ``${VAR}`` templates 何处值 是 otherwise unchanged, 从而持久化
 # │  参数：current, raw, loaded_expanded = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2229,7 +2229,7 @@ def _preserve_env_ref_templates(current, raw, loaded_expanded=None):
 
 
 # ┌── 函数 def _explicit_config_paths()
-# │  作用：Leaf paths explicitly present in a RAW (un-normalized) config, so values injected by
+# │  作用：Leaf 路径 explicitly present 在 RAW (un-已归一化) 配置, 从而值 已注入由
 # │  参数：config: Dict[str, Any]
 # │  返回：Set[Tuple[str, ...]]
 # └──────────────────────────────────────────────────────────────
@@ -2251,7 +2251,7 @@ def _explicit_config_paths(config: Dict[str, Any]) -> Set[Tuple[str, ...]]:
 
 
 # ┌── 函数 def _strip_default_values()
-# │  作用：Return *config* without keys whose values match *defaults*.
+# │  作用：返回 *配置* 不键 whose 值 match *默认值*.。
 # │  参数：config: Dict[str, Any], defaults: Dict[str, Any] = DEFAULT_CONFIG, preserve_keys: Optional[Set[Tuple[str, ...]]] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2281,7 +2281,7 @@ def _strip_default_values(
 
 
 # ┌── 函数 def split_model_config_default()
-# │  作用：Canonicalize ``model.default``/``model.model`` -> ``(model, provider)``; a dict value pairs
+# │  作用：Canonicalize ``模型.默认值``/``模型.模型`` -> ``(模型, 服务商)``; 字典值 pairs
 # │  参数：raw_default: Any
 # │  返回：tuple[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -2298,7 +2298,7 @@ def split_model_config_default(raw_default: Any) -> tuple[str, str]:
 
 
 # ┌── 函数 def _normalize_root_model_keys()
-# │  作用：Canonicalize the ``model`` section at the single load/save chokepoint.
+# │  作用：Canonicalize ``模型`` section 在 single 加载/save chokepoint.
 # │  参数：config: Dict[str, Any]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2379,7 +2379,7 @@ def _normalize_root_model_keys(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _normalize_max_turns_config()
-# │  作用：Move legacy root-level ``max_turns`` under ``agent``; the schema default is injected only
+# │  作用：Move legacy root-级别 ``max_turns`` under ``Agent``; 结构定义默认值是 已注入仅
 # │  参数：config: Dict[str, Any]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2397,7 +2397,7 @@ def _normalize_max_turns_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _canonicalize_config()
-# │  作用：The load/save normalization pipeline: max_turns relocation, then model-section canon.
+# │  作用：加载/save 归一化 pipeline: max_turns relocation, 然后模型-section canon.
 # │  参数：config: Dict[str, Any]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2418,7 +2418,7 @@ _UNLIMITED_SPELLINGS = frozenset({
 
 
 # ┌── 函数 def resolve_turn_limit()
-# │  作用：Normalize a raw ``agent.max_turns`` value into an int iteration cap (always >= 1).
+# │  作用：归一化 raw ``Agent.max_turns`` 值进入 int iteration cap (always >= 1).
 # │  参数：raw: Any, default: int = TURN_LIMIT_UNLIMITED
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -2457,7 +2457,7 @@ def resolve_turn_limit(raw: Any, default: int = TURN_LIMIT_UNLIMITED) -> int:
 
 
 # ┌── 函数 def cfg_get()
-# │  作用：Traverse nested dict keys safely, returning ``default`` on any miss.
+# │  作用：Traverse nested 字典键 safely, 返回 ``默认值`` 在…上任意 miss.
 # │  参数：cfg: Optional[Dict[str, Any]], *keys, default: Any = ...
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -2520,7 +2520,7 @@ def _read_raw_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
 
 
 # ┌── 函数 def read_raw_config()
-# │  作用：Read config.yaml as-is (no defaults merged, no migration); ``{}`` if missing/unparseable.
+# │  作用：读取配置.YAML 作为-是 (无默认值 merged, 无 migration); ``{}`` 若 missing/unparseable.
 # │  参数：无
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2532,7 +2532,7 @@ def read_raw_config() -> Dict[str, Any]:
 
 
 # ┌── 函数 def read_user_config_raw()
-# │  作用：Read a user ``config.yaml`` EXACTLY as written (no defaults/overlay/expansion, no cache).
+# │  作用：读取 user ``配置.YAML`` EXACTLY 作为已写入 (无默认值/叠加/expansion, 无缓存).
 # │  参数：config_path: Optional[Path] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2554,7 +2554,7 @@ def read_user_config_raw(config_path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 # ┌── 函数 def read_raw_config_readonly()
-# │  作用：``read_raw_config()`` without the per-call deepcopy, for callers that ONLY READ.
+# │  作用：``read_raw_config()`` 不每次调用的 deepcopy, 用于 callers 那个仅 读取.
 # │  参数：无
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2581,7 +2581,7 @@ _FIX_YAML = "Fix the file or restore a copy from backups/config/ first."
 
 
 # ┌── 函数 def require_readable_config_before_write()
-# │  作用：Refuse to replace an existing config.yaml that cannot be read or parsed; return the mapping.
+# │  作用：Refuse replace existing 配置.YAML 那个无法是 读取或 已解析; 返回 mapping.
 # │  参数：config_path: Optional[Path] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2627,7 +2627,7 @@ def require_readable_config_before_write(config_path: Optional[Path] = None) -> 
 
 
 # ┌── 函数 def atomic_config_write()
-# │  作用：Fail-closed atomic write for ``config.yaml`` (``require_readable_config_before_write`` first).
+# │  作用：Fail-已关闭 atomic 写入用于 ``配置.YAML`` (``require_readable_config_before_write`` first).
 # │  参数：config_path: Path, data: Any, **kwargs
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2638,7 +2638,7 @@ def atomic_config_write(config_path: Path, data: Any, **kwargs: Any) -> None:
 
 
 # ┌── 函数 def load_config()
-# │  作用：Load the merged configuration (DEFAULT_CONFIG + config.yaml + managed scope, env-expanded).
+# │  作用：加载 merged configuration (DEFAULT_CONFIG + 配置.YAML + managed scope, env-expanded).
 # │  参数：无
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2651,7 +2651,7 @@ def load_config() -> Dict[str, Any]:
 
 
 # ┌── 函数 def load_config_readonly()
-# │  作用：``load_config()`` without the defensive deepcopy (~half of the 265us cache-hit cost).
+# │  作用：``load_config()`` 不 defensive deepcopy (~half 的 265us 缓存-hit cost).
 # │  参数：无
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2664,7 +2664,7 @@ def load_config_readonly() -> Dict[str, Any]:
 
 
 # ┌── 函数 def _ensure_dict()
-# │  作用：Return ``parent[key]`` as a dict, replacing a missing or non-dict value with ``{}``.
+# │  作用：返回 ``parent[键]`` 作为字典, replacing missing 或 non-字典值 带 ``{}``.。
 # │  参数：parent: Dict[str, Any], key: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2679,7 +2679,7 @@ def _ensure_dict(parent: Dict[str, Any], key: str) -> Dict[str, Any]:
 
 
 # ┌── 函数 def write_platform_config_field()
-# │  作用：Persist one scalar field under ``platforms.<platform_key>``.
+# │  作用：持久化 one scalar 字段 under ``平台.<platform_key>``.
 # │  参数：platform_key: str, field_key: str, value: Any, raw: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2722,7 +2722,7 @@ def _terminal_env_value(value: Any) -> str:
 
 
 # ┌── 函数 def _terminal_config_value_is_bridgeable()
-# │  作用：Return whether a terminal config value owns its mirrored env var.
+# │  作用：返回 是否 终端配置值 持有其 镜像环境变量.。。
 # │  参数：key: str, value: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2733,7 +2733,7 @@ def _terminal_config_value_is_bridgeable(key: str, value: Any) -> bool:
 
 
 # ┌── 函数 def terminal_config_owned_env_vars()
-# │  作用：Return env vars explicitly owned by a raw ``terminal`` config section.
+# │  作用：返回 env vars explicitly 持有的由 raw ``终端`` 配置 section.。
 # │  参数：terminal_config: Any
 # │  返回：Set[str]
 # └──────────────────────────────────────────────────────────────
@@ -2751,7 +2751,7 @@ def terminal_config_owned_env_vars(terminal_config: Any) -> Set[str]:
 
 
 # ┌── 函数 def terminal_config_env_var_for_key()
-# │  作用：Return the env var mirrored by a ``terminal.*`` config key.
+# │  作用：返回 环境变量镜像由 ``终端.*`` 配置项.。
 # │  参数：key: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2762,7 +2762,7 @@ def terminal_config_env_var_for_key(key: str) -> Optional[str]:
 
 
 # ┌── 函数 def _is_ssh_remote_tilde_cwd()
-# │  作用：Whether the remote SSH shell must expand *cwd* itself: ``~`` expanded on the Hermes host
+# │  作用：是否 remote SSH shell 必须 expand *cwd* itself: ``~`` expanded 在…上 Hermes 宿主。
 # │  参数：backend: str, cwd: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2774,7 +2774,7 @@ def _is_ssh_remote_tilde_cwd(backend: str, cwd: str) -> bool:
 
 
 # ┌── 函数 def apply_terminal_config_to_env()
-# │  作用：Bridge ``terminal.*`` config into the env vars terminal tools read.
+# │  作用：Bridge ``终端.*`` 配置进入 env vars 终端工具读取.
 # │  参数：env: Optional[Dict[str, str]] = ..., config: Optional[Dict[str, Any]] = ..., override: Optional[bool] = ...
 # │  返回：Dict[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -2824,7 +2824,7 @@ def apply_terminal_config_to_env(
 
 
 # ┌── 函数 def _load_config_cache_sig()
-# │  作用：Return ``(user_sig, cache_sig)`` for ``_LOAD_CONFIG_CACHE``.
+# │  作用：返回 ``(user_sig, cache_sig)`` 用于 ``_LOAD_CONFIG_CACHE``.。
 # │  参数：config_path: Path
 # │  返回：Tuple[Optional[Tuple[int, int]], Optional[Tuple[int, int, int, int]]]
 # └──────────────────────────────────────────────────────────────
@@ -2853,7 +2853,7 @@ def _load_config_cache_sig(config_path: Path) -> Tuple[Optional[Tuple[int, int]]
 
 
 # ┌── 函数 def _last_known_good_fallback()
-# │  作用：Warn about a parse failure and return the last-known-good config, or None (-> defaults).
+# │  作用：警告 about 解析 failure 且返回 last-known-good 配置, 或 None (-> 默认值).
 # │  参数：config_path: Path, path_key: str, cache_sig, exc: Exception
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -2897,7 +2897,7 @@ def _last_known_good_fallback(config_path: Path, path_key: str, cache_sig, exc: 
 
 
 # ┌── 函数 def _merge_managed_overlay()
-# │  作用：Apply the managed-scope overlay; returns ``(merged, managed_config_or_falsy)``.
+# │  作用：Apply managed-scope 叠加; 返回 ``(merged, managed_config_or_falsy)``.
 # │  参数：expanded: Dict[str, Any]
 # │  返回：Tuple[Dict[str, Any], Any]
 # └──────────────────────────────────────────────────────────────
@@ -3040,7 +3040,7 @@ _FALLBACK_COMMENT = """
 
 
 # ┌── 函数 def _strip_managed_keys_for_save()
-# │  作用：Drop every leaf the managed layer pins (bulk safety net; single-key ``config set``
+# │  作用：丢弃每个 leaf managed layer pins (bulk safety net; single-键 ``配置设置``
 # │  参数：config: Dict[str, Any]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -3061,7 +3061,7 @@ def _strip_managed_keys_for_save(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _commented_sections_for_save()
-# │  作用：Commented-out example blocks for features that are off/unconfigured.
+# │  作用：Commented-out example blocks 用于功能那个是 off/unconfigured.
 # │  参数：normalized: Dict[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -3079,7 +3079,7 @@ def _commented_sections_for_save(normalized: Dict[str, Any]) -> Optional[str]:
 
 
 # ┌── 函数 def save_config()
-# │  作用：Save configuration to ~/.hermes/config.yaml.
+# │  作用：Save configuration ~/.hermes/配置.YAML.
 # │  参数：config: Dict[str, Any], strip_defaults: bool = ..., preserve_keys: Optional[Set[Tuple[str, ...]]] = ..., merge_existing: bool = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3131,7 +3131,7 @@ _env_cache: Optional[Tuple[Tuple[str, Optional[float], Optional[int]], Dict[str,
 
 
 # ┌── 函数 def load_env()
-# │  作用：Load ~/.hermes/.env as a dict (memoised; ``get_env_value()`` runs hundreds of times per
+# │  作用：加载 ~/.hermes/.env 作为字典 (memoised; ``get_env_value()`` 运行 hundreds 的 times per
 # │  参数：无
 # │  返回：Dict[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -3164,7 +3164,7 @@ def load_env() -> Dict[str, str]:
 
 
 # ┌── 函数 def invalidate_env_cache()
-# │  作用：Clear the load_env() memo so the next call sees a write even on coarse-mtime filesystems.
+# │  作用：清除 load_env() memo 从而 next call sees 写入 even 在…上 coarse-mtime filesystems.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3176,7 +3176,7 @@ def invalidate_env_cache() -> None:
 
 
 # ┌── 函数 def _sanitize_env_lines()
-# │  作用：Normalize .env line endings/whitespace without changing assignment semantics.
+# │  作用：归一化 .env line endings/whitespace 不 changing assignment semantics.
 # │  参数：lines: list
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -3195,7 +3195,7 @@ def _sanitize_env_lines(lines: list) -> list:
 
 
 # ┌── 函数 def sanitize_env_file()
-# │  作用：Rewrite ~/.hermes/.env with normalized line formatting; returns the number of changed lines.
+# │  作用：Rewrite ~/.hermes/.env 带已归一化 line formatting; 返回 number 的 changed lines.
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3220,7 +3220,7 @@ def sanitize_env_file() -> int:
 
 
 # ┌── 函数 def _read_env_lines()
-# │  作用：Read ``.env`` lines, normalized. Explicit UTF-8 (Windows defaults to cp1252) with BOM
+# │  作用：读取 ``.env`` lines, 已归一化. Explicit UTF-8 (Windows 默认值 cp1252) 带 BOM
 # │  参数：env_path: Path
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -3233,7 +3233,7 @@ def _read_env_lines(env_path: Path) -> list:
 
 
 # ┌── 函数 def _write_env_lines()
-# │  作用：Atomically replace ``.env`` (tmp file + fsync + rename).
+# │  作用：Atomically replace ``.env`` (tmp 文件 + fsync + rename).
 # │  参数：env_path: Path, lines: list, preserve_mode: bool
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3274,7 +3274,7 @@ def _write_env_lines(env_path: Path, lines: list, *, preserve_mode: bool) -> Non
 
 
 # ┌── 函数 def _check_non_ascii_credential()
-# │  作用：Strip non-ASCII characters from a credential (HTTP header values must be ASCII) and warn.
+# │  作用：Strip non-ASCII characters 从 credential (HTTP header 值必须是 ASCII) 且警告.
 # │  参数：key: str, value: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3302,7 +3302,7 @@ def _check_non_ascii_credential(key: str, value: str) -> str:
 
 
 # ┌── 函数 def _quote_env_value()
-# │  作用：Quote .env values containing characters with special dotenv meaning. Any whitespace
+# │  作用：Quote .env 值 containing characters 带 special dotenv meaning. 任意 whitespace
 # │  参数：value: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3321,7 +3321,7 @@ def _quote_env_value(value: str) -> str:
 
 
 # ┌── 函数 def _env_line_defines_key()
-# │  作用：True when a .env line assigns ``key`` — plain, ``export``-prefixed, or ``KEY = value``.
+# │  作用：当 .env line assigns ``键`` — plain, ``export``-prefixed, 或 ``键 = 值``. 时返回 True。
 # │  参数：line: str, key: str, is_windows: Optional[bool] = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3350,7 +3350,7 @@ def _env_line_defines_key(line: str, key: str, *, is_windows: Optional[bool] = N
 
 
 # ┌── 函数 def _publish_env_value()
-# │  作用：Publish a just-persisted ``.env`` change to the live process.
+# │  作用：Publish just-已持久化的 ``.env`` change 当前活跃的进程.
 # │  参数：key: str, value: Optional[str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3380,7 +3380,7 @@ def _publish_env_value(key: str, value: Optional[str]) -> None:
 
 
 # ┌── 函数 def _env_write_blocked()
-# │  作用：Shared write-lock check for ``.env`` writers; prints the refusal and returns True when blocked.
+# │  作用：Shared 写入-锁检查用于 ``.env`` writers; prints refusal 且返回 True 当 blocked.
 # │  参数：key: str, action: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3404,7 +3404,7 @@ def _env_write_blocked(key: str, action: str) -> bool:
 
 
 # ┌── 函数 def _managed_source()
-# │  作用：``<managed dir>/<filename>`` for refusal messages, or a generic label without a managed dir.
+# │  作用：``<managed dir>/<filename>`` 用于 refusal 消息, 或 generic label 不 managed dir.
 # │  参数：filename: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3416,7 +3416,7 @@ def _managed_source(filename: str):
 
 
 # ┌── 函数 def save_env_value()
-# │  作用：Save or update a value in ~/.hermes/.env (also matching ``export KEY=`` lines, so a save
+# │  作用：Save 或更新值 在 ~/.hermes/.env (也 matching ``export 键=`` lines, 从而 save
 # │  参数：key: str, value: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3448,7 +3448,7 @@ def save_env_value(key: str, value: str):
 
 
 # ┌── 函数 def custom_endpoint_key_env()
-# │  作用：Env var name holding a custom endpoint's API key.
+# │  作用：环境变量名称 holding custom endpoint's API 键.
 # │  参数：identity: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3463,7 +3463,7 @@ def custom_endpoint_key_env(identity: str) -> str:
 
 
 # ┌── 函数 def remove_env_value()
-# │  作用：Remove a key from ~/.hermes/.env and os.environ; True if it was found and removed.
+# │  作用：移除键 从 ~/.hermes/.env 且 os.environ; True 若它 是 found 且已移除.
 # │  参数：key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3493,7 +3493,7 @@ def remove_env_value(key: str) -> bool:
 
 
 # ┌── 函数 def _write_anthropic_slots()
-# │  作用：Write both Anthropic credential slots (one holds the value, the other is cleared).
+# │  作用：写入 both Anthropic credential slots (one holds 值, other 是已清除).
 # │  参数：token: str, api_key: str, save_fn = None, token_first: bool = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3506,7 +3506,7 @@ def _write_anthropic_slots(token: str, api_key: str, save_fn=None, *, token_firs
 
 
 # ┌── 函数 def save_anthropic_oauth_token()
-# │  作用：Persist an Anthropic OAuth/setup token and clear the API-key slot.
+# │  作用：持久化 Anthropic OAuth/setup 令牌且 清除 API-键 slot.
 # │  参数：value: str, save_fn = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3516,7 +3516,7 @@ def save_anthropic_oauth_token(value: str, save_fn=None):
 
 
 # ┌── 函数 def use_anthropic_claude_code_credentials()
-# │  作用：Use Claude Code's own credential files instead of persisting env tokens.
+# │  作用：Use Claude Code's 持有 credential 文件 instead 的持久化 env 令牌.
 # │  参数：save_fn = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3526,7 +3526,7 @@ def use_anthropic_claude_code_credentials(save_fn=None):
 
 
 # ┌── 函数 def save_anthropic_api_key()
-# │  作用：Persist an Anthropic API key and clear the OAuth/setup-token slot.
+# │  作用：持久化 Anthropic API 键且 清除 OAuth/setup-令牌 slot.
 # │  参数：value: str, save_fn = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3536,7 +3536,7 @@ def save_anthropic_api_key(value: str, save_fn=None):
 
 
 # ┌── 函数 def save_env_value_secure()
-# │  作用：Save via the unified credential lifecycle (also refreshes any config.yaml mirror of the old
+# │  作用：Save via unified credential lifecycle (也 refreshes 任意配置.YAML 镜像的 old
 # │  参数：key: str, value: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -3554,7 +3554,7 @@ def save_env_value_secure(key: str, value: str) -> Dict[str, Any]:
 
 
 # ┌── 函数 def reload_env()
-# │  作用：Re-read ~/.hermes/.env into os.environ; returns count of vars changed.
+# │  作用：Re-读取 ~/.hermes/.env 进入 os.environ; 返回 count 的 vars changed.
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3577,7 +3577,7 @@ def reload_env() -> int:
 
 
 # ┌── 函数 def _scoped_environ_get()
-# │  作用：Read ``key`` from ``os.environ`` through ``agent.secret_scope.get_secret`` so an active
+# │  作用：读取 ``键`` 从 ``os.environ`` through ``Agent.secret_scope.get_secret`` 从而 active
 # │  参数：key: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -3604,7 +3604,7 @@ def _scoped_environ_get(key: str) -> Optional[str]:
 
 
 # ┌── 函数 def get_env_value()
-# │  作用：Get a value from ``os.environ`` (scope-aware) or ``~/.hermes/.env``.
+# │  作用：获取值 从 ``os.environ`` (scope-aware) 或 ``~/.hermes/.env``.
 # │  参数：key: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -3625,7 +3625,7 @@ def get_env_value(key: str) -> Optional[str]:
 
 
 # ┌── 函数 def get_env_value_prefer_dotenv()
-# │  作用：Resolve a Hermes-managed credential preferring ``~/.hermes/.env`` over ``os.environ``, so a
+# │  作用：Resolve Hermes-managed credential preferring ``~/.hermes/.env`` over ``os.environ``, 从而
 # │  参数：key: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -3639,7 +3639,7 @@ def get_env_value_prefer_dotenv(key: str) -> Optional[str]:
 # ---- Config display ----
 
 # ┌── 函数 def redact_key()
-# │  作用：Redact an API key for display.
+# │  作用：Redact API 键用于展示.
 # │  参数：key: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3659,7 +3659,7 @@ _SECRET_CONFIG_KEYS = frozenset({
 
 
 # ┌── 函数 def redact_config_value()
-# │  作用：Copy of ``value`` with credential-shaped keys masked. ``print`` bypasses the logging
+# │  作用：复制的 ``值`` 带 credential-shaped 键 masked. ``打印`` bypasses 日志
 # │  参数：value: Any, _depth: int = 0
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -3696,7 +3696,7 @@ def _section(title: str) -> None:
 
 
 # ┌── 函数 def _show_managed_banner()
-# │  作用：Surface administrator-pinned settings so the user knows why a config.yaml value may not
+# │  作用：上报 administrator-pinned settings 从而 user knows 为何配置.YAML 值可以不
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3883,7 +3883,7 @@ def _show_skill_settings() -> None:
 
 
 # ┌── 函数 def show_config()
-# │  作用：Display current configuration.
+# │  作用：展示 current configuration.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3935,7 +3935,7 @@ def show_config():
 
 
 # ┌── 函数 def edit_config()
-# │  作用：Open config file in user's editor.
+# │  作用：打开配置文件在 user's editor.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3972,7 +3972,7 @@ _CRON_DRIFT_AXIS_BY_KEY = {
 
 
 # ┌── 函数 def _cron_model_drift_axis_for_config_key()
-# │  作用：Return the cron inference axis affected by a config key, if any.
+# │  作用：返回 cron inference axis affected 由配置项, 若任意.。
 # │  参数：key: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -3983,7 +3983,7 @@ def _cron_model_drift_axis_for_config_key(key: str) -> Optional[str]:
 
 
 # ┌── 函数 def _cron_section()
-# │  作用：Return the ``cron`` mapping of *config* (loading the merged config when None), else None.
+# │  作用：当 None), 否则 None. 时返回 ``cron`` mapping 的 *配置* (加载 merged 配置。
 # │  参数：config: Optional[Dict[str, Any]]
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -4007,7 +4007,7 @@ _CRON_MODEL_IMPACT_NAME_LIMIT = 120
 
 
 # ┌── 函数 def _model_assignment_text()
-# │  作用：Return a trimmed scalar model/provider value, or empty for malformed data.
+# │  作用：返回 trimmed scalar 模型/服务商值, 或 empty 用于格式非法的 data.。
 # │  参数：value: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -4018,7 +4018,7 @@ def _model_assignment_text(value: Any) -> str:
 
 
 # ┌── 函数 def resolve_cron_model_drift_defaults()
-# │  作用：Resolve the global ``(provider, model)`` cron compares against snapshots.
+# │  作用：Resolve global ``(服务商, 模型)`` cron compares against snapshots.
 # │  参数：config: Any, environ: Optional[Dict[str, str]] = ...
 # │  返回：Tuple[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -4040,7 +4040,7 @@ def resolve_cron_model_drift_defaults(
 
 
 # ┌── 函数 def cron_model_drift_axes()
-# │  作用：Return the unpinned axes on which *job* will keep running on its creation snapshot rather
+# │  作用：返回 unpinned axes 在…上其 *job* 将保留运行在…上其 creation snapshot rather。
 # │  参数：job: Any, current_provider: Any = ..., current_model: Any = ..., config: Any = ...
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -4121,7 +4121,7 @@ def _cron_model_impact_result(available: bool) -> Dict[str, Any]:
 
 
 # ┌── 函数 def build_cron_model_impact()
-# │  作用：Build a bounded, profile-local summary of unpinned jobs that stay on their creation snapshot
+# │  作用：构建 bounded, 配置档-local 摘要的 unpinned jobs 那个 stay 在…上其 creation snapshot
 # │  参数：current_provider: Any = ..., current_model: Any = ..., config: Any = ..., jobs: Any = ...
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -4174,7 +4174,7 @@ def build_cron_model_impact(
 
 
 # ┌── 函数 def warn_unpinned_cron_jobs_after_model_config_change()
-# │  作用：Tell the operator which unpinned cron jobs a global model/provider change does NOT move.
+# │  作用：Tell operator 其 unpinned cron jobs global 模型/服务商 change 不 move.
 # │  参数：key: str, value: Any, config: Optional[Dict[str, Any]] = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -4204,7 +4204,7 @@ def warn_unpinned_cron_jobs_after_model_config_change(
 
 
 # ┌── 函数 def _default_value_for_key()
-# │  作用：Return the leaf value declared for *dotted_key* in ``DEFAULT_CONFIG`` (None for dicts/misses).
+# │  作用：返回 leaf 值 declared 用于 *dotted_key* 在 ``DEFAULT_CONFIG`` (None 用于 dicts/misses).。
 # │  参数：dotted_key: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4249,7 +4249,7 @@ _OPEN_SUBKEY_TOP_LEVEL_KEYS = _OPEN_DICT_TOP_LEVEL_KEYS | _DYNAMIC_TOP_LEVEL_KEY
 
 
 # ┌── 函数 def _known_top_level_keys()
-# │  作用：Return the union of known top-level config keys for validation.
+# │  作用：返回 union 的 known top-级别配置键 用于 validation.。
 # │  参数：无
 # │  返回：set[str]
 # └──────────────────────────────────────────────────────────────
@@ -4260,7 +4260,7 @@ def _known_top_level_keys() -> set[str]:
 
 
 # ┌── 函数 def _suggest_closest_key()
-# │  作用：Closest candidate key name for a typo'd ``key``, or None.
+# │  作用：Closest candidate 键名称用于 typo'd ``键``, 或 None.
 # │  参数：key: str, candidates: set[str], cutoff: float = 0.6
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -4271,7 +4271,7 @@ def _suggest_closest_key(key: str, candidates: set[str], cutoff: float = 0.6) ->
 
 
 # ┌── 函数 def _validate_config_key()
-# │  作用：Validate a dotted config-key path against the known schema -> ``(is_known, suggestion)``.
+# │  作用：校验 dotted 配置-键路径 against known 结构定义 -> ``(is_known, suggestion)``.
 # │  参数：key: str
 # │  返回：tuple[bool, Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -4329,7 +4329,7 @@ def _validate_config_key(key: str) -> tuple[bool, Optional[str]]:
 
 
 # ┌── 函数 def _looks_structured_value()
-# │  作用：True when *value* plausibly encodes a YAML/JSON list or mapping. Deliberately conservative:
+# │  作用：当 *值* plausibly encodes YAML/JSON 列表或 mapping. Deliberately conservative: 时返回 True。
 # │  参数：value: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -4361,7 +4361,7 @@ def _looks_structured_value(value: str) -> bool:
 
 
 # ┌── 函数 def _coerce_int()
-# │  作用：int(value) for a clean integer literal (signs/whitespace/underscores OK), else None.
+# │  作用：int(值) 用于 clean 整数 literal (signs/whitespace/underscores OK), 否则 None.
 # │  参数：value: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4377,7 +4377,7 @@ def _coerce_int(value: str):
 
 
 # ┌── 函数 def _coerce_float()
-# │  作用：``float(value)`` only when the conversion preserves its decimal value; NaN/inf rejected.
+# │  作用：``浮点数(值)`` 仅当 conversion preserves 其 decimal 值; NaN/inf 已拒绝.
 # │  参数：value: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4406,7 +4406,7 @@ _SCALAR_WORDS = {
 
 
 # ┌── 函数 def _coerce_config_set_value()
-# │  作用：Auto-coerce a ``hermes config set`` string to bool/None/int/float/list/dict.
+# │  作用：Auto-coerce ``hermes 配置设置`` 字符串布尔值/None/int/浮点数/列表/字典.
 # │  参数：key: str, value: str
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -4450,7 +4450,7 @@ def _coerce_config_set_value(key: str, value: str) -> Any:
 
 
 # ┌── 函数 def _redirect_platform_display_key()
-# │  作用：Canonicalize ``platforms.<name>.<display_setting>`` -> ``display.platforms.<name>.<setting>``.
+# │  作用：Canonicalize ``平台.<名称>.<display_setting>`` -> ``展示.平台.<名称>.<设置>``.
 # │  参数：key: str
 # │  返回：tuple[str, Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -4484,7 +4484,7 @@ def _redirect_platform_display_key(key: str) -> tuple[str, Optional[str]]:
 
 
 # ┌── 函数 def _exit_if_key_managed()
-# │  作用：A key pinned by the managed layer cannot be set/unset (the next load would reinstate it):
+# │  作用：键 pinned 由 managed layer 无法是 设置/unset ( next 加载会 reinstate 它):
 # │  参数：key: str, action: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -4500,7 +4500,7 @@ def _exit_if_key_managed(key: str, action: str) -> None:
 
 
 # ┌── 函数 def _guard_section_overwrite()
-# │  作用：Refuse (or with ``force`` allow) a single-segment key overwriting a mapping with a scalar.
+# │  作用：Refuse (或带 ``force`` allow) single-segment 键 overwriting mapping 带 scalar.
 # │  参数：key: str, value: Any, user_config: Dict[str, Any], force: bool
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -4545,7 +4545,7 @@ def _guard_section_overwrite(key: str, value: Any, user_config: Dict[str, Any], 
 
 
 # ┌── 函数 def _touch_skin_file()
-# │  作用：``display.skin`` set means "apply NOW": bump the skin file's mtime so the gateway watcher's
+# │  作用：``展示.skin`` 设置 means "apply NOW": 递增 skin 文件's mtime 从而 gateway watcher's
 # │  参数：key: str, value: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -4573,7 +4573,7 @@ def _exit_invalid(msg: str) -> None:
 
 
 # ┌── 函数 def _write_user_config()
-# │  作用：Write only the user's raw config back (never the merged defaults).
+# │  作用：写入仅 user's raw 配置 back (never merged 默认值).
 # │  参数：config_path: Path, user_config: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -4601,7 +4601,7 @@ def _print_unknown_key_notice(key: str, suggestion: Optional[str]) -> None:
 
 
 # ┌── 函数 def set_config_value()
-# │  作用：Set a configuration value at a dotted ``key``; ``value`` is auto-coerced to bool/int/float.
+# │  作用：设置 configuration 值在 dotted ``键``; ``值`` 是 auto-coerced 布尔值/int/浮点数.
 # │  参数：key: str, value: str, force: bool = False
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4692,7 +4692,7 @@ def set_config_value(key: str, value: str, force: bool = False):
 
 
 # ┌── 函数 def get_config_value()
-# │  作用：Print a resolved configuration value.
+# │  作用：打印 resolved configuration 值.
 # │  参数：key: str, as_json: bool = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4714,7 +4714,7 @@ def get_config_value(key: str, *, as_json: bool = False):
 
 
 # ┌── 函数 def unset_config_value()
-# │  作用：Remove a user-set configuration or .env value.
+# │  作用：移除 user-设置 configuration 或 .env 值.
 # │  参数：key: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4775,7 +4775,7 @@ def _usage_exit(usage: str, examples: List[str], extra: Optional[List[str]] = No
 
 
 # ┌── 函数 def _run_write_command()
-# │  作用：Run a config writer, surfacing the fail-closed write guard's RuntimeError as a clean CLI
+# │  作用：运行配置 writer, surfacing fail-已关闭写入护栏's RuntimeError 作为 clean CLI
 # │  参数：fn, *args
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -4907,7 +4907,7 @@ def _cmd_config_migrate(args):
 
 
 # ┌── 函数 def _cmd_config_check()
-# │  作用：Non-interactive report of what's missing.
+# │  作用：Non-interactive report 的什么's missing.
 # │  参数：args
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4965,7 +4965,7 @@ _CONFIG_USAGE = """Available commands:
 
 
 # ┌── 函数 def config_command()
-# │  作用：Handle config subcommands.
+# │  作用：Handle 配置 subcommands.
 # │  参数：args
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4985,7 +4985,7 @@ def config_command(args):
 # ---- OPTIONAL_ENV_VARS injection from provider profiles and platform plugins (once, at import) ----
 
 # ┌── 函数 def _inject_profile_env_vars()
-# │  作用：Expose env_vars of every ``auth_type="api_key"`` provider in providers/ via OPTIONAL_ENV_VARS
+# │  作用：Expose env_vars 的每个 ``auth_type="api_key"`` 服务商在 服务商/ via OPTIONAL_ENV_VARS
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5018,7 +5018,7 @@ _inject_profile_env_vars()
 
 
 # ┌── 函数 def _platform_plugin_manifests()
-# │  作用：Yield ``(dir_name, manifest_dict)`` for every bundled ``plugins/platforms/*/plugin.y(a)ml``.
+# │  作用：Yield ``(dir_name, manifest_dict)`` 用于每个 bundled ``plugins/平台/*/plugin.y()ml``.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5043,7 +5043,7 @@ def _platform_plugin_manifests():
 
 
 # ┌── 函数 def _inject_platform_plugin_env_vars()
-# │  作用：Populate OPTIONAL_ENV_VARS from bundled platform plugin manifests so Teams / IRC / Google
+# │  作用：Populate OPTIONAL_ENV_VARS 从 bundled 平台 plugin manifests 从而 Teams / IRC / Google
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5087,7 +5087,7 @@ _inject_platform_plugin_env_vars()
 # The whole block is removed by reverting the commit that added it.
 
 # ┌── 函数 def _install_method_project_root()
-# │  作用：Resolve the directory that holds the *running code* (the install tree).
+# │  作用：Resolve directory 那个 holds *运行 code* ( 安装 tree).
 # │  参数：project_root: Optional[Path] = None
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -5107,7 +5107,7 @@ def _install_method_project_root(project_root: Optional[Path] = None) -> Path:
     return Path(__file__).parent.parent.resolve()
 
 # ┌── 函数 def stamp_install_method()
-# │  作用：Write the install method next to the running code (code-scoped stamp).
+# │  作用：写入安装方法 next 运行 code (code-scoped stamp).
 # │  参数：method: str, project_root: Optional[Path] = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────

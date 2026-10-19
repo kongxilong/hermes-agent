@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 
 # ┌── 函数 def _consume_detached_handler_exception()
-# │  作用：Done-callback for a detached fatal-error handler task (carrier cancelled in
+# │  作用：完成回调用于 detached 致命错误的 handler task (载体被取消在
 # │  参数：task: 'asyncio.Task'
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ _TELEGRAM_VOICE_EXTS = frozenset({'.ogg', '.opus'})
 
 
 # ┌── 函数 def transcode_to_ogg_opus()
-# │  作用：Best-effort ffmpeg transcode to Ogg/Opus (voip-tuned) for native voice bubbles: the written
+# │  作用：尽最大努力 ffmpeg 转码 Ogg/Opus (voip-tuned) 用于原生语音 bubbles: 已写入
 # │  参数：path: str, bitrate: str = ..., timeout: int = ..., output_path: 'str | None' = ...
 # │  返回：'str | None'
 # └──────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ _HISTORY_MEDIA_LOOKUP_ADMISSION = threading.BoundedSemaphore(_HISTORY_MEDIA_LOOK
 
 
 # ┌── 函数 def _platform_name()
-# │  作用：Normalize a Platform enum / raw string into a lowercase name.
+# │  作用：归一化平台枚举 / raw 字符串进入 lowercase 名称.
 # │  参数：platform
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ def _platform_name(platform) -> str:
 
 
 # ┌── 函数 def _or_default()
-# │  作用：``thunk()``, or ``default`` when it raises one of ``exc`` (numeric config/env coercion).
+# │  作用：``thunk()``, 或 ``默认值`` 当它 抛出 one 的 ``exc`` (numeric 配置/env coercion).
 # │  参数：thunk, default, exc = (TypeError, ValueError)
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -176,7 +176,7 @@ def _float_env(name: str, default: float) -> float:
 
 
 # ┌── 函数 def _thread_metadata_for_source()
-# │  作用：Platform-aware thread metadata for adapter sends. Telegram DM topics route with
+# │  作用：平台感知的线程元数据用于适配器发送. Telegram 私信 topics 路由带
 # │  参数：source, reply_to_message_id: str | None = None
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ def _thread_metadata_for_source(source, reply_to_message_id: str | None = None) 
 
 
 # ┌── 函数 def _thread_metadata_for_event()
-# │  作用：``_thread_metadata_for_source`` for an event, anchored on its reply id.
+# │  作用：``_thread_metadata_for_source`` 用于事件, anchored 在…上其 回复 ID.
 # │  参数：event
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -223,7 +223,7 @@ def _thread_metadata_for_event(event) -> dict | None:
 
 
 # ┌── 函数 def _mark_notify_metadata()
-# │  作用：Clone metadata and mark a user-visible reply as notify-worthy.
+# │  作用：Clone metadata 且 mark user-visible reply 作为 notify-worthy.
 # │  参数：metadata: dict | None
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ def _mark_notify_metadata(metadata: dict | None) -> dict:
 
 
 # ┌── 函数 def _reply_anchor_for_event()
-# │  作用：Return reply_to id for platforms that need reply semantics.
+# │  作用：返回 reply_to id 用于平台那个 need 回复语义.。
 # │  参数：event
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ def _reply_anchor_for_event(event) -> str | None:
 
 
 # ┌── 函数 def _media_failure_text()
-# │  作用：User-facing "couldn't deliver" notice; ``file_name`` is the only name ever shown.
+# │  作用：面向用户的 "couldn't deliver" 提示; ``file_name`` 是仅 名称 ever shown.
 # │  参数：kind: str, file_name: 'str | None' = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -280,7 +280,7 @@ def _media_failure_text(kind: str, file_name: "str | None" = None) -> str:
 
 
 # ┌── 函数 def should_send_media_as_audio()
-# │  作用：True when a media file should use the platform's audio sender. Telegram: explicit
+# │  作用：当 媒体文件应当 use 平台's 音频发送器. Telegram: explicit 时返回 True。
 # │  参数：platform, ext: str, is_voice: bool = False
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ def should_send_media_as_audio(platform, ext: str, is_voice: bool = False) -> bo
 
 
 # ┌── 函数 def build_auto_tts_output_path()
-# │  作用：Unique temp output path for gateway auto-TTS: ``.ogg`` for ``OPUS_VOICE_PLATFORMS``
+# │  作用：Unique 临时输出路径用于 gateway auto-TTS: ``.ogg`` 用于 ``OPUS_VOICE_PLATFORMS``
 # │  参数：platform
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -326,7 +326,7 @@ def build_auto_tts_output_path(platform) -> str:
 
 
 # ┌── 函数 def utf16_len()
-# │  作用：UTF-16 code units in *s* — Telegram's 4 096 limit counts those, so astral chars
+# │  作用：UTF-16 码元在 *s* — Telegram's 4 096 限制 counts 那些, 从而扩展平面字符
 # │  参数：s: str
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -341,7 +341,7 @@ def utf16_len(s: str) -> int:
 
 
 # ┌── 函数 def _custom_unit_to_cp()
-# │  作用：Largest codepoint offset *n* with ``len_fn(s[:n]) <= budget`` (binary search).
+# │  作用：Largest codepoint offset *n* 带 ``len_fn(s[:n]) <= 预算`` (binary search).
 # │  参数：s: str, budget: int, len_fn
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -362,7 +362,7 @@ def _custom_unit_to_cp(s: str, budget: int, len_fn) -> int:
 
 
 # ┌── 函数 def _prefix_within_utf16_limit()
-# │  作用：Longest prefix of *s* with UTF-16 length ≤ *limit*; never splits a surrogate pair.
+# │  作用：Longest prefix 的 *s* 带 UTF-16 length ≤ *限制*; never splits surrogate pair.
 # │  参数：s: str, limit: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -373,7 +373,7 @@ def _prefix_within_utf16_limit(s: str, limit: int) -> str:
 
 
 # ┌── 函数 def is_network_accessible()
-# │  作用：True if *host* would expose the server beyond loopback (incl. IPv4-mapped
+# │  作用：True 若 *宿主* 会 expose 服务端 beyond loopback (incl. IPv4-mapped
 # │  参数：host: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ def is_network_accessible(host: str) -> bool:
 
 
 # ┌── 函数 def _detect_macos_system_proxy()
-# │  作用：Read the macOS system HTTP(S) proxy via ``scutil --proxy``: ``http://host:port``
+# │  作用：读取 macOS system HTTP(S) proxy via ``scutil --proxy``: ``http://宿主:port``
 # │  参数：无
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -429,7 +429,7 @@ def _detect_macos_system_proxy() -> str | None:
 
 
 # ┌── 函数 def should_bypass_proxy()
-# │  作用：True when NO_PROXY/no_proxy matches at least one target host (exact hosts, domain /
+# │  作用：当 NO_PROXY/no_proxy matches 在 least one target 宿主 (exact 宿主, domain / 时返回 True。
 # │  参数：target_hosts: str | list[str] | tuple[str, ...] | set[str] | None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ def should_bypass_proxy(target_hosts: str | list[str] | tuple[str, ...] | set[st
 
 
 # ┌── 函数 def resolve_proxy_url()
-# │  作用：Proxy URL: *platform_env_var* (e.g. ``DISCORD_PROXY``) first, then the adapter's own YAML
+# │  作用：Proxy URL: *platform_env_var* (e.g. ``DISCORD_PROXY``) first, 然后适配器's 持有 YAML
 # │  参数：platform_env_var: str | None = None, target_hosts: str | list[str] | tuple[str, ...] | set[str] | None = ..., configured: str | None = ...
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -476,7 +476,7 @@ def resolve_proxy_url(
 
 
 # ┌── 函数 def _aiohttp_socks_connector()
-# │  作用：``aiohttp_socks.ProxyConnector`` for ``proxy_url``, or None when aiohttp_socks is missing
+# │  作用：``aiohttp_socks.ProxyConnector`` 用于 ``proxy_url``, 或 None 当 aiohttp_socks 是 missing
 # │  参数：proxy_url: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -498,7 +498,7 @@ def _aiohttp_socks_connector(proxy_url: str):
 
 
 # ┌── 函数 def proxy_kwargs_for_bot()
-# │  作用：Kwargs for ``commands.Bot()`` / ``discord.Client()``: SOCKS → ``{"connector"}``,
+# │  作用：Kwargs 用于 ``命令.机器人()`` / ``discord.客户端()``: SOCKS → ``{"connector"}``,
 # │  参数：proxy_url: str | None
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -517,7 +517,7 @@ def proxy_kwargs_for_bot(proxy_url: str | None) -> dict:
 
 
 # ┌── 函数 def _config_section()
-# │  作用：Read-only ``config.yaml`` section ``name``; ``{}`` when unreadable/missing/not a dict.
+# │  作用：读取-仅 ``配置.YAML`` section ``名称``; ``{}`` 当 unreadable/missing/不字典.
 # │  参数：name: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -536,7 +536,7 @@ def _config_section(name: str) -> dict:
 
 
 # ┌── 函数 def gateway_trust_env()
-# │  作用：``gateway.trust_env`` from config.yaml (default True): whether gateway
+# │  作用：``gateway.trust_env`` 从配置.YAML (默认值 True): whether gateway
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -553,7 +553,7 @@ def gateway_trust_env() -> bool:
 
 
 # ┌── 函数 def proxy_kwargs_for_aiohttp()
-# │  作用：``(session_kwargs, request_kwargs)`` for a standalone ``aiohttp.ClientSession``. With
+# │  作用：``(session_kwargs, request_kwargs)`` 用于 standalone ``aiohttp.ClientSession``. 带
 # │  参数：proxy_url: str | None
 # │  返回：tuple[dict, dict]
 # └──────────────────────────────────────────────────────────────
@@ -573,7 +573,7 @@ def proxy_kwargs_for_aiohttp(proxy_url: str | None) -> tuple[dict, dict]:
 
 
 # ┌── 函数 def is_host_excluded_by_no_proxy()
-# │  作用：Return True when ``hostname`` matches a ``NO_PROXY`` entry (``no_proxy_value`` overrides the
+# │  作用：当 ``hostname`` matches ``NO_PROXY`` entry (``no_proxy_value`` 覆盖值 时返回 True。
 # │  参数：hostname: str, no_proxy_value: str | None = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -602,7 +602,7 @@ if TYPE_CHECKING:
     from agent.display import ToolPreview
 
 # ┌── 类 class AudioFormat
-# │  说明：Declared PCM format for a streaming-TTS session: every ``write_streaming_tts``
+# │  说明：Declared PCM format 用于 streaming-TTS 会话: 每个 ``write_streaming_tts``
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -617,7 +617,7 @@ class AudioFormat:
 
 
 # ┌── 类 class StreamingTTSHandle
-# │  说明：Opaque handle returned by ``begin_streaming_tts``; adapters may extend it with
+# │  说明：Opaque handle returned 由 ``begin_streaming_tts``; adapters 可以 extend 它带
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -633,7 +633,7 @@ class StreamingTTSHandle:
 
 
 # ┌── 函数 def streaming_tts_turn_key()
-# │  作用：Per-turn streaming-TTS suppression key — turn-scoped (not chat-scoped) so
+# │  作用：Per-轮次 streaming-TTS suppression 键 — 轮次-scoped (不 chat-scoped) 从而
 # │  参数：session_key: str | None, turn_marker: Any = None, event: Any = ...
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -651,7 +651,7 @@ def streaming_tts_turn_key(session_key: str | None, turn_marker: Any = None, *, 
 
 
 # ┌── 函数 def streaming_tts_should_skip_whole_file()
-# │  作用：Pure, turn-scoped auto-TTS suppression decision (testable without the adapter stack).
+# │  作用：Pure, 轮次-scoped auto-TTS suppression decision (testable 不适配器 stack).
 # │  参数：completed_turns: set[str], session_key: str | None, turn_marker: Any = None, event: Any = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -669,7 +669,7 @@ GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE = (
 
 
 # ┌── 函数 def safe_url_for_log()
-# │  作用：Return a URL string safe for logs (no query/fragment/userinfo).
+# │  作用：返回 URL 字符串 safe 用于日志 (无 query/fragment/userinfo).。
 # │  参数：url: str, max_len: int = 80
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -700,7 +700,7 @@ def safe_url_for_log(url: str, max_len: int = 80) -> str:
 
 
 # ┌── 异步函数（协程） def _ssrf_redirect_guard()
-# │  作用：Re-validate each redirect target (a public URL 302-ing to http://169.254.169.254/ would
+# │  作用：Re-校验每个 redirect target ( public URL 302-ing http://169.254.169.254/ 会
 # │  参数：response
 # │  返回：（未标注类型）
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -735,7 +735,7 @@ DEFAULT_INBOUND_MEDIA_MAX_BYTES = 128 * 1024 * 1024
 
 
 # ┌── 函数 def get_inbound_media_max_bytes()
-# │  作用：Max inbound media bytes held in memory (``gateway.max_inbound_media_bytes``);
+# │  作用：Max inbound media bytes held 在内存 (``gateway.max_inbound_media_bytes``);
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -748,7 +748,7 @@ def get_inbound_media_max_bytes() -> int:
 
 
 # ┌── 函数 def validate_inbound_media_size()
-# │  作用：Raise ``ValueError`` if an inbound payload exceeds the cap (``max_bytes`` of ``0``
+# │  作用：抛出 ``ValueError`` 若 inbound payload exceeds cap (``max_bytes`` 的 ``0``
 # │  参数：size: int, media_type: str = ..., max_bytes: Optional[int] = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -763,7 +763,7 @@ def validate_inbound_media_size(
 
 
 # ┌── 异步函数（协程） def _read_httpx_body_with_limit()
-# │  作用：Read an httpx streaming body under the media cap: reject an oversized ``Content-Length``
+# │  作用：读取 httpx streaming body under media cap: 拒绝 oversized ``内容-Length``
 # │  参数：response, media_type: str
 # │  返回：bytes
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -792,7 +792,7 @@ async def _read_httpx_body_with_limit(response, *, media_type: str) -> bytes:
 
 
 # ┌── 函数 def _cache_dir_accessors()
-# │  作用：``(get_<kind>_cache_dir, cleanup_<kind>_cache)`` pair. The getter resolves fresh via
+# │  作用：``(get_<种类>_cache_dir, cleanup_<种类>_cache)`` pair. getter resolves fresh via
 # │  参数：kind: str, constant_name: str, new_subpath: str, old_name: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -825,7 +825,7 @@ get_image_cache_dir, cleanup_image_cache = _cache_dir_accessors(
 
 
 # ┌── 函数 def _looks_like_image()
-# │  作用：Return True if *data* starts with a known image magic-byte sequence.
+# │  作用：返回 True 若 *data* starts 带 known image magic-byte sequence.。
 # │  参数：data: bytes
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -838,7 +838,7 @@ def _looks_like_image(data: bytes) -> bool:
 
 
 # ┌── 函数 def _write_cache_file()
-# │  作用：Write ``data`` to ``<cache_dir>/<prefix>_<uuid12><ext>``; return the path string.
+# │  作用：写入 ``data`` ``<cache_dir>/<prefix>_<uuid12><ext>``; 返回路径字符串.
 # │  参数：cache_dir: Path, prefix: str, ext: str, data: bytes
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -851,7 +851,7 @@ def _write_cache_file(cache_dir: Path, prefix: str, ext: str, data: bytes) -> st
 
 
 # ┌── 函数 def cache_image_from_bytes()
-# │  作用：Save raw image bytes to the cache and return the absolute path; raises
+# │  作用：Save raw image bytes 缓存且 返回 absolute 路径; 抛出
 # │  参数：data: bytes, ext: str = '.jpg'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -868,7 +868,7 @@ def cache_image_from_bytes(data: bytes, ext: str = ".jpg") -> str:
 
 
 # ┌── 异步函数（协程） def cache_image_from_bytes_async()
-# │  作用：Cache image bytes without blocking the caller's event loop.
+# │  作用：缓存 image bytes 不 blocking caller's 事件循环.
 # │  参数：data: bytes, ext: str = '.jpg'
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -881,7 +881,7 @@ async def cache_image_from_bytes_async(data: bytes, ext: str = ".jpg") -> str:
 
 
 # ┌── 异步函数（协程） def _cache_media_from_url()
-# │  作用：Shared downloader behind ``cache_*_from_url``: SSRF-checked (pre-flight + per-redirect;
+# │  作用：Shared downloader behind ``cache_*_from_url``: SSRF-已检查 (pre-flight + per-redirect;
 # │  参数：url: str, ext: str, retries: int, media_type: str, accept: str, cache_fn, log_label: str
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -923,7 +923,7 @@ async def _cache_media_from_url(url: str, ext: str, retries: int, *, media_type:
 
 
 # ┌── 异步函数（协程） def cache_image_from_url()
-# │  作用：Download an image URL into the image cache; return the absolute path.
+# │  作用：Download image URL 进入 image 缓存; 返回 absolute 路径.
 # │  参数：url: str, ext: str = '.jpg', retries: int = 2
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -938,7 +938,7 @@ async def cache_image_from_url(url: str, ext: str = ".jpg", retries: int = 2) ->
 
 
 # ┌── 函数 def _cleanup_cache_dir()
-# │  作用：Delete files in *cache_dir* older than *max_age_hours*; return the count removed.
+# │  作用：Delete 文件在 *cache_dir* older 比 *max_age_hours*; 返回 count 已移除.
 # │  参数：cache_dir: Path, max_age_hours: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -962,7 +962,7 @@ get_audio_cache_dir, cleanup_audio_cache = _cache_dir_accessors(
 
 
 # ┌── 函数 def cache_audio_from_bytes()
-# │  作用：Save raw audio bytes to the cache (container-sniffed ext); return the path.
+# │  作用：Save raw audio bytes 缓存 (container-sniffed ext); 返回路径.
 # │  参数：data: bytes, ext: str = '.ogg'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -976,7 +976,7 @@ def cache_audio_from_bytes(data: bytes, ext: str = ".ogg") -> str:
 
 
 # ┌── 异步函数（协程） def cache_audio_from_bytes_async()
-# │  作用：Cache audio bytes without blocking the caller's event loop.
+# │  作用：缓存 audio bytes 不 blocking caller's 事件循环.
 # │  参数：data: bytes, ext: str = '.ogg'
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -989,7 +989,7 @@ async def cache_audio_from_bytes_async(data: bytes, ext: str = ".ogg") -> str:
 
 
 # ┌── 异步函数（协程） def cache_audio_from_url()
-# │  作用：Download an audio URL into the audio cache; return the absolute path.
+# │  作用：Download audio URL 进入 audio 缓存; 返回 absolute 路径.
 # │  参数：url: str, ext: str = '.ogg', retries: int = 2
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1014,7 +1014,7 @@ SUPPORTED_VIDEO_TYPES = {
 
 
 # ┌── 函数 def cache_video_from_bytes()
-# │  作用：Save raw video bytes to the cache and return the absolute file path.
+# │  作用：Save raw video bytes 缓存且 返回 absolute 文件路径.
 # │  参数：data: bytes, ext: str = '.mp4'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1026,7 +1026,7 @@ def cache_video_from_bytes(data: bytes, ext: str = ".mp4") -> str:
 
 
 # ┌── 异步函数（协程） def cache_video_from_bytes_async()
-# │  作用：Cache video bytes without blocking the caller's event loop.
+# │  作用：缓存 video bytes 不 blocking caller's 事件循环.
 # │  参数：data: bytes, ext: str = '.mp4'
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1086,7 +1086,7 @@ _MEDIA_DELIVERY_DENIED_HOME_SUBPATHS = (
     "Library/Keychains")
 
 # ┌── 函数 def _sqlite_files()
-# │  作用：A SQLite store plus its WAL/SHM/rollback-journal sidecars.
+# │  作用：SQLite store plus 其 WAL/SHM/rollback-journal sidecars.
 # │  参数：name: str
 # │  返回：tuple[str, ...]
 # └──────────────────────────────────────────────────────────────
@@ -1112,7 +1112,7 @@ _ROOT_CREDENTIAL_PATHS = (
 
 
 # ┌── 函数 def _profile_cache_roots()
-# │  作用：Per-profile cache roots ``<root>/profiles/<name>/cache/{images,...}`` (the static safe
+# │  作用：按配置档的缓存 roots ``<root>/配置档/<名称>/缓存/{images,...}`` ( static safe
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1131,7 +1131,7 @@ def _profile_cache_roots() -> List[Path]:
 
 
 # ┌── 函数 def _profile_dirs()
-# │  作用：Every ``<root>/profiles/<name>`` directory, read at check time.
+# │  作用：每个 ``<root>/配置档/<名称>`` directory, 读取在 检查 time.
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1147,7 +1147,7 @@ def _profile_dirs() -> List[Path]:
 
 
 # ┌── 函数 def _credential_home_roots()
-# │  作用：Every Hermes home whose credential stores the denylist must cover: the ACTIVE home
+# │  作用：每个 Hermes 主目录 whose credential stores denylist 必须 cover: ACTIVE 主目录
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1162,7 +1162,7 @@ def _credential_home_roots() -> List[Path]:
 
 
 # ┌── 函数 def _kanban_root()
-# │  作用：Kanban is root-shared across profiles by design (``kanban_db.kanban_home``).
+# │  作用：Kanban 是 root-shared across 配置档由 design (``kanban_db.kanban_home``).
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -1173,7 +1173,7 @@ def _kanban_root() -> Path:
 
 
 # ┌── 函数 def _kanban_board_dirs()
-# │  作用：Every directory under ``<root>/kanban/boards`` (lax on purpose: the DENY side must catch a
+# │  作用：每个 directory under ``<root>/kanban/boards`` (lax 在…上 purpose: DENY side 必须 catch
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1188,7 +1188,7 @@ def _kanban_board_dirs() -> List[Path]:
 
 
 # ┌── 函数 def _kanban_attachment_roots()
-# │  作用：Return durable Kanban attachment roots without importing kanban_db.
+# │  作用：返回 durable Kanban attachment roots 不导入 kanban_db.。
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1207,7 +1207,7 @@ def _kanban_attachment_roots() -> List[Path]:
 
 
 # ┌── 函数 def _media_delivery_allowed_roots()
-# │  作用：Return roots from which model-emitted local media may be delivered.
+# │  作用：返回 roots 从其 模型-emitted local media 可以是 delivered.。
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1224,7 +1224,7 @@ def _media_delivery_allowed_roots() -> List[Path]:
 
 
 # ┌── 函数 def _media_delivery_recency_seconds()
-# │  作用：Recency window (seconds) for trusting fresh files; 0 = pure-allowlist mode.
+# │  作用：Recency window (seconds) 用于 trusting fresh 文件; 0 = pure-白名单模式.
 # │  参数：无
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -1241,7 +1241,7 @@ def _media_delivery_recency_seconds() -> float:
 
 
 # ┌── 函数 def _kanban_board_db_paths()
-# │  作用：Named-board ``kanban.db`` stores (+ sidecars): they sit beside the ATTACHMENTS dir
+# │  作用：Named-board ``kanban.数据库`` stores (+ sidecars): 它们 sit beside ATTACHMENTS dir
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1253,7 +1253,7 @@ def _kanban_board_db_paths() -> List[Path]:
 
 
 # ┌── 函数 def _media_delivery_denied_paths()
-# │  作用：Return absolute denylist paths under which delivery is never allowed.
+# │  作用：返回 absolute denylist 路径 under 其 delivery 是 never allowed.。
 # │  参数：无
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1268,7 +1268,7 @@ def _media_delivery_denied_paths() -> List[Path]:
 
 
 # ┌── 函数 def _resolve_path()
-# │  作用：``path[.expanduser()].resolve(strict)`` or None when it fails (OSError / RuntimeError /
+# │  作用：``路径[.expanduser()].resolve(strict)`` 或 None 当它 fails (OSError / RuntimeError /
 # │  参数：path: Path, strict: bool = ..., expand: bool = ...
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1285,7 +1285,7 @@ def _resolve_path(path: Path, *, strict: bool = False, expand: bool = False) -> 
 
 
 # ┌── 函数 def _path_under_denied_prefix()
-# │  作用：True if ``resolved`` lives under a deny-listed system path — except a denied prefix that
+# │  作用：True 若 ``resolved`` lives under deny-listed system 路径 — except denied prefix 那个
 # │  参数：resolved: Path
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1308,7 +1308,7 @@ def _path_under_denied_prefix(resolved: Path) -> bool:
 
 
 # ┌── 函数 def _file_is_recently_produced()
-# │  作用：True if mtime is within ``window_seconds`` — a session-scoped trust signal: agents
+# │  作用：True 若 mtime 是 within ``window_seconds`` — 会话-scoped trust 信号: Agent
 # │  参数：resolved: Path, window_seconds: float
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1342,7 +1342,7 @@ def _path_is_within(path: Path, root: Path) -> bool:
 
 
 # ┌── 函数 def _tenv()
-# │  作用：Scope-aware TERMINAL_* read: the per-turn scope carries the ACTIVE profile's settings while
+# │  作用：Scope-aware TERMINAL_* 读取: per-轮次 scope carries ACTIVE 配置档's settings 当
 # │  参数：name: str, default: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1361,7 +1361,7 @@ def _tenv(name: str, default: str = "") -> str:
 
 
 # ┌── 函数 def _parse_docker_volume_mounts()
-# │  作用：Parse ``TERMINAL_DOCKER_VOLUMES`` (JSON list of ``host:container[:mode]``) into
+# │  作用：解析 ``TERMINAL_DOCKER_VOLUMES`` (JSON 列表的 ``宿主:container[:模式]``) 进入
 # │  参数：无
 # │  返回：List[Tuple[Path, Path]]
 # └──────────────────────────────────────────────────────────────
@@ -1396,7 +1396,7 @@ def _parse_docker_volume_mounts() -> List[Tuple[Path, Path]]:
 
 
 # ┌── 函数 def _docker_sandbox_dir_candidates()
-# │  作用：Candidate host sandbox dir names for the delivering session, best first. Mirrors
+# │  作用：Candidate 宿主 sandbox dir 名称用于 delivering 会话, best first. 镜像
 # │  参数：session_key: str = ''
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -1449,7 +1449,7 @@ def _docker_env_active() -> bool:
 
 
 # ┌── 函数 def _docker_persistent_active()
-# │  作用：Docker backend with persistent containers (the default) enabled.
+# │  作用：Docker backend 带 persistent containers ( 默认值) enabled.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1460,7 +1460,7 @@ def _docker_persistent_active() -> bool:
 
 
 # ┌── 函数 def _docker_persistent_sandbox_roots()
-# │  作用：Existing ``<sandbox>/docker/<candidate>/<leaf>`` host dirs in candidate order;
+# │  作用：Existing ``<sandbox>/Docker/<candidate>/<leaf>`` 宿主 dirs 在 candidate order;
 # │  参数：session_key: str, leaf: str
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1483,7 +1483,7 @@ def _docker_persistent_sandbox_roots(session_key: str, leaf: str) -> List[Path]:
 
 
 # ┌── 函数 def _default_docker_workspace_host_roots()
-# │  作用：Existing host candidates for ``/workspace``: the explicit cwd mount
+# │  作用：Existing 宿主 candidates 用于 ``/workspace``: explicit cwd mount
 # │  参数：session_key: str = ''
 # │  返回：List[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1508,7 +1508,7 @@ def _default_docker_workspace_host_roots(session_key: str = "") -> List[Path]:
 
 
 # ┌── 函数 def _cache_dir_container_mounts()
-# │  作用：(host, container) pairs for the auto-mounted Hermes cache dirs (``/root/.hermes/...`` in
+# │  作用：(宿主, container) pairs 用于 auto-mounted Hermes 缓存 dirs (``/root/.hermes/...`` 在
 # │  参数：无
 # │  返回：List[Tuple[Path, Path]]
 # └──────────────────────────────────────────────────────────────
@@ -1529,7 +1529,7 @@ def _cache_dir_container_mounts() -> List[Tuple[Path, Path]]:
 
 
 # ┌── 函数 def _warn_unresolved_docker_media()
-# │  作用：Name WHY a container-absolute MEDIA path failed translation (otherwise the only signal is
+# │  作用：名称为何 container-absolute MEDIA 路径 failed translation (otherwise 仅信号是
 # │  参数：candidate: Path, session_key: str, reason: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1548,7 +1548,7 @@ def _warn_unresolved_docker_media(candidate: Path, session_key: str, reason: str
 
 
 # ┌── 函数 def _translate_docker_container_media_path()
-# │  作用：Container-absolute path -> host path via longest-prefix match over ``docker_volumes``, the
+# │  作用：Container-absolute 路径 -> 宿主路径 via longest-prefix match over ``docker_volumes``,
 # │  参数：candidate: Path, session_key: str = ''
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1599,7 +1599,7 @@ def _translate_docker_container_media_path(candidate: Path, session_key: str = "
 
 
 # ┌── 函数 def validate_media_delivery_path()
-# │  作用：Safe absolute file path for native media delivery, else None. Default: any existing
+# │  作用：Safe absolute 文件路径用于 native media delivery, 否则 None. 默认值: 任意 existing
 # │  参数：path: str, session_key: str = ''
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1654,7 +1654,7 @@ _LOG_UNSAFE_CHARS = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]")
 
 
 # ┌── 函数 def _log_safe_path()
-# │  作用：Return a single-line, length-bounded path for log output.
+# │  作用：返回 single-line, length-bounded 路径用于日志输出.。
 # │  参数：path: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1665,7 +1665,7 @@ def _log_safe_path(path: str) -> str:
 
 
 # ┌── 函数 def _validated_delivery_path()
-# │  作用：``validate_media_delivery_path`` plus the shared "Skipping unsafe ..." warning. A path the
+# │  作用：``validate_media_delivery_path`` plus shared "Skipping unsafe ..." 警告. 路径
 # │  参数：raw_path, session_key: str, label: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1822,7 +1822,7 @@ MEDIA_EXTENSIONLESS_TAG_RE = re.compile(
 
 
 # ┌── 函数 def _match_extensionless_path()
-# │  作用：Extensionless MEDIA tag match -> validated on-disk ``(safe_path, end_offset)`` or None: the
+# │  作用：Extensionless MEDIA tag match -> 已校验在…上-disk ``(safe_path, end_offset)`` 或 None:
 # │  参数：scan_text: str, match: 're.Match'
 # │  返回：Optional[Tuple[str, int]]
 # └──────────────────────────────────────────────────────────────
@@ -1879,7 +1879,7 @@ def _normalize_media_tag_path(raw: str) -> str:
 
 
 # ┌── 函数 def _path_lacks_deliverable_extension()
-# │  作用：True when ``path`` has no extension or one outside MEDIA_DELIVERY_EXTS — such paths
+# │  作用：当 ``路径`` 有无 extension 或 one outside MEDIA_DELIVERY_EXTS — such 路径 时返回 True。
 # │  参数：path: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1907,7 +1907,7 @@ def _has_media_directives(text: str) -> bool:
 
 
 # ┌── 函数 def _mask_media_scan_text()
-# │  作用：Offset-preserving mask of protected spans (code, quotes, JSON string values).
+# │  作用：Offset-preserving mask 的 protected spans (code, quotes, JSON 字符串值).
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1920,7 +1920,7 @@ def _mask_media_scan_text(text: str) -> str:
 
 
 # ┌── 函数 def _extensionless_media_matches()
-# │  作用：Yield ``(match, safe_path, end_offset)`` for every extension-less / unknown-extension
+# │  作用：Yield ``(match, safe_path, end_offset)`` 用于每个 extension-less / unknown-extension
 # │  参数：masked: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1937,7 +1937,7 @@ def _extensionless_media_matches(masked: str):
 
 
 # ┌── 函数 def _real_media_tag_spans()
-# │  作用：(start, end) spans of deliverable MEDIA tags on a masked copy: known-extension tags
+# │  作用：(start, end) spans 的 deliverable MEDIA tags 在…上 masked 复制: known-extension tags
 # │  参数：masked: str
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -1955,7 +1955,7 @@ _INLINE_CODE_RE = re.compile(r'`[^`\n]+`')
 
 
 # ┌── 函数 def _code_spans()
-# │  作用：(start, end) spans of fenced code blocks and inline code in ``content``.
+# │  作用：(start, end) spans 的 fenced code blocks 且 inline code 在 ``内容``.
 # │  参数：content: str
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -1966,7 +1966,7 @@ def _code_spans(content: str) -> list:
 
 
 # ┌── 函数 def _blank_spans()
-# │  作用：Replace every non-newline char inside ``spans`` with a space (offsets preserved).
+# │  作用：Replace 每个 non-newline char inside ``spans`` 带 space (offsets preserved).
 # │  参数：text: str, spans: list
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1980,7 +1980,7 @@ def _blank_spans(text: str, spans: list) -> str:
 
 
 # ┌── 函数 def _delete_spans()
-# │  作用：Delete ``spans`` from ``text``, merging overlapping/nested ones first so multi-pattern
+# │  作用：Delete ``spans`` 从 ``文本``, merging overlapping/nested ones first 从而 multi-pattern
 # │  参数：text: str, spans: list
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2004,7 +2004,7 @@ def _delete_spans(text: str, spans: list) -> str:
 
 
 # ┌── 函数 def _strip_media_tag_directives()
-# │  作用：Remove MEDIA: tags and [[audio_as_voice]] / [[as_document]] markers so they never render
+# │  作用：移除 MEDIA: tags 且 [[audio_as_voice]] / [[as_document]] markers 从而它们 never render
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2025,7 +2025,7 @@ def _strip_media_tag_directives(text: str) -> str:
 
 
 # ┌── 函数 def cache_document_from_bytes()
-# │  作用：Save raw document bytes to the cache as ``doc_{uuid12}_{original_name}`` and return
+# │  作用：Save raw document bytes 缓存作为 ``doc_{uuid12}_{original_name}`` 且返回
 # │  参数：data: bytes, filename: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2048,7 +2048,7 @@ def cache_document_from_bytes(data: bytes, filename: str) -> str:
 
 
 # ┌── 异步函数（协程） def cache_document_from_bytes_async()
-# │  作用：Cache document bytes without blocking the caller's event loop.
+# │  作用：缓存 document bytes 不 blocking caller's 事件循环.
 # │  参数：data: bytes, filename: str
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2062,7 +2062,7 @@ async def cache_document_from_bytes_async(data: bytes, filename: str) -> str:
 
 # Unified media caching: classify attachment bytes by ext/MIME, route to cache_*_from_bytes.
 # ┌── 类 class CachedMedia
-# │  说明：Result of caching one attachment's bytes.
+# │  说明：结果的 caching one attachment's bytes.
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -2074,7 +2074,7 @@ class CachedMedia:
     display_name: str         # human-readable name for transcript notes
 
     # ┌── 函数 def context_note()
-    # │  作用：One-line transcript annotation pointing the agent at the file.
+    # │  作用：One-line transcript annotation pointing Agent 在文件.
     # │  参数：self
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -2093,7 +2093,7 @@ _MIME_TO_EXT: Dict[str, str] = {
 
 
 # ┌── 函数 def _resolve_media_ext()
-# │  作用：Best-effort file extension from filename, then MIME fallback.
+# │  作用：尽最大努力文件 extension 从 filename, 然后 MIME 兜底.
 # │  参数：filename: str, mime_type: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2105,7 +2105,7 @@ def _resolve_media_ext(filename: str, mime_type: str) -> str:
 
 
 # ┌── 函数 def cache_media_bytes()
-# │  作用：Classify and cache raw attachment bytes -> CachedMedia (None only for images failing
+# │  作用：Classify 且缓存 raw attachment bytes -> CachedMedia (None 仅用于 images failing
 # │  参数：data: bytes, filename: str = ..., mime_type: str = ..., default_kind: Optional[str] = ...
 # │  返回：Optional[CachedMedia]
 # └──────────────────────────────────────────────────────────────
@@ -2148,7 +2148,7 @@ def cache_media_bytes(data: bytes, *, filename: str = "", mime_type: str = "",
 
 
 # ┌── 异步函数（协程） def cache_media_bytes_async()
-# │  作用：Classify and cache attachment bytes without blocking the event loop.
+# │  作用：Classify 且缓存 attachment bytes 不 blocking 事件循环.
 # │  参数：data: bytes, filename: str = ..., mime_type: str = ..., default_kind: Optional[str] = ...
 # │  返回：Optional[CachedMedia]
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2183,7 +2183,7 @@ class TextDebounceState:
     last_ts: float
 
     # ┌── 函数 def cancel_timer()
-    # │  作用：Cancel the pending flush timer (if live and not ``unless``).
+    # │  作用：Cancel pending 冲刷 timer (若当前活跃的且 不 ``unless``).
     # │  参数：self, unless: 'asyncio.Task | None' = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2194,7 +2194,7 @@ class TextDebounceState:
 
 
 # ┌── 函数 def _append_text()
-# │  作用：``existing\nnew`` when both non-empty; the non-empty one otherwise.
+# │  作用：``existing\nnew`` 当 both non-empty; non-empty one otherwise.
 # │  参数：existing: Optional[str], new: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2205,7 +2205,7 @@ def _append_text(existing: Optional[str], new: Optional[str]) -> str:
 
 
 # ┌── 类 class _ExtractedResponse
-# │  说明：Deliverable parts of a handler response (see ``_extract_response_content``).
+# │  说明：Deliverable parts 的 handler 响应 (see ``_extract_response_content``).
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -2226,7 +2226,7 @@ _PLAINTEXT_GATEWAY_RESTART_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 
 # ┌── 函数 def coerce_plaintext_gateway_command()
-# │  作用：Rewrite a tiny set of DM plaintext admin phrases (exact matches only) into slash commands so
+# │  作用：Rewrite tiny 设置的 DM plaintext admin phrases (exact matches 仅) 进入 slash 命令从而
 # │  参数：event: 'MessageEvent'
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2247,7 +2247,7 @@ def coerce_plaintext_gateway_command(event: "MessageEvent") -> None:
 
 
 # ┌── 类 class ExecApprovalPrompt
-# │  说明：One exec-approval prompt, ready for a platform to render natively (see
+# │  说明：One exec-approval 提示词, ready 用于平台 render natively (see
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -2279,7 +2279,7 @@ class ExecApprovalPrompt:
 
 
 # ┌── 类 class SendResult
-# │  说明：Result of sending a message.
+# │  说明：结果的 sending 消息.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -2322,7 +2322,7 @@ _SUBCHAT_NOT_FOUND_SUBSTRINGS = (
 
 
 # ┌── 函数 def _error_blob()
-# │  作用：Lowercased blob (error_text + str(exc) + exception class name) that both
+# │  作用：Lowercased blob (error_text + str(exc) + 异常类 名称) 那个 both
 # │  参数：exc: Optional[BaseException] = None, error_text: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2362,7 +2362,7 @@ _SEND_ERROR_CLASSIFIERS: Tuple[Tuple[str, Callable[[str], bool]], ...] = (
 
 
 # ┌── 函数 def classify_send_error()
-# │  作用：Map a send exception / error string to a :data:`SEND_ERROR_KINDS` value; anything
+# │  作用：Map send 异常 / 错误字符串 :data:`SEND_ERROR_KINDS` 值; anything
 # │  参数：exc: Optional[BaseException], error_text: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2375,7 +2375,7 @@ def classify_send_error(exc: Optional[BaseException], error_text: str = "") -> s
 
 
 # ┌── 函数 def is_chat_level_not_found()
-# │  作用：Whether a ``not_found`` failure means the *whole chat* is gone (only that marks a target
+# │  作用：是否 ``not_found`` failure means *whole chat* 是 gone (仅那个 marks target。
 # │  参数：exc: Optional[BaseException] = None, error_text: str = ''
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2390,7 +2390,7 @@ def is_chat_level_not_found(exc: Optional[BaseException] = None, error_text: str
 
 
 # ┌── 类 class EphemeralReply（继承自：str）
-# │  说明：System-notice reply that auto-deletes after ``ttl_seconds`` on platforms implementing
+# │  说明：System-提示 reply 那个 auto-deletes 在…之后 ``ttl_seconds`` 在…上平台 implementing
 # │  成员：共 2 个方法；对外可用 1 个；含魔术方法 __new__
 # └──────────────────────────────────────────────────────────────
 class EphemeralReply(str):
@@ -2412,7 +2412,7 @@ class EphemeralReply(str):
         return instance
 
     # ┌── 函数 def text()
-    # │  作用：The underlying text (explicit form of ``str(reply)``).
+    # │  作用：underlying 文本 (explicit 形态的 ``str(reply)``).
     # │  参数：self
     # │  返回：str
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -2425,7 +2425,7 @@ class EphemeralReply(str):
 
 
 # ┌── 函数 def merge_pending_message_event()
-# │  作用：Store or merge a pending event: photo bursts/albums merge into the queued event so the next
+# │  作用：Store 或 merge pending 事件: photo bursts/albums merge 进入 queued 事件从而 next
 # │  参数：pending_messages: Dict[str, MessageEvent], session_key: str, event: MessageEvent, merge_text: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2488,7 +2488,7 @@ MessageHandler = Callable[[MessageEvent], Awaitable[Optional[Union[str, "Ephemer
 
 
 # ┌── 函数 def resolve_channel_prompt()
-# │  作用：Per-channel ephemeral prompt from ``config.extra["channel_prompts"]``: exact *channel_id*
+# │  作用：Per-通道 ephemeral 提示词从 ``配置.extra["channel_prompts"]``: exact *channel_id*
 # │  参数：config_extra: dict, channel_id: str, parent_id: str | None = None
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -2509,7 +2509,7 @@ def resolve_channel_prompt(config_extra: dict, channel_id: str, parent_id: str |
 
 
 # ┌── 函数 def resolve_channel_skills()
-# │  作用：Auto-loaded skill(s) for a channel/thread from ``channel_skill_bindings`` (entries
+# │  作用：Auto-已加载 skill(s) 用于通道/线程从 ``channel_skill_bindings`` (entries
 # │  参数：config_extra: dict, channel_id: str, parent_id: str | None = None
 # │  返回：list[str] | None
 # └──────────────────────────────────────────────────────────────
@@ -2543,7 +2543,7 @@ def resolve_channel_skills(
 
 
 # ┌── 函数 def _split_post_delivery_entry()
-# │  作用：``(generation, callback)`` from a post-delivery slot; legacy bare callbacks have no
+# │  作用：``(generation, 回调)`` 从 post-delivery slot; legacy bare 回调有 无
 # │  参数：entry: Any
 # │  返回：Tuple[Optional[int], Any]
 # └──────────────────────────────────────────────────────────────
@@ -2555,7 +2555,7 @@ def _split_post_delivery_entry(entry: Any) -> Tuple[Optional[int], Any]:
 
 
 # ┌── 函数 def _lazy_attr()
-# │  作用：``getattr(obj, name)`` or create it via ``factory`` — the getattr-guard for
+# │  作用：``getattr(obj, 名称)`` 或创建它 via ``factory`` — getattr-护栏用于
 # │  参数：obj: Any, name: str, factory: Callable[[], Any]
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -2574,7 +2574,7 @@ _strip_media_directives = _strip_media_tag_directives
 
 
 # ┌── 类 class BasePlatformAdapter（继承自：ABC）
-# │  说明：Base class for platform adapters: connect/auth, receive, send, handle media.
+# │  说明：Base 类用于平台 adapters: connect/auth, receive, send, handle media.
 # │  成员：共 172 个方法；对外可用 77 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class BasePlatformAdapter(ABC):
@@ -2587,7 +2587,7 @@ class BasePlatformAdapter(ABC):
     supports_status_text: bool = False
 
     # ┌── 函数 def set_status_text()
-    # │  作用：Set or clear (``None``) the live working-state phrase for a chat. In-memory only: the
+    # │  作用：设置或 清除 (``None``) 当前活跃的 working-状态 phrase 用于 chat. 在-内存仅:
     # │  参数：self, chat_id: str, text: Optional[str]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2699,7 +2699,7 @@ class BasePlatformAdapter(ABC):
         self._status_text: Dict[str, str] = {}
 
     # ┌── 函数 def message_len_fn()
-    # │  作用：Length function for message size; override where the platform counts
+    # │  作用：Length 函数用于消息 size; 覆盖值何处平台 counts
     # │  参数：self
     # │  返回：Callable[[str], int]
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -2712,7 +2712,7 @@ class BasePlatformAdapter(ABC):
         return len
 
     # ┌── 函数 def max_message_length_for_chat()
-    # │  作用：Per-chat max length in ``message_len_fn_for_chat`` units: the adapter's
+    # │  作用：Per-chat max length 在 ``message_len_fn_for_chat`` units: 适配器's
     # │  参数：self, chat_id: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2724,7 +2724,7 @@ class BasePlatformAdapter(ABC):
         return _or_default(lambda: int(getattr(self, "MAX_MESSAGE_LENGTH", 4096) or 4096), 4096)
 
     # ┌── 函数 def message_len_fn_for_chat()
-    # │  作用：Per-chat length function (companion to max_message_length_for_chat); the relay
+    # │  作用：Per-chat length 函数 (companion max_message_length_for_chat); relay
     # │  参数：self, chat_id: str
     # │  返回：Callable[[str], int]
     # └──────────────────────────────────────────────────────────────
@@ -2735,7 +2735,7 @@ class BasePlatformAdapter(ABC):
         return self.message_len_fn
 
     # ┌── 函数 def enforces_own_access_policy()
-    # │  作用：Whether this adapter enforces its own config-driven access policy at intake
+    # │  作用：是否 这个适配器强制其 持有配置-driven access 策略在 intake。
     # │  参数：self
     # │  返回：bool
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -2752,7 +2752,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 函数 def authorization_is_upstream()
-    # │  作用：Whether inbound was already authorized by a TRUSTED UPSTREAM (relay only): the Team
+    # │  作用：是否 inbound 是已 authorized 由 TRUSTED UPSTREAM (relay 仅): Team。
     # │  参数：self
     # │  返回：bool
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -2767,7 +2767,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 函数 def supports_draft_streaming()
-    # │  作用：Whether native streaming-draft updates (``send_draft``) work for this chat type;
+    # │  作用：是否 native streaming-draft updates (``send_draft``) work 用于这个 chat 类型;。
     # │  参数：self, chat_type: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, chat_id: Optional[str] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2781,7 +2781,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 函数 def prefers_fresh_final_streaming()
-    # │  作用：Whether the stream consumer should finalize with a *fresh* final message (best-effort
+    # │  作用：是否 stream consumer 应当 finalize 带 *fresh* final 消息 (尽最大努力。
     # │  参数：self, content: str, metadata: Optional[Dict[str, Any]] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2792,7 +2792,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 函数 def streaming_overflow_limit()
-    # │  作用：Max single-message length (``message_len_fn`` units) the stream consumer may
+    # │  作用：Max single-消息 length (``message_len_fn`` units) stream consumer 可以
     # │  参数：self
     # │  返回：Optional[int]
     # └──────────────────────────────────────────────────────────────
@@ -2804,7 +2804,7 @@ class BasePlatformAdapter(ABC):
         return None
 
     # ┌── 异步函数（协程） def send_draft()
-    # │  作用：Send or update an animated streaming-draft preview. Reuse one non-zero ``draft_id``
+    # │  作用：Send 或更新 animated streaming-draft preview. Reuse one non-zero ``draft_id``
     # │  参数：self, chat_id: str, draft_id: int, content: str, metadata: Optional[Dict[str, Any]] = None
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2822,7 +2822,7 @@ class BasePlatformAdapter(ABC):
     # nothing rendered here is persisted, so what an adapter "eats" never changes history.
 
     # ┌── 函数 def render_message_event()
-    # │  作用：Render a MessageChunk / MessageStop / Commentary onto the sink (a
+    # │  作用：把 MessageChunk / MessageStop / Commentary 渲染到输出接收端（sink，……）。
     # │  参数：self, event: Any, sink: Any
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2839,7 +2839,7 @@ class BasePlatformAdapter(ABC):
             sink.on_commentary(event.text)
 
     # ┌── 函数 def format_tool_event()
-    # │  作用：Rendered chrome for a ToolCallChunk, or None to eat it (adapters without editing/rich
+    # │  作用：Rendered chrome 用于 ToolCallChunk, 或 None eat 它 (adapters 不 editing/rich
     # │  参数：self, event: Any, mode: str = ..., preview_max_len: int = ...
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -2874,7 +2874,7 @@ class BasePlatformAdapter(ABC):
         return f'{head}: "{self.format_tool_preview(prepared)}"'
 
     # ┌── 函数 def format_tool_preview()
-    # │  作用：Platform-native formatting of a compact tool preview; rich-text adapters may use
+    # │  作用：平台-native formatting 的 compact 工具 preview; rich-文本 adapters 可以 use
     # │  参数：self, preview: 'ToolPreview'
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -2890,7 +2890,7 @@ class BasePlatformAdapter(ABC):
     fatal_error_retryable = property(lambda self: self._fatal_error_retryable)
 
     # ┌── 函数 def _should_auto_tts_for_chat()
-    # │  作用：Whether auto-TTS fires for ``chat_id``: explicit ``/voice on|tts`` wins,
+    # │  作用：是否 auto-TTS fires 用于 ``chat_id``: explicit ``/voice 在…上|tts`` wins,。
     # │  参数：self, chat_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2920,7 +2920,7 @@ class BasePlatformAdapter(ABC):
     DEGRADED_STATUS_MESSAGE = "connected but not yet confirmed active; recovering in background"
 
     # ┌── 函数 def send_path_degraded()
-    # │  作用：True while connect() succeeded but delivery is not confirmed.
+    # │  作用：True 当 connect() succeeded 但 delivery 是不 confirmed.
     # │  参数：self
     # │  返回：bool
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -2936,7 +2936,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 函数 def _mark_connected()
-    # │  作用：``listener_base`` (``http://host:port``) is stamped by port-binders after a REAL bind: under the
+    # │  作用：``listener_base`` (``http://宿主:port``) 是 stamped 由 port-binders 在…之后 REAL bind: under
     # │  参数：self, listener_base: Optional[str] = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2955,7 +2955,7 @@ class BasePlatformAdapter(ABC):
                 "connected", platform_state="connected", error_code=None, error_message=None, **extra)
 
     # ┌── 函数 def _mark_degraded()
-    # │  作用：Publish ``retrying`` for a running adapter whose delivery path is unproven.
+    # │  作用：Publish ``retrying`` 用于运行适配器 whose delivery 路径是 unproven.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2991,7 +2991,7 @@ class BasePlatformAdapter(ABC):
         self._write_runtime_status_safe("fatal", platform_state="fatal", error_code=code, error_message=message)
 
     # ┌── 函数 def _write_runtime_status_safe()
-    # │  作用：Write runtime status; log first failure per context at warning, rest at debug
+    # │  作用：写入运行时 status; 日志 first failure per 上下文在 警告, rest 在调试
     # │  参数：self, context: str, **kwargs
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3050,7 +3050,7 @@ class BasePlatformAdapter(ABC):
                 raise
 
     # ┌── 函数 def _acquire_platform_lock()
-    # │  作用：Acquire a scoped lock for this adapter; True on success. A live cross-HERMES_HOME
+    # │  作用：Acquire scoped 锁用于这个适配器; True 在…上 success. 当前活跃的 cross-HERMES_HOME
     # │  参数：self, scope: str, identity: str, resource_desc: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3096,7 +3096,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 函数 def _release_platform_lock()
-    # │  作用：Release the scoped lock acquired by _acquire_platform_lock.
+    # │  作用：Release scoped 锁 acquired 由 _acquire_platform_lock.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3110,7 +3110,7 @@ class BasePlatformAdapter(ABC):
         self._platform_lock_identity = None
 
     # ┌── 函数 def _wire_plugin_handlers()
-    # │  作用：Invoke plugin-registered native handler factories (``ctx.register_platform_handler``)
+    # │  作用：调用插件注册的「原生处理器工厂」（``ctx.register_platform_handler``）。
     # │  参数：self, native: Any = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3136,7 +3136,7 @@ class BasePlatformAdapter(ABC):
                              exc, exc_info=True)
 
     # ┌── 函数 def name()
-    # │  作用：Human-readable name for this adapter.
+    # │  作用：Human-readable 名称用于这个适配器.
     # │  参数：self
     # │  返回：str
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -3148,7 +3148,7 @@ class BasePlatformAdapter(ABC):
         return self.platform.value.title()
 
     # ┌── 函数 def is_connected()
-    # │  作用：Check if adapter is currently connected.
+    # │  作用：检查若 适配器是 currently connected.
     # │  参数：self
     # │  返回：bool
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -3160,7 +3160,7 @@ class BasePlatformAdapter(ABC):
         return self._running
 
     # ┌── 函数 def set_message_handler()
-    # │  作用：Set the incoming-message handler (MessageEvent -> optional response str).
+    # │  作用：设置 incoming-消息 handler (MessageEvent -> optional 响应 str).
     # │  参数：self, handler: MessageHandler
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3169,7 +3169,7 @@ class BasePlatformAdapter(ABC):
         self._message_handler = handler
 
     # ┌── 函数 def set_platform_event_handler()
-    # │  作用：Install the gateway-owned normalized platform-event boundary (stable dicts + internal
+    # │  作用：安装 gateway-持有的已归一化平台-事件 boundary (stable dicts + internal
     # │  参数：self, handler: Optional[Callable[[Dict[str, Any], Any], Awaitable[None]]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3181,7 +3181,7 @@ class BasePlatformAdapter(ABC):
         self._platform_event_handler = handler
 
     # ┌── 函数 def set_topic_recovery_fn()
-    # │  作用：Install a thread_id-recovery hook (Telegram DM topic mode): called with ``event.source``
+    # │  作用：安装 thread_id-recovery hook (Telegram 私信 topic 模式): called 带 ``事件.source``
     # │  参数：self, fn: Optional[Callable[[Any], Optional[str]]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3192,7 +3192,7 @@ class BasePlatformAdapter(ABC):
         self._topic_recovery_fn = fn
 
     # ┌── 函数 def _apply_topic_recovery()
-    # │  作用：Rewrite ``event.source.thread_id`` in place if the hook returns one.
+    # │  作用：Rewrite ``事件.source.thread_id`` 在 place 若 hook 返回 one.
     # │  参数：self, event: MessageEvent
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3217,7 +3217,7 @@ class BasePlatformAdapter(ABC):
             logger.debug("topic recovery rewrite failed", exc_info=True)
 
     # ┌── 函数 def set_busy_session_handler()
-    # │  作用：Set an optional handler for messages arriving during active sessions.
+    # │  作用：设置 optional handler 用于消息 arriving 在…期间 active 会话.
     # │  参数：self, handler: Optional[Callable[[MessageEvent, str], Awaitable[bool]]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3226,7 +3226,7 @@ class BasePlatformAdapter(ABC):
         self._busy_session_handler = handler
 
     # ┌── 函数 def set_reaction_handler()
-    # │  作用：Set the handler for platform-native emoji-reaction events: a normalised dict
+    # │  作用：设置 handler 用于平台-native emoji-reaction 事件: normalised 字典
     # │  参数：self, handler: Optional[Callable[[Dict[str, Any]], Awaitable[None]]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3238,7 +3238,7 @@ class BasePlatformAdapter(ABC):
         self._reaction_handler = handler
 
     # ┌── 函数 def set_authorization_check()
-    # │  作用：Register ``(user_id, chat_type, chat_id) -> bool``; adapters pulling external context
+    # │  作用：Register ``(user_id, chat_type, chat_id) -> 布尔值``; adapters pulling external 上下文
     # │  参数：self, callback: Optional[Callable[[str, Optional[str], Optional[str]], bool]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3249,7 +3249,7 @@ class BasePlatformAdapter(ABC):
         self._authorization_check = callback
 
     # ┌── 函数 def _is_sender_authorized()
-    # │  作用：True/False from the registered check, or None when no check exists ("trust unknown",
+    # │  作用：True/False 从 registered 检查, 或 None 当无 检查 exists ("trust unknown",
     # │  参数：self, user_id: Optional[str], chat_type: Optional[str] = None, chat_id: Optional[str] = None, is_bot: bool = ..., thread_id: Optional[str] = ...
     # │  返回：Optional[bool]
     # └──────────────────────────────────────────────────────────────
@@ -3285,7 +3285,7 @@ class BasePlatformAdapter(ABC):
         return None
 
     # ┌── 函数 def set_session_store()
-    # │  作用：Set the session store (e.g. Slack checks for an active thread session
+    # │  作用：设置会话 store (e.g. Slack 检查用于 active 线程会话
     # │  参数：self, session_store: Any
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3295,7 +3295,7 @@ class BasePlatformAdapter(ABC):
         self._session_store = session_store
 
     # ┌── 函数 def set_owner_profile()
-    # │  作用：Declare the owning multiplex profile (secondary profiles only); read by
+    # │  作用：Declare 持有 multiplex 配置档 (secondary 配置档仅); 读取由
     # │  参数：self, profile_name: Optional[str]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3305,7 +3305,7 @@ class BasePlatformAdapter(ABC):
         self._owner_profile = None if (name := (profile_name or "").strip() or None) == "default" else name
 
     # ┌── 函数 def _session_key_profile()
-    # │  作用：Profile namespace for an adapter-derived session key. Ingress runs BEFORE the runner
+    # │  作用：配置档 namespace 用于适配器-derived 会话键. Ingress 运行在…之前 runner
     # │  参数：self, source: Optional[Any] = None
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -3346,7 +3346,7 @@ class BasePlatformAdapter(ABC):
     _text_batch_split_delay_seconds: float = 0.0
 
     # ┌── 函数 def _event_session_key()
-    # │  作用：Adapter-level session key for ``event``, profile-namespaced like the agent run.
+    # │  作用：适配器-级别会话键 用于 ``事件``, 配置档-namespaced like Agent 运行.
     # │  参数：self, event: 'MessageEvent'
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -3369,7 +3369,7 @@ class BasePlatformAdapter(ABC):
             profile=self._session_key_profile(source))
 
     # ┌── 函数 def _text_batch_key()
-    # │  作用：Session-scoped key for text batching (subclasses may override).
+    # │  作用：会话-scoped 键用于文本 batching (subclasses 可以覆盖值).
     # │  参数：self, event: 'MessageEvent'
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -3379,7 +3379,7 @@ class BasePlatformAdapter(ABC):
         return self._event_session_key(event)
 
     # ┌── 函数 def _enqueue_text_event()
-    # │  作用：Buffer a text event (merging into a pending one) and restart the flush timer.
+    # │  作用：Buffer 文本事件 (merging 进入 pending one) 且 restart 冲刷 timer.
     # │  参数：self, event: 'MessageEvent'
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3402,7 +3402,7 @@ class BasePlatformAdapter(ABC):
         self._pending_text_batch_tasks[key] = asyncio.create_task(self._flush_text_batch(key))
 
     # ┌── 函数 def _text_batch_delay_for()
-    # │  作用：Quiet period before ``pending`` is dispatched; near-split chunks wait longer.
+    # │  作用：Quiet period 在…之前 ``pending`` 是 dispatched; near-split chunks wait longer.
     # │  参数：self, pending: Optional['MessageEvent']
     # │  返回：float
     # └──────────────────────────────────────────────────────────────
@@ -3413,7 +3413,7 @@ class BasePlatformAdapter(ABC):
         return self._text_batch_split_delay_seconds if last_len >= self._SPLIT_THRESHOLD else self._text_batch_delay_seconds
 
     # ┌── 函数 def _pop_text_batch()
-    # │  作用：Remove and return the pending batch for ``key`` (adapters with side tables override).
+    # │  作用：移除且 返回 pending batch 用于 ``键`` (adapters 带 side tables 覆盖值).
     # │  参数：self, key: str
     # │  返回：Optional['MessageEvent']
     # └──────────────────────────────────────────────────────────────
@@ -3423,7 +3423,7 @@ class BasePlatformAdapter(ABC):
         return self._pending_text_batches.pop(key, None)
 
     # ┌── 异步函数（协程） def _dispatch_text_batch()
-    # │  作用：Hand a flushed batch to the pipeline (adapters with per-chat guards override).
+    # │  作用：Hand 已冲刷 batch pipeline (adapters 带 per-chat 护栏覆盖值).
     # │  参数：self, event: 'MessageEvent'
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3434,7 +3434,7 @@ class BasePlatformAdapter(ABC):
         await self.handle_message(event)
 
     # ┌── 异步函数（协程） def _flush_text_batch_now()
-    # │  作用：Dispatch the pending batch for ``key`` immediately (no quiet period).
+    # │  作用：Dispatch pending batch 用于 ``键`` immediately (无 quiet period).
     # │  参数：self, key: str
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3447,7 +3447,7 @@ class BasePlatformAdapter(ABC):
             await self._dispatch_text_batch(event)
 
     # ┌── 异步函数（协程） def _flush_text_batch()
-    # │  作用：Wait for the quiet period, then dispatch the batch for ``key``.
+    # │  作用：Wait 用于 quiet period, 然后 dispatch batch 用于 ``键``.
     # │  参数：self, key: str
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3483,7 +3483,7 @@ class BasePlatformAdapter(ABC):
                 self._pending_text_batch_tasks.pop(key, None)
 
     # ┌── 函数 def _history_media_paths_for_session()
-    # │  作用：Return media paths already delivered in prior turns of this session
+    # │  作用：返回 media 路径已 delivered 在 prior 轮次的 这个会话。
     # │  参数：self, session_key: str
     # │  返回：Optional[set]
     # └──────────────────────────────────────────────────────────────
@@ -3532,7 +3532,7 @@ class BasePlatformAdapter(ABC):
         return _collect_history_media_paths(history)
 
     # ┌── 异步函数（协程） def _bounded_history_media_paths_for_session()
-    # │  作用：Run best-effort history lookup in a bounded isolated daemon thread.
+    # │  作用：运行尽最大努力 history lookup 在 bounded isolated daemon 线程.
     # │  参数：self, session_key: str
     # │  返回：Optional[set]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3590,7 +3590,7 @@ class BasePlatformAdapter(ABC):
             return None
 
     # ┌── 异步函数（协程） def connect()
-    # │  作用：Connect and start receiving; True on success. ``is_reconnect``: the reconnect watcher is
+    # │  作用：Connect 且 start receiving; True 在…上 success. ``is_reconnect``: reconnect watcher 是
     # │  参数：self, is_reconnect: bool = ...
     # │  返回：bool
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3603,7 +3603,7 @@ class BasePlatformAdapter(ABC):
         must preserve it so outage-time messages aren't discarded."""
 
     # ┌── 异步函数（协程） def disconnect()
-    # │  作用：Disconnect from the platform.
+    # │  作用：Disconnect 从平台.
     # │  参数：self
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3614,7 +3614,7 @@ class BasePlatformAdapter(ABC):
         """Disconnect from the platform."""
 
     # ┌── 异步函数（协程） def send()
-    # │  作用：Send ``content`` (may be markdown) to a chat; returns SendResult with message id.
+    # │  作用：Send ``内容`` (可以是 markdown) chat; 返回 SendResult 带消息 id.
     # │  参数：self, chat_id: str, content: str, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3629,7 +3629,7 @@ class BasePlatformAdapter(ABC):
     REQUIRES_EDIT_FINALIZE: bool = False
 
     # ┌── 异步函数（协程） def create_handoff_thread()
-    # │  作用：Create a fresh thread under ``parent_chat_id`` for a CLI→platform session handoff; its id
+    # │  作用：创建 fresh 线程 under ``parent_chat_id`` 用于 CLI→平台会话交接; 其 id
     # │  参数：self, parent_chat_id: str, name: str
     # │  返回：Optional[str]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3642,7 +3642,7 @@ class BasePlatformAdapter(ABC):
         return None
 
     # ┌── 异步函数（协程） def edit_message()
-    # │  作用：Edit a sent message (optional: success=False makes callers send anew). ``finalize`` marks
+    # │  作用：Edit sent 消息 (optional: success=False makes callers send anew). ``finalize`` marks
     # │  参数：self, chat_id: str, message_id: str, content: str, finalize: bool = ...
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3657,7 +3657,7 @@ class BasePlatformAdapter(ABC):
         return SendResult(success=False, error="Not supported")
 
     # ┌── 异步函数（协程） def delete_message()
-    # │  作用：Delete a sent message; True on success (platforms without a deletion API return False and
+    # │  作用：Delete sent 消息; True 在…上 success (平台不 deletion API 返回 False 且
     # │  参数：self, chat_id: str, message_id: str
     # │  返回：bool
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3675,7 +3675,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 函数 def _get_ephemeral_system_ttl_default()
-    # │  作用：Default :class:`EphemeralReply` TTL from ``display.ephemeral_system_ttl``
+    # │  作用：默认值 :类:`EphemeralReply` TTL 从 ``展示.ephemeral_system_ttl``
     # │  参数：self
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -3687,7 +3687,7 @@ class BasePlatformAdapter(ABC):
             lambda: int(_config_section("display").get("ephemeral_system_ttl", 0)), 0)
 
     # ┌── 函数 def _schedule_ephemeral_delete()
-    # │  作用：Spawn a detached task that deletes ``message_id`` after ``ttl_seconds``; best-effort
+    # │  作用：Spawn detached task 那个 deletes ``message_id`` 在…之后 ``ttl_seconds``; 尽最大努力
     # │  参数：self, chat_id: str, message_id: str, ttl_seconds: int
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3721,7 +3721,7 @@ class BasePlatformAdapter(ABC):
     _EA_REASON_BUDGET: int = 0  # 0 = the reason is never truncated
 
     # ┌── 函数 def _truncate_preview()
-    # │  作用：Truncate ``text`` to ``budget`` chars, appending ``suffix`` when cut.
+    # │  作用：Truncate ``文本`` ``预算`` chars, 追加 ``suffix`` 当 cut.
     # │  参数：text: str, budget: int, suffix: str = '...'
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3734,7 +3734,7 @@ class BasePlatformAdapter(ABC):
         return text[:budget] + suffix if len(text) > budget else text
 
     # ┌── 函数 def _ea_escape()
-    # │  作用：Escape hook for command preview/reason; HTML-mode platforms (Telegram) override.
+    # │  作用：Escape hook 用于命令 preview/reason; HTML-模式平台 (Telegram) 覆盖值.
     # │  参数：self, text: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -3744,7 +3744,7 @@ class BasePlatformAdapter(ABC):
         return text
 
     # ┌── 函数 def _exec_approval_cmd_budget()
-    # │  作用：Chars of command preview that fit; platforms with a hard message cap compute it.
+    # │  作用：Chars 的命令 preview 那个 fit; 平台带 hard 消息 cap compute 它.
     # │  参数：self, description: str, smart_denied: bool
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -3754,7 +3754,7 @@ class BasePlatformAdapter(ABC):
         return self._EA_CMD_BUDGET
 
     # ┌── 函数 def _format_exec_approval()
-    # │  作用：Shared exec-approval prompt text: header + fenced (truncated) command + reason,
+    # │  作用：Shared exec-approval 提示词文本: header + fenced (truncated) 命令 + reason,
     # │  参数：self, command: str, description: str = 'dangerous command', smart_denied: bool = False
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -3779,7 +3779,7 @@ class BasePlatformAdapter(ABC):
     _EA_ACTION_STYLES: Dict[str, str] = {"once": "primary", "deny": "danger"}
 
     # ┌── 函数 def _exec_approval_actions()
-    # │  作用：``(label, choice, style)`` rows for the approval buttons. A smart deny is an owner
+    # │  作用：``(label, choice, style)`` rows 用于 approval buttons. smart deny 是 owner
     # │  参数：self, allow_permanent: bool, allow_session: bool, smart_denied: bool
     # │  返回：List[Tuple[str, str, str]]
     # └──────────────────────────────────────────────────────────────
@@ -3798,7 +3798,7 @@ class BasePlatformAdapter(ABC):
         return [(self._EA_ACTION_LABELS[c], c, self._EA_ACTION_STYLES.get(c, "")) for c in choices]
 
     # ┌── 函数 def supports_exec_approval_buttons()
-    # │  作用：True when the adapter renders native approval buttons (overrides the prompt hook);
+    # │  作用：当 适配器 renders native approval buttons (覆盖值提示词 hook); 时返回 True。
     # │  参数：cls
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -3811,7 +3811,7 @@ class BasePlatformAdapter(ABC):
         return cls._send_exec_approval_prompt is not BasePlatformAdapter._send_exec_approval_prompt
 
     # ┌── 异步函数（协程） def send_exec_approval()
-    # │  作用：Interactive exec-approval prompt; a press resolves via
+    # │  作用：Interactive exec-approval 提示词; press resolves via
     # │  参数：self, chat_id: str, command: str, session_key: str, description: str = 'dangerous command', metadata: Optional[Dict[str, Any]] = None, allow_permanent: bool = True, allow_session: bool = True  …共 9 个
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3835,7 +3835,7 @@ class BasePlatformAdapter(ABC):
         return await self._send_exec_approval_prompt(prompt)
 
     # ┌── 异步函数（协程） def _send_exec_approval_prompt()
-    # │  作用：Render ``prompt`` with the platform's native buttons; the default has none.
+    # │  作用：Render ``提示词`` 带平台's native buttons; 默认值有 None.
     # │  参数：self, prompt: 'ExecApprovalPrompt'
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3846,7 +3846,7 @@ class BasePlatformAdapter(ABC):
         return SendResult(success=False, error="Not supported")
 
     # ┌── 函数 def _format_choice_page()
-    # │  作用：Shared picker pagination: clamp ``page``, slice ``options`` -> ``(page_options, meta)``
+    # │  作用：Shared picker pagination: clamp ``page``, slice ``选项`` -> ``(page_options, meta)``
     # │  参数：options: list, page: int, per_page: int
     # │  返回：'tuple[list, Dict[str, Any]]'
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3867,7 +3867,7 @@ class BasePlatformAdapter(ABC):
         return options[start:end], meta
 
     # ┌── 异步函数（协程） def send_slash_confirm()
-    # │  作用：Three-option slash-command confirmation (e.g. ``/reload-mcp``). Button adapters render
+    # │  作用：Three-选项 slash-命令 confirmation (e.g. ``/reload-mcp``). Button adapters render
     # │  参数：self, chat_id: str, title: str, message: str, session_key: str, confirm_id: str, metadata: Optional[Dict[str, Any]] = None
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3884,7 +3884,7 @@ class BasePlatformAdapter(ABC):
         return SendResult(success=False, error="Not supported")
 
     # ┌── 异步函数（协程） def send_clarify()
-    # │  作用：Clarify prompt; button-capable adapters SHOULD override. Multiple choice (``choices``):
+    # │  作用：Clarify 提示词; button-capable adapters 应当覆盖值. Multiple choice (``choices``):
     # │  参数：self, chat_id: str, question: str, choices: Optional[list], clarify_id: str, session_key: str, metadata: Optional[Dict[str, Any]] = None
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3923,7 +3923,7 @@ class BasePlatformAdapter(ABC):
         return await self.send(chat_id=chat_id, content=text, metadata=metadata)
 
     # ┌── 异步函数（协程） def send_private_notice()
-    # │  作用：Send a notice privately when the platform supports it; default is a normal send.
+    # │  作用：Send 提示 privately 当平台 supports 它; 默认值是 normal send.
     # │  参数：self, chat_id: str, user_id: Optional[str], content: str, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3937,7 +3937,7 @@ class BasePlatformAdapter(ABC):
         return await self.send(chat_id=chat_id, content=content, reply_to=reply_to, metadata=metadata)
 
     # ┌── 异步函数（协程） def send_typing()
-    # │  作用：Send a typing indicator; ``metadata`` carries platform context (Slack thread_id).
+    # │  作用：Send typing indicator; ``metadata`` carries 平台上下文 (Slack thread_id).
     # │  参数：self, chat_id: str, metadata = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3946,7 +3946,7 @@ class BasePlatformAdapter(ABC):
         """Send a typing indicator; ``metadata`` carries platform context (Slack thread_id)."""
 
     # ┌── 异步函数（协程） def stop_typing()
-    # │  作用：Stop a persistent typing indicator; override where typing runs as a loop.
+    # │  作用：Stop persistent typing indicator; 覆盖值何处 typing 运行作为循环.
     # │  参数：self, chat_id: str
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3955,7 +3955,7 @@ class BasePlatformAdapter(ABC):
         """Stop a persistent typing indicator; override where typing runs as a loop."""
 
     # ┌── 函数 def _accepts_kwarg()
-    # │  作用：Whether ``fn``'s signature takes keyword ``name`` (``var_kw``: a ``**kwargs`` also
+    # │  作用：是否 ``fn``'s signature takes keyword ``名称`` (``var_kw``: ``**kwargs`` 也。
     # │  参数：fn: Callable, name: str, var_kw: bool, unknown: bool
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3975,7 +3975,7 @@ class BasePlatformAdapter(ABC):
             p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()))
 
     # ┌── 异步函数（协程） def _stop_typing_with_metadata()
-    # │  作用：Stop typing, forwarding ``metadata`` only if ``stop_typing`` accepts it (Slack AI
+    # │  作用：Stop typing, forwarding ``metadata`` 仅若 ``stop_typing`` 接受它 (Slack AI
     # │  参数：self, chat_id: str, metadata = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3993,7 +3993,7 @@ class BasePlatformAdapter(ABC):
         await self.stop_typing(chat_id)
 
     # ┌── 异步函数（协程） def send_multiple_images()
-    # │  作用：Send ``(url, alt)`` images (``http(s)://`` or ``file://``) one by one (GIFs via
+    # │  作用：Send ``(URL, alt)`` images (``http(s)://`` 或 ``文件://``) one 由 one (GIFs via
     # │  参数：self, chat_id: str, images: List[Tuple[str, str]], metadata: Optional[Dict[str, Any]] = None, human_delay: float = 0.0
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4040,7 +4040,7 @@ class BasePlatformAdapter(ABC):
             error=None if delivered else "all images failed to send")
 
     # ┌── 异步函数（协程） def send_image()
-    # │  作用：Send an image natively; default falls back to sending the URL as text.
+    # │  作用：Send image natively; 默认值 falls back sending URL 作为文本.
     # │  参数：self, chat_id: str, image_url: str, caption: Optional[str] = None, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4055,7 +4055,7 @@ class BasePlatformAdapter(ABC):
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
 
     # ┌── 异步函数（协程） def send_animation()
-    # │  作用：Send a GIF as a native animation (auto-plays inline); default falls back to
+    # │  作用：Send GIF 作为 native animation (auto-plays inline); 默认值 falls back
     # │  参数：self, chat_id: str, animation_url: str, caption: Optional[str] = None, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4071,7 +4071,7 @@ class BasePlatformAdapter(ABC):
             chat_id=chat_id, image_url=animation_url, caption=caption, reply_to=reply_to, metadata=metadata)
 
     # ┌── 函数 def _is_animation_url()
-    # │  作用：Check if a URL points to an animated GIF (vs a static image).
+    # │  作用：检查若 URL points animated GIF (vs static image).
     # │  参数：url: str
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4083,7 +4083,7 @@ class BasePlatformAdapter(ABC):
         return url.lower().split('?')[0].endswith('.gif')
 
     # ┌── 函数 def extract_images()
-    # │  作用：Extract ``![alt](url)`` and ``<img src=...>`` image URLs from a response;
+    # │  作用：Extract ``![alt](URL)`` 且 ``<img src=...>`` image URLs 从响应;
     # │  参数：content: str
     # │  返回：Tuple[List[Tuple[str, str]], str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4119,7 +4119,7 @@ class BasePlatformAdapter(ABC):
         return images, re.sub(r'\n{3,}', '\n\n', cleaned).strip()  # leftover blank lines
 
     # ┌── 异步函数（协程） def send_voice()
-    # │  作用：Send audio as a native voice message (Telegram bubble / Discord attachment).
+    # │  作用：Send audio 作为原生语音消息 (Telegram bubble / Discord attachment).
     # │  参数：self, chat_id: str, audio_path: str, caption: Optional[str] = None, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4135,7 +4135,7 @@ class BasePlatformAdapter(ABC):
             "send_voice", "audio", audio_path, chat_id, caption, reply_to, metadata)
 
     # ┌── 异步函数（协程） def _send_media_fallback_notice()
-    # │  作用：Shared default for send_voice/send_video/send_document/send_image_file. The local path is
+    # │  作用：Shared 默认值用于 send_voice/send_video/send_document/send_image_file. local 路径是
     # │  参数：self, method: str, kind: str, path: str, chat_id: str, caption: Optional[str], reply_to: Optional[str], metadata: Optional[Dict[str, Any]]  …共 9 个
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4155,7 +4155,7 @@ class BasePlatformAdapter(ABC):
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
 
     # ┌── 函数 def prepare_tts_text()
-    # │  作用：Chat Markdown -> transcript-like spoken script (reasoning blocks removed,
+    # │  作用：Chat Markdown -> transcript-like spoken script (推理块已移除,
     # │  参数：self, text: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -4175,7 +4175,7 @@ class BasePlatformAdapter(ABC):
             return re.sub(r'[*_`#\[\]()]', '', text).strip()
 
     # ┌── 异步函数（协程） def play_tts()
-    # │  作用：Play auto-TTS audio; override for invisible playback (Web UI). Default: send_voice.
+    # │  作用：Play auto-TTS audio; 覆盖值用于 invisible playback (Web UI). 默认值: send_voice.
     # │  参数：self, chat_id: str, audio_path: str, **kwargs
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4195,7 +4195,7 @@ class BasePlatformAdapter(ABC):
     # generating. The default implementations report "unsupported" so existing adapters are
     # source-compatible and keep the whole-file auto-TTS fallback.
     # ┌── 函数 def supports_streaming_tts()
-    # │  作用：Return True when this adapter can accept streaming PCM for *chat_id*.
+    # │  作用：当 这个适配器可以接受 streaming PCM 用于 *chat_id*. 时返回 True。
     # │  参数：self, chat_id: str, audio_format: AudioFormat
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4205,7 +4205,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 异步函数（协程） def begin_streaming_tts()
-    # │  作用：Open a streaming-audio session; returns an opaque handle for the
+    # │  作用：打开 streaming-audio 会话; 返回 opaque handle 用于
     # │  参数：self, chat_id: str, audio_format: AudioFormat, metadata: Optional[Dict[str, Any]] = None
     # │  返回：Optional[StreamingTTSHandle]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4219,7 +4219,7 @@ class BasePlatformAdapter(ABC):
         return None
 
     # ┌── 异步函数（协程） def write_streaming_tts()
-    # │  作用：Write one PCM chunk to the adapter's outbound audio track.
+    # │  作用：写入 one PCM chunk 适配器's outbound audio track.
     # │  参数：self, handle: StreamingTTSHandle, chunk: bytes
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4228,7 +4228,7 @@ class BasePlatformAdapter(ABC):
         """Write one PCM chunk to the adapter's outbound audio track."""
 
     # ┌── 异步函数（协程） def finish_streaming_tts()
-    # │  作用：Signal normal end of the audio stream.
+    # │  作用：信号 normal end 的 audio stream.
     # │  参数：self, handle: StreamingTTSHandle, interrupted: bool = ...
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4237,7 +4237,7 @@ class BasePlatformAdapter(ABC):
         """Signal normal end of the audio stream."""
 
     # ┌── 异步函数（协程） def abort_streaming_tts()
-    # │  作用：Abort the stream due to an error or cancellation. Must be idempotent: late producer
+    # │  作用：Abort stream due 错误或 cancellation. 必须是 idempotent: late producer
     # │  参数：self, handle: StreamingTTSHandle, error: Optional[str] = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4276,7 +4276,7 @@ class BasePlatformAdapter(ABC):
             getattr(self, "_streaming_tts_completed_turns", set()), session_key, turn_marker, event=event)
 
     # ┌── 异步函数（协程） def send_video()
-    # │  作用：Send a video natively (inline playable). Default: friendly failure notice.
+    # │  作用：Send video natively (inline playable). 默认值: friendly failure 提示.
     # │  参数：self, chat_id: str, video_path: str, caption: Optional[str] = None, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4291,7 +4291,7 @@ class BasePlatformAdapter(ABC):
             "send_video", "video", video_path, chat_id, caption, reply_to, metadata)
 
     # ┌── 异步函数（协程） def send_document()
-    # │  作用：Send a document/file natively. Default: friendly failure notice.
+    # │  作用：Send document/文件 natively. 默认值: friendly failure 提示.
     # │  参数：self, chat_id: str, file_path: str, caption: Optional[str] = None, file_name: Optional[str] = None, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4306,7 +4306,7 @@ class BasePlatformAdapter(ABC):
             "send_document", "file", file_path, chat_id, caption, reply_to, metadata, file_name=file_name)
 
     # ┌── 异步函数（协程） def _notify_media_delivery_failure()
-    # │  作用：User-visible notice when a MEDIA attachment upload failed: the tag was
+    # │  作用：User-visible 提示当 MEDIA attachment upload failed: tag 是
     # │  参数：self, chat_id: str, media_path: str, is_voice: bool = ..., metadata: Optional[Dict[str, Any]] = ...
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4339,7 +4339,7 @@ class BasePlatformAdapter(ABC):
             logger.debug("[%s] Could not send media-delivery-failure notice: %s", self.name, problem)
 
     # ┌── 异步函数（协程） def send_image_file()
-    # │  作用：Send a local image file natively (send_image takes a URL). Default: friendly notice.
+    # │  作用：Send local image 文件 natively (send_image takes URL). 默认值: friendly 提示.
     # │  参数：self, chat_id: str, image_path: str, caption: Optional[str] = None, reply_to: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None, **kwargs
     # │  返回：SendResult
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4354,7 +4354,7 @@ class BasePlatformAdapter(ABC):
             "send_image_file", "image", image_path, chat_id, caption, reply_to, metadata)
 
     # ┌── 函数 def validate_media_delivery_path()
-    # │  作用：Return a resolved path if it is safe for native attachment upload.
+    # │  作用：返回 resolved 路径若 它是 safe 用于 native attachment upload.。
     # │  参数：path: str, session_key: str = ''
     # │  返回：Optional[str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4366,7 +4366,7 @@ class BasePlatformAdapter(ABC):
         return validate_media_delivery_path(path, session_key=session_key)
 
     # ┌── 函数 def filter_media_delivery_paths()
-    # │  作用：Drop unsafe MEDIA paths and normalize accepted paths.
+    # │  作用：丢弃 unsafe MEDIA 路径且 归一化已接受路径.
     # │  参数：media_files, session_key: str = ''
     # │  返回：List[Tuple[str, bool]]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4380,7 +4380,7 @@ class BasePlatformAdapter(ABC):
             if (safe_path := _validated_delivery_path(media_path, session_key, "MEDIA directive path"))]
 
     # ┌── 函数 def filter_local_delivery_paths()
-    # │  作用：Drop unsafe bare local file paths and normalize accepted paths.
+    # │  作用：丢弃 unsafe bare local 文件路径且 归一化已接受路径.
     # │  参数：file_paths, session_key: str = ''
     # │  返回：List[str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4393,7 +4393,7 @@ class BasePlatformAdapter(ABC):
         return [p for p in safe_paths if p]
 
     # ┌── 函数 def _mask_protected_spans()
-    # │  作用：Blank fenced code, inline code and blockquotes (length-preserving so regex offsets stay
+    # │  作用：Blank fenced code, inline code 且 blockquotes (length-preserving 从而 regex offsets stay
     # │  参数：content: str
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4422,7 +4422,7 @@ class BasePlatformAdapter(ABC):
         return _blank_spans(content, spans)
 
     # ┌── 函数 def _mask_json_string_media()
-    # │  作用：Blank ``MEDIA:<bare-path>`` tags inside JSON string *values* (stored tool-result text
+    # │  作用：Blank ``MEDIA:<bare-路径>`` tags inside JSON 字符串 *值* (stored 工具-结果文本
     # │  参数：content: str
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4451,7 +4451,7 @@ class BasePlatformAdapter(ABC):
         return _blank_spans(content, spans)
 
     # ┌── 函数 def extract_media()
-    # │  作用：Extract ``MEDIA:<path>`` tags and strip ``[[audio_as_voice]]`` / ``[[as_document]]`` ->
+    # │  作用：Extract ``MEDIA:<路径>`` tags 且 strip ``[[audio_as_voice]]`` / ``[[as_document]]`` ->
     # │  参数：content: str
     # │  返回：Tuple[List[Tuple[str, bool]], str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4500,7 +4500,7 @@ class BasePlatformAdapter(ABC):
         return media, cleaned
 
     # ┌── 函数 def strip_media_directives_for_display()
-    # │  作用：Strip MEDIA: directives from streamed/display text. Known-extension tags are
+    # │  作用：Strip MEDIA: directives 从 streamed/展示文本. Known-extension tags 是
     # │  参数：text: str
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4517,7 +4517,7 @@ class BasePlatformAdapter(ABC):
         return re.sub(r'\n{3,}', '\n\n', _strip_media_tag_directives(text)).rstrip()
 
     # ┌── 函数 def extract_local_files()
-    # │  作用：Bare local file paths (absolute, ``~/`` or drive-letter) with deliverable extensions ->
+    # │  作用：Bare local 文件路径 (absolute, ``~/`` 或 drive-letter) 带 deliverable extensions ->
     # │  参数：content: str
     # │  返回：Tuple[List[str], str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4558,7 +4558,7 @@ class BasePlatformAdapter(ABC):
         return list(unique), re.sub(r'\n{3,}', '\n\n', cleaned).strip()
 
     # ┌── 异步函数（协程） def _keep_typing()
-    # │  作用：Refresh the typing indicator every ``interval`` seconds until cancelled (platform typing
+    # │  作用：Refresh typing indicator 每个 ``interval`` seconds until cancelled (平台 typing
     # │  参数：self, chat_id: str, interval: float = 2.0, metadata = None, stop_event: asyncio.Event | None = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4610,7 +4610,7 @@ class BasePlatformAdapter(ABC):
             getattr(self, "_status_text", {}).pop(str(chat_id), None)
 
     # ┌── 异步函数（协程） def _stop_typing_refresh()
-    # │  作用：Stop the refresh task and platform typing state as one operation.
+    # │  作用：Stop refresh task 且平台 typing 状态作为 one operation.
     # │  参数：self, chat_id: str, typing_task: asyncio.Task | None = None, metadata = ..., timeout: float = ..., stop_attempts: int = ...
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4638,7 +4638,7 @@ class BasePlatformAdapter(ABC):
             self._typing_paused.discard(chat_id)
 
     # ┌── 异步函数（协程） def _stop_typing_quietly()
-    # │  作用：Best-effort platform stop_typing; adapter errors are swallowed.
+    # │  作用：尽最大努力平台 stop_typing; 适配器错误是 swallowed.
     # │  参数：self, chat_id: str, metadata = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4650,7 +4650,7 @@ class BasePlatformAdapter(ABC):
             await self._stop_typing_with_metadata(chat_id, metadata)
 
     # ┌── 函数 def pause_typing_for_chat()
-    # │  作用：Pause typing for a chat (approval waits); GIL-safe from the sync agent thread.
+    # │  作用：Pause typing 用于 chat (approval waits); GIL-safe 从同步 Agent 线程.
     # │  参数：self, chat_id: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4659,7 +4659,7 @@ class BasePlatformAdapter(ABC):
         self._typing_paused.add(chat_id)
 
     # ┌── 函数 def resume_typing_for_chat()
-    # │  作用：Resume typing indicator for a chat after approval resolves.
+    # │  作用：Resume typing indicator 用于 chat 在…之后 approval resolves.
     # │  参数：self, chat_id: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4668,7 +4668,7 @@ class BasePlatformAdapter(ABC):
         self._typing_paused.discard(chat_id)
 
     # ┌── 异步函数（协程） def interrupt_session_activity()
-    # │  作用：Signal the active session loop to stop and clear typing immediately.
+    # │  作用：信号 active 会话循环 stop 且清除 typing immediately.
     # │  参数：self, session_key: str, chat_id: str, metadata = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4681,7 +4681,7 @@ class BasePlatformAdapter(ABC):
         await self._stop_typing_quietly(chat_id, metadata)
 
     # ┌── 函数 def register_post_delivery_callback()
-    # │  作用：Register a deferred callback to fire after the main response. Same-key registrations are
+    # │  作用：Register deferred 回调 fire 在…之后 main 响应. Same-键 registrations 是
     # │  参数：self, session_key: str, callback: Callable, generation: int | None = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4706,7 +4706,7 @@ class BasePlatformAdapter(ABC):
             callback if generation is None else (int(generation), callback))
 
     # ┌── 函数 def _chain_callbacks()
-    # │  作用：Async wrapper running ``callbacks`` in order with per-callback exception isolation;
+    # │  作用：异步包装器运行 ``回调`` 在 order 带 per-回调异常 isolation;
     # │  参数：*callbacks
     # │  返回：Callable[[], Awaitable[None]]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4729,7 +4729,7 @@ class BasePlatformAdapter(ABC):
         return _chained
 
     # ┌── 函数 def pop_post_delivery_callback()
-    # │  作用：Pop a deferred callback, optionally requiring generation ownership.
+    # │  作用：Pop deferred 回调, optionally requiring generation ownership.
     # │  参数：self, session_key: str, generation: int | None = ...
     # │  返回：Callable | None
     # └──────────────────────────────────────────────────────────────
@@ -4756,7 +4756,7 @@ class BasePlatformAdapter(ABC):
     _FAIL_EMOJI: Optional[str] = None
 
     # ┌── 异步函数（协程） def on_processing_start()
-    # │  作用：Hook called when background processing begins.
+    # │  作用：Hook called 当 background processing begins.
     # │  参数：self, event: MessageEvent
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4765,7 +4765,7 @@ class BasePlatformAdapter(ABC):
         """Hook called when background processing begins."""
 
     # ┌── 异步函数（协程） def on_processing_complete()
-    # │  作用：Hook called when background processing completes. Default: opt-in reaction ack — with
+    # │  作用：Hook called 当 background processing completes. 默认值: opt-在 reaction ack — 带
     # │  参数：self, event: MessageEvent, outcome: ProcessingOutcome
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4794,7 +4794,7 @@ class BasePlatformAdapter(ABC):
             await add(chat_id, message_id, emoji)
 
     # ┌── 异步函数（协程） def _run_processing_hook()
-    # │  作用：Run a lifecycle hook without letting failures break message flow.
+    # │  作用：运行 lifecycle hook 不 letting failures break 消息 flow.
     # │  参数：self, hook_name: str, *args, **kwargs
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4812,7 +4812,7 @@ class BasePlatformAdapter(ABC):
             logger.warning("[%s] %s hook failed: %s", self.name, hook_name, e)
 
     # ┌── 函数 def _is_retryable_error()
-    # │  作用：Return True if the error string looks like a transient network failure.
+    # │  作用：返回 True 若错误字符串 looks like transient network failure.。
     # │  参数：error: Optional[str]
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4825,7 +4825,7 @@ class BasePlatformAdapter(ABC):
         return any(pat in lowered for pat in _RETRYABLE_ERROR_PATTERNS)
 
     # ┌── 函数 def _is_rate_limited_error()
-    # │  作用：Return True if the error string classifies as a rate limit / flood cap.
+    # │  作用：返回 True 若错误字符串 classifies 作为 rate 限制 / flood cap.。
     # │  参数：error: Optional[str]
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4842,7 +4842,7 @@ class BasePlatformAdapter(ABC):
         return classify_send_error(None, error or "") == "rate_limited"
 
     # ┌── 函数 def _is_timeout_error()
-    # │  作用：Return True for read/write timeouts — NOT retryable and NOT a plain-text
+    # │  作用：当 读取/写入超时 — 不 retryable 且不 plain-文本 时返回 True。
     # │  参数：error: Optional[str]
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4856,7 +4856,7 @@ class BasePlatformAdapter(ABC):
         return any(pat in lowered for pat in ("timed out", "readtimeout", "writetimeout"))
 
     # ┌── 函数 def _unwrap_ephemeral()
-    # │  作用：Unwrap a str/None/:class:`EphemeralReply` response into ``(text, ttl)``. ``ttl > 0``
+    # │  作用：解包 str/None/:类:`EphemeralReply` 响应进入 ``(文本, ttl)``. ``ttl > 0``
     # │  参数：self, response: Any
     # │  返回：Tuple[Optional[str], int]
     # └──────────────────────────────────────────────────────────────
@@ -4877,7 +4877,7 @@ class BasePlatformAdapter(ABC):
         return response.text, int(ttl or 0)
 
     # ┌── 异步函数（协程） def _dispatch_inline_reply()
-    # │  作用：Call the handler and send its reply inline, with retry, threading and
+    # │  作用：Call handler 且 send 其 reply inline, 带重试, threading 且
     # │  参数：self, event: MessageEvent, log_cmd: Optional[str] = ...
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4902,7 +4902,7 @@ class BasePlatformAdapter(ABC):
             self._schedule_ephemeral_delete(event.source.chat_id, result.message_id, eph_ttl)
 
     # ┌── 函数 def _media_delivery_scope()
-    # │  作用：The runner's ``_media_delivery_scope_for_source`` (routed profile's home + terminal
+    # │  作用：runner's ``_media_delivery_scope_for_source`` (routed 配置档's 主目录 + 终端
     # │  参数：self, source: Optional[SessionSource]
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4923,7 +4923,7 @@ class BasePlatformAdapter(ABC):
             return contextlib.nullcontext()
 
     # ┌── 函数 def _final_delivery_adapter()
-    # │  作用：The runner's CURRENT adapter for a new final-response send: a reconnect can swap the
+    # │  作用：runner's CURRENT 适配器用于 new final-响应 send: reconnect 可以 swap
     # │  参数：self, source: Optional[SessionSource]
     # │  返回：'BasePlatformAdapter'
     # └──────────────────────────────────────────────────────────────
@@ -4949,7 +4949,7 @@ class BasePlatformAdapter(ABC):
         return self
 
     # ┌── 异步函数（协程） def _send_with_retry()
-    # │  作用：Send with exponential-backoff retry on transient network errors; permanent
+    # │  作用：Send 带 exponential-backoff 重试在…上 transient network 错误; permanent
     # │  参数：self, chat_id: str, content: str, reply_to: Optional[str] = None, metadata: Any = None, max_retries: int = 2, base_delay: float = 2.0
     # │  返回：'SendResult'
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5065,7 +5065,7 @@ class BasePlatformAdapter(ABC):
         return fallback_result
 
     # ┌── 函数 def _send_retry_is_final()
-    # │  作用：True when a failed send must be returned as-is: neither a retry nor the plain-text
+    # │  作用：当 failed send 必须是 returned 作为-是: neither 重试 nor plain-文本 时返回 True。
     # │  参数：self, result: 'SendResult'
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5076,7 +5076,7 @@ class BasePlatformAdapter(ABC):
         return False
 
     # ┌── 异步函数（协程） def _send_plain_fallback()
-    # │  作用：Last-resort send after a non-transient failure; platforms whose markup is not the
+    # │  作用：Last-resort send 在…之后 non-transient failure; 平台 whose markup 是不
     # │  参数：self, chat_id: str, content: str, reply_to: Optional[str], metadata: Any
     # │  返回：'SendResult'
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5092,7 +5092,7 @@ class BasePlatformAdapter(ABC):
             reply_to=reply_to, metadata=metadata)
 
     # ┌── 函数 def _merge_caption()
-    # │  作用：Merge a new caption into existing text unless an identical (stripped) caption already
+    # │  作用：Merge new caption 进入 existing 文本 unless identical (stripped) caption 已
     # │  参数：existing_text: Optional[str], new_text: str
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -5121,7 +5121,7 @@ class BasePlatformAdapter(ABC):
         return _lazy_attr(self, "_text_debounce", dict)
 
     # ┌── 函数 def _is_queue_text_debounce_candidate()
-    # │  作用：Return True for normal text eligible for queue-mode debounce.
+    # │  作用：当 normal 文本 eligible 用于队列-模式 debounce. 时返回 True。
     # │  参数：self, event: MessageEvent
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5138,7 +5138,7 @@ class BasePlatformAdapter(ABC):
         return result
 
     # ┌── 函数 def _can_merge_text_debounce_events()
-    # │  作用：Return True when two text debounce events came from the same sender.
+    # │  作用：当 two 文本 debounce 事件 came 从 same sender. 时返回 True。
     # │  参数：self, existing: MessageEvent, event: MessageEvent
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5165,7 +5165,7 @@ class BasePlatformAdapter(ABC):
         return existing_sender is not None and existing_sender == _identity(event)
 
     # ┌── 函数 def _text_debounce_delay()
-    # │  作用：Return bounded busy-text debounce delay for ``session_key``.
+    # │  作用：返回 bounded busy-文本 debounce delay 用于 ``session_key``.。
     # │  参数：self, session_key: str
     # │  返回：float
     # └──────────────────────────────────────────────────────────────
@@ -5181,7 +5181,7 @@ class BasePlatformAdapter(ABC):
         return max(0.0, deadline - time.monotonic())
 
     # ┌── 异步函数（协程） def _queue_text_debounce()
-    # │  作用：Buffer normal queue-mode busy text and schedule a bounded flush.
+    # │  作用：Buffer normal 队列-模式 busy 文本且 schedule bounded 冲刷.
     # │  参数：self, session_key: str, event: MessageEvent
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5220,7 +5220,7 @@ class BasePlatformAdapter(ABC):
         state.task = asyncio.create_task(self._flush_text_debounce(session_key, delay))
 
     # ┌── 异步函数（协程） def _flush_text_debounce()
-    # │  作用：Timer task that flushes the debounced text buffer.
+    # │  作用：Timer task 那个冲刷 debounced 文本 buffer.
     # │  参数：self, session_key: str, delay: float
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5242,7 +5242,7 @@ class BasePlatformAdapter(ABC):
                 state.task = None
 
     # ┌── 异步函数（协程） def _flush_text_debounce_now()
-    # │  作用：Force-flush one debounced busy-text burst into the pending slot.
+    # │  作用：Force-冲刷 one debounced busy-文本 burst 进入 pending slot.
     # │  参数：self, session_key: str
     # │  返回：bool
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5266,7 +5266,7 @@ class BasePlatformAdapter(ABC):
         return True
 
     # ┌── 函数 def _discard_text_debounce()
-    # │  作用：Cancel and drop pending text debounce state for control commands.
+    # │  作用：Cancel 且丢弃 pending 文本 debounce 状态用于 control 命令.
     # │  参数：self, session_key: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -5280,7 +5280,7 @@ class BasePlatformAdapter(ABC):
     # reconciliation is deterministic across completion, /stop /new /reset, and stale-lock heal.
 
     # ┌── 函数 def _release_session_guard()
-    # │  作用：Release the session guard; with ``guard`` given, only if the entry is still that exact
+    # │  作用：Release 会话护栏; 带 ``护栏`` given, 仅若 entry 是仍 那个 exact
     # │  参数：self, session_key: str, guard: Optional[asyncio.Event] = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -5293,7 +5293,7 @@ class BasePlatformAdapter(ABC):
         del self._active_sessions[session_key]
 
     # ┌── 函数 def _session_task_is_stale()
-    # │  作用：True if the recorded owner task for ``session_key`` has exited. No owner task at all is
+    # │  作用：True 若 recorded owner task 用于 ``session_key`` 有 exited. 无 owner task 在全部是
     # │  参数：self, session_key: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5305,7 +5305,7 @@ class BasePlatformAdapter(ABC):
         return bool(done and done())
 
     # ┌── 函数 def _heal_stale_session_lock()
-    # │  作用：Clear a stale session lock; True if healed. On-entry safety net: without it a split-brain
+    # │  作用：清除卡死的会话锁; True 若 healed. 在…上-entry safety net: 不它 split-brain
     # │  参数：self, session_key: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5325,7 +5325,7 @@ class BasePlatformAdapter(ABC):
         return True
 
     # ┌── 函数 def _start_session_processing()
-    # │  作用：Spawn a background processing task under the session guard; True on success. If
+    # │  作用：Spawn background processing task under 会话护栏; True 在…上 success. 若
     # │  参数：self, event: MessageEvent, session_key: str, interrupt_event: Optional[asyncio.Event] = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5346,7 +5346,7 @@ class BasePlatformAdapter(ABC):
         return True
 
     # ┌── 函数 def _track_session_task()
-    # │  作用：Record ``task`` as the session owner and track it for shutdown; False when
+    # │  作用：Record ``task`` 作为会话 owner 且 track 它用于 shutdown; False 当
     # │  参数：self, session_key: str, task: Any
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5368,7 +5368,7 @@ class BasePlatformAdapter(ABC):
         return True
 
     # ┌── 异步函数（协程） def cancel_session_processing()
-    # │  作用：Cancel in-flight processing for one session. ``release_guard=False`` keeps the guard so
+    # │  作用：Cancel 在-flight processing 用于 one 会话. ``release_guard=False`` 保留护栏从而
     # │  参数：self, session_key: str, release_guard: bool = ..., discard_pending: bool = ...
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5403,7 +5403,7 @@ class BasePlatformAdapter(ABC):
             self._release_session_guard(session_key)
 
     # ┌── 异步函数（协程） def _drain_pending_after_session_command()
-    # │  作用：Tail of /stop, /new, /reset: release the command-scoped guard, then
+    # │  作用：Tail 的 /stop, /new, /reset: release 命令-scoped 护栏, 然后
     # │  参数：self, session_key: str, command_guard: asyncio.Event
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5420,7 +5420,7 @@ class BasePlatformAdapter(ABC):
             self._start_session_processing(pending_event, session_key)
 
     # ┌── 异步函数（协程） def _dispatch_active_session_command()
-    # │  作用：Dispatch a reset-like bypass command (/stop, /new, /reset): keep a guard installed while
+    # │  作用：Dispatch reset-like bypass 命令 (/stop, /new, /reset): 保留护栏 installed 当
     # │  参数：self, event: MessageEvent, session_key: str, cmd: str
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5454,7 +5454,7 @@ class BasePlatformAdapter(ABC):
         await self._drain_pending_after_session_command(session_key, command_guard)
 
     # ┌── 异步函数（协程） def handle_message()
-    # │  作用：Process an incoming message; returns quickly by spawning a background
+    # │  作用：进程 incoming 消息; 返回 quickly 由 spawning background
     # │  参数：self, event: MessageEvent
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5501,7 +5501,7 @@ class BasePlatformAdapter(ABC):
         event._gateway_accepted = self._start_session_processing(event, session_key)
 
     # ┌── 异步函数（协程） def _handle_message_while_active()
-    # │  作用：Route a message that arrived while ``session_key`` is busy: bypass
+    # │  作用：路由消息那个 arrived 当 ``session_key`` 是 busy: bypass
     # │  参数：self, event: MessageEvent, session_key: str
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5586,7 +5586,7 @@ class BasePlatformAdapter(ABC):
             event._gateway_accepted = True
 
     # ┌── 函数 def _get_human_delay()
-    # │  作用：Random human-like pacing delay (s) from HERMES_HUMAN_DELAY_MODE: "off" (default) |
+    # │  作用：Random human-like pacing delay (s) 从 HERMES_HUMAN_DELAY_MODE: "off" (默认值) |
     # │  参数：无
     # │  返回：float
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -5608,7 +5608,7 @@ class BasePlatformAdapter(ABC):
         return random.uniform(lo / 1000.0, hi / 1000.0)
 
     # ┌── 异步函数（协程） def _synthesize_auto_tts()
-    # │  作用：Synthesize auto-TTS audio -> ``(existing_paths, requested_path)``; empty/None on failure
+    # │  作用：Synthesize auto-TTS audio -> ``(existing_paths, requested_path)``; empty/None 在…上 failure
     # │  参数：self, text_content: str
     # │  返回：Tuple[List[str], Optional[str]]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5641,7 +5641,7 @@ class BasePlatformAdapter(ABC):
         return paths, requested_path
 
     # ┌── 函数 def _wants_auto_tts()
-    # │  作用：Auto-TTS on voice input (voice-first), gated by /voice or voice.auto_tts;
+    # │  作用：Auto-TTS 在…上 voice 输入 (voice-first), gated 由 /voice 或 voice.auto_tts;
     # │  参数：self, event: MessageEvent, session_key: str, interrupt_event: asyncio.Event, text_content: str, media_files: list
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5657,7 +5657,7 @@ class BasePlatformAdapter(ABC):
             and not self._streaming_tts_turn_completed(session_key, generation, event=event))
 
     # ┌── 异步函数（协程） def _play_tts_file()
-    # │  作用：Play one synthesized TTS file. Returns True when the ORIGINAL reply text rode
+    # │  作用：Play one synthesized TTS 文件. 返回 True 当 ORIGINAL reply 文本 rode
     # │  参数：self, event: MessageEvent, text_content: str, tts_path: str, first: bool, metadata: Dict[str, Any], record_delivery: Callable
     # │  返回：bool
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5678,7 +5678,7 @@ class BasePlatformAdapter(ABC):
         return bool(caption and getattr(tts_result, "success", False))
 
     # ┌── 异步函数（协程） def _record_delivery_obligation()
-    # │  作用：Ledger the final response BEFORE the send so a crash before platform ACK redelivers on
+    # │  作用：Ledger final 响应在…之前 send 从而 crash 在…之前平台 ACK redelivers 在…上
     # │  参数：self, event: MessageEvent, session_key: str, text_content: str, delivery_adapter: 'BasePlatformAdapter', is_ephemeral_response: bool
     # │  返回：Optional[str]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5724,7 +5724,7 @@ class BasePlatformAdapter(ABC):
             return None
 
     # ┌── 异步函数（协程） def _finalize_delivery_obligation()
-    # │  作用：Mark the ledger row delivered/failed (best-effort). On ``send_path_degraded`` with a
+    # │  作用：Mark ledger row delivered/failed (尽最大努力). 在…上 ``send_path_degraded`` 带
     # │  参数：self, obligation_id: str, result: Any, event: MessageEvent, delivery_adapter: 'BasePlatformAdapter'
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5764,7 +5764,7 @@ class BasePlatformAdapter(ABC):
             logger.debug("delivery ledger update failed", exc_info=True)
 
     # ┌── 异步函数（协程） def _deliver_media_attachments()
-    # │  作用：Deliver MEDIA-tag files and detected local files by type: images batched via
+    # │  作用：Deliver MEDIA-tag 文件且 检测到 local 文件由 类型: images batched via
     # │  参数：self, event: MessageEvent, media_files: list, local_files: list, force_document_attachments: bool, human_delay: float, metadata: Dict[str, Any], record_delivery: Callable
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5829,7 +5829,7 @@ class BasePlatformAdapter(ABC):
                     logger.error("[%s] Error sending local file %s: %s", self.name, path, err)
 
     # ┌── 异步函数（协程） def _send_image_batch()
-    # │  作用：Batch-send images; a failure is logged (never raised) so other attachments still go.
+    # │  作用：Batch-send images; failure 是 logged (never 抛出) 从而 other attachments 仍 go.
     # │  参数：self, event: MessageEvent, images: list, metadata: Dict[str, Any], human_delay: float, record_delivery: Callable
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5852,7 +5852,7 @@ class BasePlatformAdapter(ABC):
         record_delivery(result)
 
     # ┌── 异步函数（协程） def send_final_ledgered()
-    # │  作用：The delivery-ledger bracket every final text goes through, on the CURRENT transport
+    # │  作用：delivery-ledger bracket 每个 final 文本 goes through, 在…上 CURRENT transport
     # │  参数：self, event: MessageEvent, session_key: str, text_content: str, metadata: Dict[str, Any], reply_to: Optional[str], is_ephemeral_response: bool = ...
     # │  返回：'tuple[SendResult, BasePlatformAdapter]'
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5884,7 +5884,7 @@ class BasePlatformAdapter(ABC):
         return result, delivery_adapter
 
     # ┌── 异步函数（协程） def _send_final_text()
-    # │  作用：Normal-lane final: the ledger bracket plus the message-id owner's ephemeral delete.
+    # │  作用：Normal-lane final: ledger bracket plus 消息-id owner's ephemeral delete.
     # │  参数：self, event: MessageEvent, session_key: str, text_content: str, metadata: Dict[str, Any], is_ephemeral_response: bool, ephemeral_ttl: int, record_delivery: Callable
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5902,7 +5902,7 @@ class BasePlatformAdapter(ABC):
             delivery_adapter._schedule_ephemeral_delete(event.source.chat_id, result.message_id, ephemeral_ttl)
 
     # ┌── 异步函数（协程） def _notify_turn_error()
-    # │  作用：Tell the user a turn failed rather than leaving radio silence (last resort:
+    # │  作用：Tell user 轮次 failed rather 比 leaving radio silence (last resort:
     # │  参数：self, event: MessageEvent, e: BaseException
     # │  返回：Optional[dict]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5927,7 +5927,7 @@ class BasePlatformAdapter(ABC):
         return _thread_metadata
 
     # ┌── 异步函数（协程） def _deliver_attachments()
-    # │  作用：Send extracted image URLs, MEDIA files and bare local files (human-paced),
+    # │  作用：Send extracted image URLs, MEDIA 文件且 bare local 文件 (human-paced),
     # │  参数：self, event: MessageEvent, extracted: '_ExtractedResponse', metadata: Dict[str, Any], anything_sent: bool, record_delivery: Callable
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5956,7 +5956,7 @@ class BasePlatformAdapter(ABC):
                          len(extracted.pre_extract), event.source.chat_id)
 
     # ┌── 函数 def _start_typing_refresh()
-    # │  作用：Spawn the typing-refresh task, or None when ``typing_indicator=False``.
+    # │  作用：Spawn typing-refresh task, 或 None 当 ``typing_indicator=False``.
     # │  参数：self, event: MessageEvent, interrupt_event: asyncio.Event, metadata: Optional[dict]
     # │  返回：Optional[asyncio.Task]
     # └──────────────────────────────────────────────────────────────
@@ -5974,7 +5974,7 @@ class BasePlatformAdapter(ABC):
         return asyncio.create_task(self._keep_typing(event.source.chat_id, **kwargs))
 
     # ┌── 异步函数（协程） def _extract_response_content()
-    # │  作用：Split a handler response into deliverable text + attachments. Order matters: MEDIA tags →
+    # │  作用：Split handler 响应进入 deliverable 文本 + attachments. Order matters: MEDIA tags →
     # │  参数：self, response: str, event: MessageEvent, session_key: str, is_ephemeral_response: bool
     # │  返回：'_ExtractedResponse'
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6032,7 +6032,7 @@ class BasePlatformAdapter(ABC):
             local_files=local_files, force_document_attachments=force_document, pre_extract=pre_extract)
 
     # ┌── 异步函数（协程） def _fire_post_delivery_callback()
-    # │  作用：Run the one-shot post-delivery callback (bounded, errors swallowed). The generation is
+    # │  作用：运行 one-shot post-delivery 回调 (bounded, 错误 swallowed). generation 是
     # │  参数：self, session_key: str, interrupt_event: asyncio.Event
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6051,7 +6051,7 @@ class BasePlatformAdapter(ABC):
                     await asyncio.wait_for(_post_result, timeout=_POST_DELIVERY_CALLBACK_TIMEOUT_SECONDS)
 
     # ┌── 函数 def _finish_session_task()
-    # │  作用：End-of-task guard/ownership reconciliation. A late ``_pending_messages`` arrival must not
+    # │  作用：End-的-task 护栏/ownership reconciliation. late ``_pending_messages`` arrival 必须不
     # │  参数：self, session_key: str, interrupt_event: asyncio.Event
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -6080,7 +6080,7 @@ class BasePlatformAdapter(ABC):
             self._cleanup_finished_session_task(session_key, interrupt_event)
 
     # ┌── 异步函数（协程） def _process_message_background()
-    # │  作用：Background task that actually processes the message.
+    # │  作用：Background task 那个 actually 进程消息.
     # │  参数：self, event: MessageEvent, session_key: str
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6193,7 +6193,7 @@ class BasePlatformAdapter(ABC):
             self._finish_session_task(session_key, interrupt_event)
 
     # ┌── 函数 def _spawn_drain_task()
-    # │  作用：Hand the session to a fresh task for a queued follow-up — never recurse (chained
+    # │  作用：Hand 会话 fresh task 用于 queued follow-up — never recurse (chained
     # │  参数：self, pending_event: MessageEvent, session_key: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -6207,7 +6207,7 @@ class BasePlatformAdapter(ABC):
             asyncio.create_task(self._process_message_background(pending_event, session_key)))
 
     # ┌── 函数 def _clear_session_guard()
-    # │  作用：Clear (not delete) the session's interrupt Event so the guard stays live for inbound.
+    # │  作用：清除 (不 delete) 会话's interrupt 事件从而护栏 stays 当前活跃的用于 inbound.
     # │  参数：self, session_key: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -6218,7 +6218,7 @@ class BasePlatformAdapter(ABC):
             _active.clear()
 
     # ┌── 函数 def _cleanup_finished_session_task()
-    # │  作用：Release a finished owner task's guard, dropping its ``_session_tasks`` entry ONLY if the
+    # │  作用：Release finished owner task's 护栏, 丢弃其 ``_session_tasks`` entry 仅若
     # │  参数：self, session_key: str, interrupt_event: Optional[asyncio.Event]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -6241,7 +6241,7 @@ class BasePlatformAdapter(ABC):
             self._session_tasks.pop(session_key, None)
 
     # ┌── 异步函数（协程） def cancel_background_tasks()
-    # │  作用：Cancel in-flight background tasks (shutdown/replacement); 5s bound each,
+    # │  作用：Cancel 在-flight background tasks (shutdown/replacement); 5s bound 每个,
     # │  参数：self
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6279,7 +6279,7 @@ class BasePlatformAdapter(ABC):
             bucket.clear()
 
     # ┌── 函数 def has_pending_interrupt()
-    # │  作用：Check if there's a pending interrupt for a session.
+    # │  作用：检查若 那里's pending interrupt 用于会话.
     # │  参数：self, session_key: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -6289,7 +6289,7 @@ class BasePlatformAdapter(ABC):
         return session_key in self._active_sessions and self._active_sessions[session_key].is_set()
 
     # ┌── 函数 def get_pending_message()
-    # │  作用：Get and clear any pending message for a session.
+    # │  作用：获取且 清除任意 pending 消息用于会话.
     # │  参数：self, session_key: str
     # │  返回：Optional[MessageEvent]
     # └──────────────────────────────────────────────────────────────
@@ -6299,7 +6299,7 @@ class BasePlatformAdapter(ABC):
         return self._pending_messages.pop(session_key, None)
 
     # ┌── 函数 def build_source()
-    # │  作用：Build a SessionSource; with ``gateway.profile_routes`` configured the matching
+    # │  作用：构建 SessionSource; 带 ``gateway.profile_routes`` configured matching
     # │  参数：self, chat_id: str, chat_name: Optional[str] = None, chat_type: str = 'dm', user_id: Optional[str] = None, user_name: Optional[str] = None, thread_id: Optional[str] = None, chat_topic: Optional[str] = None  …共 18 个
     # │  返回：SessionSource
     # └──────────────────────────────────────────────────────────────
@@ -6350,7 +6350,7 @@ class BasePlatformAdapter(ABC):
         return source
 
     # ┌── 异步函数（协程） def get_chat_info()
-    # │  作用：Get information about a chat/channel; dict with at least ``name``
+    # │  作用：获取 information about chat/通道; 字典带 在 least ``名称``
     # │  参数：self, chat_id: str
     # │  返回：Dict[str, Any]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6362,7 +6362,7 @@ class BasePlatformAdapter(ABC):
         and ``type`` ("dm", "group", "channel")."""
 
     # ┌── 函数 def toolsets_for_source()
-    # │  作用：Per-source toolset override REPLACING ``platform_toolsets.<platform>``, or None
+    # │  作用：Per-source 工具集覆盖值 REPLACING ``platform_toolsets.<平台>``, 或 None
     # │  参数：self, source: 'SessionSource'
     # │  返回：Optional[List[str]]
     # └──────────────────────────────────────────────────────────────
@@ -6373,7 +6373,7 @@ class BasePlatformAdapter(ABC):
         return None
 
     # ┌── 函数 def format_message()
-    # │  作用：Format a message for this platform (override for e.g. Telegram
+    # │  作用：Format 消息用于这个平台 (覆盖值用于 e.g. Telegram
     # │  参数：self, content: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -6384,7 +6384,7 @@ class BasePlatformAdapter(ABC):
         return content
 
     # ┌── 函数 def truncate_message()
-    # │  作用：Split a long message into chunks preserving code blocks: a split inside a fence closes it
+    # │  作用：Split long 消息进入 chunks preserving code blocks: split inside fence 关闭它
     # │  参数：content: str, max_length: int = 4096, len_fn: Optional['Callable[[str], int]'] = None
     # │  返回：List[str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。

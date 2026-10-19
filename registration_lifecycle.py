@@ -32,7 +32,7 @@ from typing import Any
 
 
 # ┌── 函数 def same_registration()
-# │  作用：Compare opaque registry snapshots using identity only (element-wise for tuples).
+# │  作用：Compare opaque registry snapshots using 身份仅 (element-wise 用于 tuples).
 # │  参数：left: Any, right: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -46,7 +46,7 @@ def same_registration(left: Any, right: Any) -> bool:
 
 
 # ┌── 类 class ReplacementLease
-# │  说明：One ownership generation in a replaceable registry slot.
+# │  说明：One ownership generation 在 replaceable registry slot.
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -72,7 +72,7 @@ class ReplacementLease:
 
 
 # ┌── 类 class ReplacementCoordinator
-# │  说明：Link and remove registration generations in arbitrary unload order.
+# │  说明：Link 且移除 registration generations 在 arbitrary unload order.
 # │  成员：共 4 个方法；对外可用 3 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class ReplacementCoordinator:
@@ -88,7 +88,7 @@ class ReplacementCoordinator:
         self._lock = threading.RLock()
 
     # ┌── 函数 def transaction()
-    # │  作用：Serialize a registry snapshot/write/acquire with lease disposal.
+    # │  作用：Serialize registry snapshot/写入/acquire 带 lease disposal.
     # │  参数：self
     # │  返回：（未标注类型）
     # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -101,7 +101,7 @@ class ReplacementCoordinator:
             yield
 
     # ┌── 函数 def acquire()
-    # │  作用：Attach a new live generation to the matching active predecessor.
+    # │  作用：Attach new 当前活跃的 generation matching active predecessor.
     # │  参数：self, slot: Hashable, current: Any, previous: Any, restore: Callable[[Any], bool], finalize: Callable[[], None] | None = ...
     # │  返回：ReplacementLease
     # └──────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ class ReplacementCoordinator:
             return lease
 
     # ┌── 函数 def dispose()
-    # │  作用：Remove *lease*, restoring the nearest still-live predecessor.
+    # │  作用：移除 *lease*, restoring nearest 仍-当前活跃的 predecessor.
     # │  参数：self, lease: ReplacementLease
     # │  返回：None
     # └──────────────────────────────────────────────────────────────

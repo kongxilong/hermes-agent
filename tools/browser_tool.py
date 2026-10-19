@@ -61,7 +61,7 @@ _BROWSER_PASSTHROUGH_KEYS: tuple[str, ...] = (
 
 
 # ┌── 函数 def _build_browser_env()
-# │  作用：Credential-scrubbed env for an agent-browser subprocess (deferred import: test
+# │  作用：Credential-scrubbed env 用于 Agent-browser 子进程 (deferred 导入: 测试
 # │  参数：无
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ _sanitize_url_for_logs = redact_cdp_url
 
 
 # ┌── 函数 def _browser_cfg()
-# │  作用：``parse(browser.<key>)`` from the RAW profile config (loader warnings must not
+# │  作用：``解析(browser.<键>)`` 从 RAW 配置档配置 (loader warnings 必须不
 # │  参数：key: str, default, parse, log_label: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ def _browser_cfg(key: str, default, parse, log_label: str):
 
 
 # ┌── 函数 def _cached_browser_cfg()
-# │  作用：Process-cached ``_browser_cfg`` read, one slot per profile home (cleared by
+# │  作用：进程-cached ``_browser_cfg`` 读取, one slot per 配置档主目录 (已清除由
 # │  参数：cache_name: str, flag_name: str, key: str, default, parse, log_label: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ def _cached_browser_cfg(cache_name: str, flag_name: str, key: str, default, pars
 
 
 # ┌── 函数 def _get_command_timeout()
-# │  作用：``browser.command_timeout`` (floored at 5s; default 30s).
+# │  作用：``browser.command_timeout`` (floored 在 5s; 默认值 30s).
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -249,7 +249,7 @@ def _get_command_timeout() -> int:
 
 
 # ┌── 函数 def _safe_command_timeout()
-# │  作用：``_get_command_timeout`` guaranteed non-None (cache reset mid-flight); ``is not
+# │  作用：``_get_command_timeout`` guaranteed non-None (缓存 reset mid-flight); ``是不
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -262,7 +262,7 @@ def _safe_command_timeout() -> int:
 
 
 # ┌── 函数 def get_browser_snapshot_threshold()
-# │  作用：``browser.snapshot_threshold`` (floored at MIN_SNAPSHOT_THRESHOLD).
+# │  作用：``browser.snapshot_threshold`` (floored 在 MIN_SNAPSHOT_THRESHOLD).
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ def get_browser_snapshot_threshold() -> int:
 
 
 # ┌── 函数 def _get_open_command_timeout()
-# │  作用：Timeout for agent-browser ``open`` (navigation / daemon cold start).
+# │  作用：超时用于 Agent-browser ``打开`` (navigation / daemon cold start).
 # │  参数：first_open: bool = ...
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ from tools import browser_tool_session as _session
 
 
 # ┌── 函数 def _get_vision_model()
-# │  作用：Model for browser_vision (screenshot analysis — multimodal).
+# │  作用：模型用于 browser_vision (screenshot analysis — multimodal).
 # │  参数：无
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ _PRIVATE_HOST_SUFFIXES = (".localhost", ".local", ".lan", ".internal")
 
 
 # ┌── 函数 def _url_is_private()
-# │  作用：True when the URL's host is (or resolves to) a private/LAN/loopback/CGNAT address.
+# │  作用：当 URL's 宿主是 (或 resolves ) private/LAN/loopback/CGNAT address. 时返回 True。
 # │  参数：url: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -366,7 +366,7 @@ def _url_is_private(url: str) -> bool:
 
 
 # ┌── 函数 def _navigation_session_key()
-# │  作用：Session key that should handle ``url`` for ``task_id``: ``f"{task_id}::local"`` (hybrid
+# │  作用：会话键 那个应当 handle ``URL`` 用于 ``task_id``: ``f"{task_id}::local"`` (hybrid
 # │  参数：task_id: str, url: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -409,7 +409,7 @@ def _bare_task_id_for_session_key(session_key: str) -> str:
 
 
 # ┌── 函数 def _session_info_owned_by_task()
-# │  作用：Ownership check; entries without metadata (older in-memory / hot-reload) pass,
+# │  作用：Ownership 检查; entries 不 metadata (older 在-内存 / hot-reload) pass,
 # │  参数：session_info: Dict[str, Any], task_id: str, session_key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -423,7 +423,7 @@ def _session_info_owned_by_task(session_info: Dict[str, Any], task_id: str, sess
 
 
 # ┌── 函数 def _last_session_key()
-# │  作用：Session key a non-nav tool must use: the one that served the task's last navigation.
+# │  作用：会话键 non-nav 工具必须 use: one 那个 served task's last navigation.
 # │  参数：task_id: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -450,7 +450,7 @@ def _last_session_key(task_id: str) -> str:
 
 
 # ┌── 函数 def _socket_safe_tmpdir()
-# │  作用：Short temp dir for Unix sockets: macOS ``TMPDIR`` + ``agent-browser-hermes_…``
+# │  作用：Short temp dir 用于 Unix sockets: macOS ``TMPDIR`` + ``Agent-browser-hermes_…``
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -519,7 +519,7 @@ _suspect_browser_sessions: Dict[str, str] = {}
 
 
 # ┌── 类 class _BrowserSessionBackend
-# │  说明：``agent.deadline.SuspectableBackend`` adapter for one cached session key: the
+# │  说明：``Agent.deadline.SuspectableBackend`` 适配器用于 one cached 会话键:
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _BrowserSessionBackend:
@@ -538,7 +538,7 @@ class _BrowserSessionBackend:
         self._session_key = session_key
 
     # ┌── 函数 def mark_suspect()
-    # │  作用：MUST stay cheap and lock-free (runs inline on the timed-out caller's thread).
+    # │  作用：必须 stay cheap 且锁-free (运行 inline 在…上 timed-out caller's 线程).
     # │  参数：self, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -547,7 +547,7 @@ class _BrowserSessionBackend:
         _suspect_browser_sessions[self._session_key] = reason
 
     # ┌── 函数 def ensure_healthy()
-    # │  作用：Recycle the session when a prior timeout marked it suspect; False after teardown.
+    # │  作用：Recycle 会话当 prior 超时 marked 它 suspect; False 在…之后 teardown.
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -756,7 +756,7 @@ def _dumps(payload: Dict[str, Any], **kw) -> str:
 
 
 # ┌── 函数 def _secret_url_error()
-# │  作用：Refuse URLs embedding an API key/token (raw and URL-decoded, catching ``%2D``
+# │  作用：Refuse URLs embedding API 键/令牌 (raw 且 URL-decoded, catching ``%2D``
 # │  参数：url: str
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -774,7 +774,7 @@ def _secret_url_error(url: str) -> Optional[dict]:
 
 
 # ┌── 函数 def _url_policy_error()
-# │  作用：Backend-aware URL checks on an already-normalized URL; None if allowed. Ordered floors:
+# │  作用：Backend-aware URL 检查在…上已-已归一化 URL; None 若 allowed. Ordered floors:
 # │  参数：url: str, auto_local: bool = ...
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -811,7 +811,7 @@ def _url_policy_error(url: str, *, auto_local: bool = False) -> Optional[dict]:
 
 
 # ┌── 函数 def _secret_url_error_normalized()
-# │  作用：Secret check on the raw URL, then again on the normalized one; returns ``(url, error)``.
+# │  作用：Secret 检查在…上 raw URL, 然后 again 在…上已归一化 one; 返回 ``(URL, 错误)``.
 # │  参数：url: str
 # │  返回：tuple[str, Optional[dict]]
 # └──────────────────────────────────────────────────────────────
@@ -826,7 +826,7 @@ def _secret_url_error_normalized(url: str) -> tuple[str, Optional[dict]]:
 
 
 # ┌── 函数 def evaluate_url_safety()
-# │  作用：Run URL safety checks; None if safe, else an error dict
+# │  作用：运行 URL safety 检查; None 若 safe, 否则错误字典
 # │  参数：url: str
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -845,7 +845,7 @@ _BOT_DETECTION_TITLE_PATTERNS = (
 
 
 # ┌── 函数 def _post_redirect_block()
-# │  作用：Post-redirect SSRF check; blocked JSON payload or None. The page is moved to about:blank
+# │  作用：Post-redirect SSRF 检查; blocked JSON payload 或 None. page 是 moved about:blank
 # │  参数：nav_session_key: str, url: str, final_url: str, auto_local_this_nav: bool
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -875,7 +875,7 @@ def _post_redirect_block(nav_session_key: str, url: str, final_url: str, auto_lo
 
 
 # ┌── 函数 def _snapshot_fields()
-# │  作用：``snapshot`` + ``element_count`` fields from a successful snapshot result; oversized
+# │  作用：``snapshot`` + ``element_count`` 字段从 successful snapshot 结果; oversized
 # │  参数：snap_result: Dict[str, Any]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -893,7 +893,7 @@ def _snapshot_fields(snap_result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _merge_fallback_warning()
-# │  作用：Copy a secondary result's fallback warning only if the response has none yet.
+# │  作用：复制 secondary 结果's 兜底警告仅 若响应有 None yet.
 # │  参数：response: Dict[str, Any], result: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -904,7 +904,7 @@ def _merge_fallback_warning(response: Dict[str, Any], result: Dict[str, Any]) ->
 
 
 # ┌── 函数 def _attach_auto_snapshot()
-# │  作用：Add a compact snapshot to a navigate response so the model can act without browser_snapshot.
+# │  作用：添加 compact snapshot navigate 响应从而模型可以 act 不 browser_snapshot.
 # │  参数：response: Dict[str, Any], nav_session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -921,7 +921,7 @@ def _attach_auto_snapshot(response: Dict[str, Any], nav_session_key: str) -> Non
 
 
 # ┌── 函数 def browser_navigate()
-# │  作用：Navigate to ``url``; JSON with title, compact snapshot and, on first nav, stealth features.
+# │  作用：Navigate ``URL``; JSON 带 title, compact snapshot 且, 在…上 first nav, stealth 功能.
 # │  参数：url: str, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -987,7 +987,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def _add_navigate_warnings()
-# │  作用：Bot-detection hint from the page title; on first navigation, the session's stealth features.
+# │  作用：机器人-detection hint 从 page title; 在…上 first navigation, 会话's stealth 功能.
 # │  参数：response: Dict[str, Any], title: str, first_nav_session: Optional[Dict[str, Any]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1012,7 +1012,7 @@ def _add_navigate_warnings(response: Dict[str, Any], title: str, first_nav_sessi
 
 
 # ┌── 函数 def browser_snapshot()
-# │  作用：Text snapshot of the page's accessibility tree (compact unless ``full``).
+# │  作用：文本 snapshot 的 page's accessibility tree (compact unless ``full``).
 # │  参数：full: bool = False, task_id: Optional[str] = None, user_task: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1056,7 +1056,7 @@ def browser_snapshot(
 
 
 # ┌── 函数 def _json_with_fallback()
-# │  作用：``json.dumps`` of ``response`` with the Lightpanda fallback metadata copied from ``result``.
+# │  作用：``JSON.dumps`` 的 ``响应`` 带 Lightpanda 兜底 metadata 已复制从 ``结果``.
 # │  参数：response: Dict[str, Any], result: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1077,7 +1077,7 @@ def _failed_response(result: Dict[str, Any], default_error: str) -> str:
 
 
 # ┌── 函数 def _tool_response()
-# │  作用：``{"success": True, **ok}`` or ``{"success": False, "error": result.error or default}``, plus fallback metadata.
+# │  作用：``{"success": True, **ok}`` 或 ``{"success": False, "错误": 结果.错误或 默认值}``, plus 兜底 metadata.
 # │  参数：result: Dict[str, Any], ok: Dict[str, Any], default_error: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1091,7 +1091,7 @@ def _tool_response(result: Dict[str, Any], ok: Dict[str, Any], default_error: st
 
 
 # ┌── 函数 def _camofox()
-# │  作用：Call ``tools.browser_camofox.<func_name>(*args)`` (Camofox mode delegation).
+# │  作用：Call ``工具.browser_camofox.<func_name>(*args)`` (Camofox 模式 delegation).
 # │  参数：func_name: str, *args
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1103,7 +1103,7 @@ def _camofox(func_name: str, *args):
 
 
 # ┌── 函数 def _guarded_action()
-# │  作用：Input action on the task's current page, refused when the SSRF guard flags the page.
+# │  作用：输入 action 在…上 task's current page, refused 当 SSRF 护栏标志 page.
 # │  参数：task_id: Optional[str], action: str, command: str, args: list, ok: Dict[str, Any], err: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1129,7 +1129,7 @@ def _at_ref(ref: str) -> str:
 
 
 # ┌── 函数 def browser_click()
-# │  作用：Click the element ``ref`` (e.g. "@e5").
+# │  作用：点击元素 ``ref``（例如 "@e5"）。
 # │  参数：ref: str, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1144,7 +1144,7 @@ def browser_click(ref: str, task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def browser_type()
-# │  作用：Type ``text`` into the element ``ref`` (fill: clears, then types).
+# │  作用：类型 ``文本`` 进入 element ``ref`` (fill: 清除, 然后类型).
 # │  参数：ref: str, text: str, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1173,7 +1173,7 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def browser_scroll()
-# │  作用：Scroll the page ``direction`` ("up"/"down") by about half a viewport.
+# │  作用：Scroll page ``direction`` ("up"/"down") 由 about half viewport.
 # │  参数：direction: str, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1193,7 +1193,7 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def browser_back()
-# │  作用：Navigate back in browser history.
+# │  作用：Navigate back 在 browser history.
 # │  参数：task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1216,7 +1216,7 @@ def browser_back(task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def browser_press()
-# │  作用：Press a keyboard key (e.g. "Enter", "Tab").
+# │  作用：Press keyboard 键 (e.g. "Enter", "Tab").
 # │  参数：key: str, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1230,7 +1230,7 @@ def browser_press(key: str, task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def _blocked_private_page_json()
-# │  作用：Refusal payload for a page whose URL targets a private/internal address.
+# │  作用：Refusal payload 用于 page whose URL targets private/internal address.
 # │  参数：blocked_url: str, why: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1241,7 +1241,7 @@ def _blocked_private_page_json(blocked_url: str, why: str) -> str:
 
 
 # ┌── 函数 def _blocked_private_page()
-# │  作用：Blocked payload when the SSRF guard is active and the current page is private, else
+# │  作用：Blocked payload 当 SSRF 护栏是 active 且 current page 是 private, 否则
 # │  参数：effective_task_id: str, why: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1257,7 +1257,7 @@ def _blocked_private_page(effective_task_id: str, why: str) -> Optional[str]:
 
 
 # ┌── 函数 def _blocked_private_page_action()
-# │  作用：Blocked payload when an unsafe cloud page would receive input.
+# │  作用：Blocked payload 当 unsafe cloud page 会 receive 输入.
 # │  参数：effective_task_id: str, action: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1271,7 +1271,7 @@ _EVAL_NAVIGATED_WHY = "This may have been caused by a JavaScript navigation via 
 
 
 # ┌── 函数 def _blocked_private_page_content()
-# │  作用：Content-returning tools (snapshot/vision/eval/get_images): after an eval that may
+# │  作用：内容-返回工具 (snapshot/vision/eval/get_images): 在…之后 eval 那个可以
 # │  参数：effective_task_id: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1283,7 +1283,7 @@ def _blocked_private_page_content(effective_task_id: str) -> Optional[str]:
 
 
 # ┌── 函数 def browser_console()
-# │  作用：Console messages + uncaught JS errors (optionally ``clear``ing the buffers),
+# │  作用：Console 消息 + uncaught JS 错误 (optionally ``清除``ing buffers),
 # │  参数：clear: bool = False, expression: Optional[str] = None, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1334,7 +1334,7 @@ from tools import browser_tool_eval_policy as _eval_policy
 
 
 # ┌── 函数 def _parse_eval_value()
-# │  作用：Eval returns the JS value as a string; parse valid JSON so the model gets structured data.
+# │  作用：Eval 返回 JS 值作为字符串; 解析 valid JSON 从而模型获取结构化的 data.
 # │  参数：raw_result: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1362,7 +1362,7 @@ def _eval_ok_response(parsed: Any, **extra) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _eval_result_or_blocked()
-# │  作用：Eval tool JSON, unless the post-eval page-URL recheck finds an eval navigated the
+# │  作用：Eval 工具 JSON, unless post-eval page-URL recheck finds eval navigated
 # │  参数：effective_task_id: str, parsed: Any, result: Dict[str, Any], **extra
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1378,7 +1378,7 @@ def _eval_result_or_blocked(effective_task_id: str, parsed: Any, result: Dict[st
 
 
 # ┌── 函数 def _eval_supervisor_fast_path()
-# │  作用：``Runtime.evaluate`` on the CDP supervisor's persistent WebSocket (no subprocess cost).
+# │  作用：``运行时.evaluate`` 在…上 CDP supervisor's persistent WebSocket (无子进程 cost).
 # │  参数：effective_task_id: str, expression: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1413,7 +1413,7 @@ def _eval_supervisor_fast_path(effective_task_id: str, expression: str) -> Optio
 
 
 # ┌── 函数 def _eval_failure_response()
-# │  作用：Tool JSON for a failed ``agent-browser eval``, with actionable rewrites of known errors.
+# │  作用：工具 JSON 用于 failed ``Agent-browser eval``, 带 actionable rewrites 的 known 错误.
 # │  参数：result: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1436,7 +1436,7 @@ def _eval_failure_response(result: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _browser_eval()
-# │  作用：Evaluate JS in the page context. Private-network guard in two halves: the literal
+# │  作用：Evaluate JS 在 page 上下文. Private-network 护栏在 two halves: literal
 # │  参数：expression: str, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1476,7 +1476,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def _camofox_eval()
-# │  作用：Evaluate JS via Camofox's /tabs/{tab_id}/evaluate endpoint (if available).
+# │  作用：Evaluate JS via Camofox's /tabs/{tab_id}/evaluate endpoint (若 available).
 # │  参数：expression: str, task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1509,7 +1509,7 @@ def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
 
 
 # ┌── 函数 def _maybe_start_recording()
-# │  作用：Start recording if browser.record_sessions is enabled in config.
+# │  作用：Start recording 若 browser.record_sessions 是 enabled 在配置.
 # │  参数：task_id: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1540,7 +1540,7 @@ def _maybe_start_recording(task_id: str):
 
 
 # ┌── 函数 def _maybe_stop_recording()
-# │  作用：Stop recording if one is active for this session.
+# │  作用：Stop recording 若 one 是 active 用于这个会话.
 # │  参数：task_id: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1569,7 +1569,7 @@ _GET_IMAGES_JS = """JSON.stringify(
 
 
 # ┌── 函数 def browser_get_images()
-# │  作用：List the page's images (src, alt, natural size), excluding data: URIs.
+# │  作用：列表 page's images (src, alt, natural size), excluding data: URIs.
 # │  参数：task_id: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1608,7 +1608,7 @@ from tools import browser_tool_vision as _vision
 
 
 # ┌── 函数 def _capture_vision_screenshot()
-# │  作用：Take (or adopt the pre-routed) screenshot; returns ``(result, path, error_json_or_None)``.
+# │  作用：Take (或 adopt pre-routed) screenshot; 返回 ``(结果, 路径, error_json_or_None)``.
 # │  参数：effective_task_id: str, annotate: bool, screenshot_path: Path, lp_prerouted: bool
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1643,7 +1643,7 @@ def _capture_vision_screenshot(effective_task_id: str, annotate: bool, screensho
 
 
 # ┌── 函数 def browser_vision()
-# │  作用：Screenshot the current page for visual inspection. Native-vision models get the image
+# │  作用：Screenshot current page 用于 visual inspection. Native-vision 模型获取 image
 # │  参数：question: str, annotate: bool = False, task_id: Optional[str] = None
 # │  返回：Union[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1714,7 +1714,7 @@ _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
 
 
 # ┌── 函数 def check_browser_routed_requirements()
-# │  作用：Availability gate for tools that can use either browser backend.
+# │  作用：Availability gate 用于工具那个可以 use either browser backend.
 # │  参数：action: str = 'browser_snapshot'
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1725,7 +1725,7 @@ def check_browser_routed_requirements(action: str = "browser_snapshot") -> bool:
 
 
 # ┌── 函数 def _fallback_call()
-# │  作用：Adapter from the registry's ``(args, kw)`` to ``<fn_name>(**schema_args, task_id=...)``;
+# │  作用：适配器从 registry's ``(args, kw)`` ``<fn_name>(**schema_args, task_id=...)``;
 # │  参数：fn_name: str, arg_defaults: Dict[str, Any], extra_kw: tuple = ()
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1761,7 +1761,7 @@ _BROWSER_TOOL_TABLE = (
 
 
 # ┌── 函数 def _routed_check_fn()
-# │  作用：Per-action availability gate (a named function, as the registry expects).
+# │  作用：Per-action availability gate ( named 函数, 作为 registry expects).
 # │  参数：name: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

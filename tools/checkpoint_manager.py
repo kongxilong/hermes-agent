@@ -65,7 +65,7 @@ _CHECKPOINT_BASE_AT_IMPORT = CHECKPOINT_BASE
 
 
 # ┌── 函数 def _resolve_checkpoint_base()
-# │  作用：Active profile's checkpoint root at call time: the patched ``CHECKPOINT_BASE`` when a test
+# │  作用：Active 配置档's 检查点 root 在 call time: patched ``CHECKPOINT_BASE`` 当测试
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ def _empty_prune_result() -> Dict[str, int]:
 
 
 # ┌── 函数 def _validate_commit_hash()
-# │  作用：Error string if unsafe as a git revision (a leading '-' would parse as a flag), else None.
+# │  作用：错误字符串若 unsafe 作为 git revision ( leading '-' 会解析作为标志), 否则 None.
 # │  参数：commit_hash: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ def _validate_commit_hash(commit_hash: str) -> Optional[str]:
 
 
 # ┌── 函数 def _validate_file_path()
-# │  作用：Error string if ``file_path`` is absolute or escapes ``working_dir``, else None.
+# │  作用：错误字符串若 ``file_path`` 是 absolute 或 escapes ``working_dir``, 否则 None.
 # │  参数：file_path: str, working_dir: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ def _normalize_path(path_value: str) -> Path:
 
 
 # ┌── 函数 def _project_hash()
-# │  作用：Deterministic per-project hash: sha256(abs_path)[:16].
+# │  作用：Deterministic per-投射 hash: sha256(abs_path)[:16].
 # │  参数：working_dir: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ def _project_meta_path(store: Path, dir_hash: str) -> Path:
 
 
 # ┌── 函数 def _read_json_dict()
-# │  作用：Parse ``path`` as a JSON object; None when missing, unreadable or not a dict.
+# │  作用：解析 ``路径`` 作为 JSON 对象; None 当 missing, unreadable 或不 字典.
 # │  参数：path: Path
 # │  返回：Optional[Dict]
 # └──────────────────────────────────────────────────────────────
@@ -295,7 +295,7 @@ def _mtime_or_none(path: Path) -> Optional[float]:
 
 
 # ┌── 函数 def _hash_file()
-# │  作用：Streaming sha256 of a file's bytes. None if unreadable/missing.
+# │  作用：Streaming sha256 的文件's bytes. None 若 unreadable/missing.
 # │  参数：path: Path
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ def _hash_file(path: Path) -> Optional[str]:
 
 
 # ┌── 函数 def _load_ledger()
-# │  作用：Agent-write ledger ``{abs_path: {"sha256", "ts"}}``: hash of every file the last
+# │  作用：Agent-写入 ledger ``{abs_path: {"sha256", "ts"}}``: hash 的每个文件 last
 # │  参数：store: Path, dir_hash: str
 # │  返回：Dict[str, Dict]
 # └──────────────────────────────────────────────────────────────
@@ -324,7 +324,7 @@ def _load_ledger(store: Path, dir_hash: str) -> Dict[str, Dict]:
 
 
 # ┌── 函数 def _save_ledger()
-# │  作用：Persist the agent-write ledger, capped to the newest entries.
+# │  作用：持久化 Agent-写入 ledger, capped newest entries.
 # │  参数：store: Path, dir_hash: str, ledger: Dict[str, Dict]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ def _save_ledger(store: Path, dir_hash: str, ledger: Dict[str, Dict]) -> None:
 
 
 # ┌── 函数 def _isolated_git_env()
-# │  作用：Subprocess env with the user's global/system git config neutralised and inherited GIT_*
+# │  作用：子进程 env 带 user's global/system git 配置 neutralised 且 inherited GIT_*
 # │  参数：无
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -363,7 +363,7 @@ def _isolated_git_env() -> dict:
 
 
 # ┌── 函数 def _git_env()
-# │  作用：Env that redirects git to the shared store (+ a per-project index if given).
+# │  作用：Env 那个 redirects git shared store (+ per-投射 index 若 given).
 # │  参数：store: Path, working_dir: str, index_file: Optional[Path] = None
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -396,7 +396,7 @@ def _git_subprocess(cmd: List[str], env: dict, timeout: int, cwd: Optional[str] 
 
 
 # ┌── 函数 def _repair_bare_repo_dirs()
-# │  作用：Recreate ``refs/heads`` and ``branches`` after ``git gc``: gc on a bare repo with only
+# │  作用：Recreate ``refs/heads`` 且 ``branches`` 在…之后 ``git gc``: gc 在…上 bare repo 带仅
 # │  参数：store: Path
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ def _repair_bare_repo_dirs(store: Path) -> None:
 
 
 # ┌── 函数 def _run_git()
-# │  作用：Run git against the shared store -> (ok, stdout, stderr). ``allowed_returncodes`` suppresses
+# │  作用：运行 git against shared store -> (ok, 标准输出, 标准错误). ``allowed_returncodes`` suppresses
 # │  参数：args: List[str], store: Path, working_dir: str, timeout: int = _GIT_TIMEOUT, allowed_returncodes: Optional[Set[int]] = None, index_file: Optional[Path] = None
 # │  返回：Tuple[bool, str, str]
 # └──────────────────────────────────────────────────────────────
@@ -466,7 +466,7 @@ def _run_git(args: List[str], store: Path, working_dir: str, timeout: int = _GIT
 
 
 # ┌── 函数 def _git_out()
-# │  作用：stdout of a successful git call, else ``""``.
+# │  作用：标准输出的 successful git call, 否则 ``""``.
 # │  参数：args: List[str], store: Path, working_dir: str, rc: Optional[Set[int]] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -478,7 +478,7 @@ def _git_out(args: List[str], store: Path, working_dir: str, rc: Optional[Set[in
 
 
 # ┌── 函数 def _ref_tip()
-# │  作用：Commit sha at ``ref``, or None when the ref does not exist yet.
+# │  作用：Commit sha 在 ``ref``, 或 None 当 ref 不 exist yet.
 # │  参数：store: Path, working_dir: str, ref: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -542,7 +542,7 @@ def _commit_tree_args(tree_sha: str, message: str, parent: Optional[str]) -> Lis
 
 
 # ┌── 函数 def _rebuild_linear_chain()
-# │  作用：Re-commit each sha's tree (same message) as a fresh linear chain; new tip, or None on
+# │  作用：Re-commit 每个 sha's tree (same 消息) 作为 fresh linear chain; new tip, 或 None 在…上
 # │  参数：store: Path, working_dir: str, shas: List[str]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ def _rebuild_linear_chain(store: Path, working_dir: str, shas: List[str]) -> Opt
 
 
 # ┌── 函数 def _rewrite_ref_to()
-# │  作用：Point ``ref`` at a freshly rebuilt linear chain of ``commits``; False if nothing was rewritten.
+# │  作用：Point ``ref`` 在 freshly rebuilt linear chain 的 ``commits``; False 若 nothing 是 rewritten.
 # │  参数：store: Path, working_dir: str, ref: str, commits: List[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -584,7 +584,7 @@ def _rewrite_ref_to(store: Path, working_dir: str, ref: str, commits: List[str])
 
 
 # ┌── 函数 def _gc_store()
-# │  作用：Reclaim objects unreachable from the (rewritten/deleted) refs.
+# │  作用：Reclaim 对象 unreachable 从 (rewritten/deleted) refs.
 # │  参数：store: Path, working_dir: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -596,7 +596,7 @@ def _gc_store(store: Path, working_dir: str) -> None:
 
 
 # ┌── 函数 def _drop_oldest_commit()
-# │  作用：Rewrite ``ref`` without its oldest commit; never below one snapshot.
+# │  作用：Rewrite ``ref`` 不其 oldest commit; never below one snapshot.
 # │  参数：store: Path, working_dir: str, ref: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -610,7 +610,7 @@ def _drop_oldest_commit(store: Path, working_dir: str, ref: str) -> bool:
 
 
 # ┌── 函数 def _shrink_store_to_cap()
-# │  作用：Round-robin-drop the oldest commit per project ref until the store fits (bounded to 20
+# │  作用：轮-robin-丢弃 oldest commit per 投射 ref until store fits (bounded 20
 # │  参数：store: Path, working_dir: str, cap_bytes: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -631,7 +631,7 @@ def _shrink_store_to_cap(store: Path, working_dir: str, cap_bytes: int) -> bool:
 
 
 # ┌── 函数 def _migrate_legacy_store()
-# │  作用：Archive pre-v2 per-project shadow repos into ``legacy-<ts>/`` (moved, not deleted —
+# │  作用：Archive pre-v2 per-投射 shadow repos 进入 ``legacy-<ts>/`` (moved, 不 deleted —
 # │  参数：base: Path
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -668,7 +668,7 @@ def _migrate_legacy_store(base: Path) -> Optional[Path]:
 
 
 # ┌── 函数 def _init_store()
-# │  作用：Initialise the shared store if needed (migrating pre-v2 repos first). Returns error or None.
+# │  作用：Initialise shared store 若 needed (migrating pre-v2 repos first). 返回错误或 None.
 # │  参数：store: Path, working_dir: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -708,7 +708,7 @@ def _init_store(store: Path, working_dir: str) -> Optional[str]:
 
 
 # ┌── 函数 def _volume_evidence()
-# │  作用：``(st_dev, st_ino)`` of ``workdir``'s parent, captured while reachable: identifies the
+# │  作用：``(st_dev, st_ino)`` 的 ``workdir``'s parent, captured 当 reachable: identifies
 # │  参数：workdir: Path
 # │  返回：Dict
 # └──────────────────────────────────────────────────────────────
@@ -731,7 +731,7 @@ def _volume_evidence(workdir: Path) -> Dict:
 
 
 # ┌── 函数 def _register_project()
-# │  作用：Upsert ``projects/<hash>.json`` (workdir, last_touch, created_at; ``created_at`` survives).
+# │  作用：Upsert ``投射/<hash>.JSON`` (workdir, last_touch, created_at; ``created_at`` survives).
 # │  参数：store: Path, working_dir: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -756,7 +756,7 @@ _touch_project = _register_project  # per-turn touch == re-register (same upsert
 
 
 # ┌── 函数 def _list_projects()
-# │  作用：All registered projects under the store (each tagged with ``_hash``).
+# │  作用：全部 registered 投射 under store (每个 tagged 带 ``_hash``).
 # │  参数：store: Path
 # │  返回：List[Dict]
 # └──────────────────────────────────────────────────────────────
@@ -772,7 +772,7 @@ def _list_projects(store: Path) -> List[Dict]:
 
 
 # ┌── 函数 def _pre_v2_shadow_repos()
-# │  作用：Pre-v2 per-project shadow repos (``base/<hash>/HEAD``) still under ``base``; the single
+# │  作用：Pre-v2 per-投射 shadow repos (``base/<hash>/HEAD``) 仍 under ``base``; single
 # │  参数：base: Path
 # │  返回：List[Dict]
 # └──────────────────────────────────────────────────────────────
@@ -809,7 +809,7 @@ def _legacy_archives(base: Path) -> List[Path]:
 
 
 # ┌── 函数 def _dir_file_count()
-# │  作用：Quick file count estimate (stops early once over _MAX_FILES).
+# │  作用：Quick 文件 count 估算 (stops early 一旦 over _MAX_FILES).
 # │  参数：path: str
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -825,7 +825,7 @@ def _dir_file_count(path: str) -> int:
 
 
 # ┌── 函数 def _rglob_stats()
-# │  作用：stat() of everything under ``path``; unstattable entries and walk errors are skipped.
+# │  作用：stat() 的 everything under ``路径``; unstattable entries 且 walk 错误是 skipped.
 # │  参数：path: Path
 # │  返回：Iterator[os.stat_result]
 # └──────────────────────────────────────────────────────────────
@@ -845,7 +845,7 @@ def _rglob_stats(path: Path) -> Iterator[os.stat_result]:
 
 
 # ┌── 函数 def _dir_size_bytes()
-# │  作用：Best-effort recursive size in bytes (regular files only). 0 on error.
+# │  作用：尽最大努力 recursive size 在 bytes (regular 文件仅). 0 在…上错误.
 # │  参数：path: Path
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -856,7 +856,7 @@ def _dir_size_bytes(path: Path) -> int:
 
 
 # ┌── 函数 def _newest_mtime()
-# │  作用：Newest mtime under ``path`` (0.0 when nothing is statable).
+# │  作用：Newest mtime under ``路径`` (0.0 当 nothing 是 statable).
 # │  参数：path: Path
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -867,7 +867,7 @@ def _newest_mtime(path: Path) -> float:
 
 
 # ┌── 类 class _ProjectRefs（继承自：NamedTuple）
-# │  说明：Store coordinates for one working directory (resolved at call time).
+# │  说明：Store coordinates 用于 one working directory (resolved 在 call time).
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _ProjectRefs(NamedTuple):
@@ -892,7 +892,7 @@ def _project_refs(working_dir: str) -> _ProjectRefs:
 
 
 # ┌── 函数 def _locate()
-# │  作用：Validate inputs and resolve store coordinates; ``(refs, error_result_or_None)``.
+# │  作用：校验输入且 resolve store coordinates; ``(refs, error_result_or_None)``.
 # │  参数：working_dir: str, commit_hash: str, file_path: Optional[str] = None
 # │  返回：Tuple[Optional[_ProjectRefs], Optional[Dict]]
 # └──────────────────────────────────────────────────────────────
@@ -909,7 +909,7 @@ def _locate(working_dir: str, commit_hash: str,
 
 
 # ┌── 函数 def _stage_all()
-# │  作用：``git add -A`` into the per-project index.
+# │  作用：``git 添加 -`` 进入 per-投射 index.
 # │  参数：p: _ProjectRefs
 # │  返回：Tuple[bool, str, str]
 # └──────────────────────────────────────────────────────────────
@@ -920,7 +920,7 @@ def _stage_all(p: _ProjectRefs) -> Tuple[bool, str, str]:
 
 
 # ┌── 函数 def _diff_staged_tree()
-# │  作用：Stage the working tree (so new files show), run each ``git diff`` variant,
+# │  作用：阶段 working tree (从而 new 文件 show), 运行每个 ``git diff`` variant,
 # │  参数：p: _ProjectRefs, *diff_args
 # │  返回：List[Tuple[bool, str, str]]
 # └──────────────────────────────────────────────────────────────
@@ -966,7 +966,7 @@ class _SafeRestoreTargets:
 
 
 # ┌── 类 class CheckpointManager
-# │  说明：Automatic filesystem checkpoints. Owned by AIAgent: ``new_turn()`` at the start of
+# │  说明：Automatic filesystem checkpoints. 持有的由 AIAgent: ``new_turn()`` 在 start 的
 # │  成员：共 17 个方法；对外可用 10 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class CheckpointManager:
@@ -990,7 +990,7 @@ class CheckpointManager:
         self._git_available: Optional[bool] = None  # lazy probe
 
     # ┌── 函数 def new_turn()
-    # │  作用：Reset per-turn dedup. Call at the start of each agent iteration.
+    # │  作用：Reset per-轮次 dedup. Call 在 start 的每个 Agent iteration.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1001,7 +1001,7 @@ class CheckpointManager:
     # --- public API ---
 
     # ┌── 函数 def record_agent_write()
-    # │  作用：Record the content hash of a file Hermes just wrote (agent-write ledger), so safe-mode
+    # │  作用：Record 内容 hash 的文件 Hermes just 写入 (Agent-写入 ledger), 从而 safe-模式
     # │  参数：self, file_path: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1022,7 +1022,7 @@ class CheckpointManager:
             logger.debug("record_agent_write failed for %s: %s", file_path, exc)
 
     # ┌── 函数 def safe_restore_plan()
-    # │  作用：Classify files changed since ``commit_hash``: ``restore`` = still matching what Hermes
+    # │  作用：Classify 文件 changed since ``commit_hash``: ``恢复`` = 仍 matching 什么 Hermes
     # │  参数：self, working_dir: str, commit_hash: str
     # │  返回：Dict
     # └──────────────────────────────────────────────────────────────
@@ -1055,7 +1055,7 @@ class CheckpointManager:
         return {"success": True, **out}
 
     # ┌── 函数 def ensure_checkpoint()
-    # │  作用：Take a checkpoint if enabled and not already done this turn. Never raises.
+    # │  作用：Take 检查点若 enabled 且不 已 done 这个轮次. Never 抛出.
     # │  参数：self, working_dir: str, reason: str = 'auto'
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1089,7 +1089,7 @@ class CheckpointManager:
             return False
 
     # ┌── 函数 def list_checkpoints()
-    # │  作用：List available checkpoints for a directory (most recent first).
+    # │  作用：列表 available checkpoints 用于 directory (most recent first).
     # │  参数：self, working_dir: str
     # │  返回：List[Dict]
     # └──────────────────────────────────────────────────────────────
@@ -1119,7 +1119,7 @@ class CheckpointManager:
         return results
 
     # ┌── 函数 def list_all_checkpoints()
-    # │  作用：Checkpoints across every registered project (most recent first), each tagged ``workdir``.
+    # │  作用：Checkpoints across 每个 registered 投射 (most recent first), 每个 tagged ``workdir``.
     # │  参数：self
     # │  返回：List[Dict]
     # └──────────────────────────────────────────────────────────────
@@ -1142,7 +1142,7 @@ class CheckpointManager:
         return sorted(results, key=lambda x: x.get("timestamp", ""), reverse=True)
 
     # ┌── 函数 def diff()
-    # │  作用：Show diff between a checkpoint and the current working tree.
+    # │  作用：Show diff between 检查点且 current working tree.
     # │  参数：self, working_dir: str, commit_hash: str
     # │  返回：Dict
     # └──────────────────────────────────────────────────────────────
@@ -1166,7 +1166,7 @@ class CheckpointManager:
         return {"success": True, "stat": stat_out if ok_stat else "", "diff": diff_out if ok_diff else ""}
 
     # ┌── 函数 def session_diff()
-    # │  作用：Cumulative diff powering ``/diff session``: earliest retained checkpoint vs working tree.
+    # │  作用：Cumulative diff powering ``/diff 会话``: earliest retained 检查点 vs working tree.
     # │  参数：self, working_dir: str
     # │  返回：Dict
     # └──────────────────────────────────────────────────────────────
@@ -1189,7 +1189,7 @@ class CheckpointManager:
         return result
 
     # ┌── 函数 def restore()
-    # │  作用：Restore files to a checkpoint state. ``safe=True`` (full-directory only) leaves files
+    # │  作用：恢复文件检查点状态. ``safe=True`` (full-directory 仅) leaves 文件
     # │  参数：self, working_dir: str, commit_hash: str, file_path: str = None, safe: bool = False
     # │  返回：Dict
     # └──────────────────────────────────────────────────────────────
@@ -1253,7 +1253,7 @@ class CheckpointManager:
         return result
 
     # ┌── 函数 def _apply_safe_restore_deletes()
-    # │  作用：Split ledger-approved paths into checkout targets and delete the rest. A path absent
+    # │  作用：Split ledger-approved 路径进入 checkout targets 且 delete rest. 路径 absent
     # │  参数：self, p: _ProjectRefs, commit_hash: str, restore_paths: List[str]
     # │  返回：_SafeRestoreTargets
     # └──────────────────────────────────────────────────────────────
@@ -1284,7 +1284,7 @@ class CheckpointManager:
         return targets
 
     # ┌── 函数 def get_working_dir_for_path()
-    # │  作用：Resolve a file path to its working directory (nearest project-marker ancestor).
+    # │  作用：Resolve 文件路径其 working directory (nearest 投射-marker ancestor).
     # │  参数：self, file_path: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -1304,7 +1304,7 @@ class CheckpointManager:
     # --- internal ---
 
     # ┌── 函数 def _take()
-    # │  作用：Take a snapshot. Returns True on success.
+    # │  作用：Take snapshot. 返回 True 在…上 success.
     # │  参数：self, working_dir: str, reason: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1357,7 +1357,7 @@ class CheckpointManager:
         return True
 
     # ┌── 函数 def _exceeds_size_cap()
-    # │  作用：Whether *path* is larger than ``max_file_size_mb`` (0 disables; unstattable => False).
+    # │  作用：是否 *路径* 是 larger 比 ``max_file_size_mb`` (0 disables; unstattable => False).。
     # │  参数：self, path: Path
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1378,7 +1378,7 @@ class CheckpointManager:
             return False
 
     # ┌── 函数 def _drop_oversize_from_index()
-    # │  作用：Unstage files larger than ``max_file_size_mb`` (datasets, weights, videos).
+    # │  作用：Unstage 文件 larger 比 ``max_file_size_mb`` (datasets, weights, videos).
     # │  参数：self, store: Path, working_dir: str, index_file: Path
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1399,7 +1399,7 @@ class CheckpointManager:
                      store, working_dir, index_file=index_file, allowed_returncodes={128})
 
     # ┌── 函数 def _prune()
-    # │  作用：Rewrite the ref to its last ``max_snapshots`` commits and gc (only limiting the
+    # │  作用：Rewrite ref 其 last ``max_snapshots`` commits 且 gc (仅 limiting
     # │  参数：self, store: Path, working_dir: str, ref: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1413,7 +1413,7 @@ class CheckpointManager:
             _gc_store(store, working_dir)
 
     # ┌── 函数 def _enforce_size_cap()
-    # │  作用：Drop oldest checkpoints across ALL projects until under ``max_total_size_mb``.
+    # │  作用：丢弃 oldest checkpoints across 全部投射 until under ``max_total_size_mb``.
     # │  参数：self, store: Path
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1441,7 +1441,7 @@ def _step_failed(step: str, err: str) -> bool:
 
 
 # ┌── 函数 def _seed_project_index()
-# │  作用：Reset the per-project index to the ref tip so ``add -A`` sees only changes since.
+# │  作用：Reset per-投射 index ref tip 从而 ``添加 -`` sees 仅 changes since.
 # │  参数：p: _ProjectRefs, ref_commit: Optional[str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1458,7 +1458,7 @@ def _seed_project_index(p: _ProjectRefs, ref_commit: Optional[str]) -> None:
 
 
 # ┌── 函数 def _index_unchanged_reason()
-# │  作用：Why a snapshot would be redundant ("no changes" / "empty tree"), else None. Compares against
+# │  作用：为何 snapshot 会是 redundant ("无 changes" / "empty tree"), 否则 None. Compares against
 # │  参数：p: _ProjectRefs, ref_commit: Optional[str]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1477,7 +1477,7 @@ def _index_unchanged_reason(p: _ProjectRefs, ref_commit: Optional[str]) -> Optio
 
 
 # ┌── 函数 def format_checkpoint_list()
-# │  作用：Format checkpoint list for display to user.
+# │  作用：Format 检查点列表用于展示 user.
 # │  参数：checkpoints: List[Dict], directory: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1507,7 +1507,7 @@ def format_checkpoint_list(checkpoints: List[Dict], directory: str) -> str:
 
 
 # ┌── 函数 def _workdir_is_observably_gone()
-# │  作用：True only when we can positively observe that ``workdir`` was removed.
+# │  作用：True 仅当 我们可以 positively observe 那个 ``workdir`` 是已移除.
 # │  参数：workdir: str, parent_dev: Optional[int] = None, parent_ino: Optional[int] = None, require_parent_identity: bool = True
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1559,7 +1559,7 @@ def _int_or_none(value) -> Optional[int]:
 
 
 # ┌── 函数 def _sweep()
-# │  作用：Shared orphan/stale sweep. ``entries`` yields ``(item, gone, allowed, is_stale)`` where
+# │  作用：Shared orphan/卡死的 sweep. ``entries`` yields ``(item, gone, allowed, is_stale)`` 何处
 # │  参数：entries, result: Dict[str, int], delete
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1574,7 +1574,7 @@ def _sweep(entries, result: Dict[str, int], delete) -> None:
 
 
 # ┌── 函数 def _rmtree_counted()
-# │  作用：rmtree ``child``, crediting bytes + ``result[key]``; failures count as ``errors`` when tracked.
+# │  作用：rmtree ``child``, crediting bytes + ``结果[键]``; failures count 作为 ``错误`` 当 tracked.
 # │  参数：child: Path, result: Dict[str, int], key: str, fail_fmt: str, label
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1593,7 +1593,7 @@ def _rmtree_counted(child: Path, result: Dict[str, int], key: str, fail_fmt: str
 
 
 # ┌── 函数 def _prune_legacy_archives()
-# │  作用：Delete ``legacy-*`` archives whose mtime predates ``cutoff`` (skipped when retention is off).
+# │  作用：Delete ``legacy-*`` archives whose mtime predates ``cutoff`` (skipped 当 retention 是 off).
 # │  参数：base: Path, cutoff: float, result: Dict[str, int]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1606,7 +1606,7 @@ def _prune_legacy_archives(base: Path, cutoff: float, result: Dict[str, int]) ->
 
 
 # ┌── 函数 def _prune_pre_v2_repos()
-# │  作用：Sweep pre-v2 per-project shadow repos exactly as the v1 pruner did (scan shared with
+# │  作用：Sweep pre-v2 per-投射 shadow repos exactly 作为 v1 pruner (scan shared 带
 # │  参数：base: Path, cutoff: float, delete_orphans: bool, orphan_allowlist: Optional[set], result: Dict[str, int]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1630,7 +1630,7 @@ def _prune_pre_v2_repos(base: Path, cutoff: float, delete_orphans: bool,
 
 
 # ┌── 函数 def _prune_v2_projects()
-# │  作用：Drop the ref, index and metadata of orphan/stale projects in the shared store.
+# │  作用：丢弃 ref, index 且 metadata 的 orphan/卡死的投射在 shared store.
 # │  参数：store: Path, cutoff: float, delete_orphans: bool, orphan_allowlist: Optional[set], result: Dict[str, int]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1660,7 +1660,7 @@ def _prune_v2_projects(store: Path, cutoff: float, delete_orphans: bool,
 
 
 # ┌── 函数 def prune_checkpoints()
-# │  作用：Delete stale/orphan checkpoints and reclaim store space. Never raises. Deleted when
+# │  作用：Delete 卡死的/orphan checkpoints 且 reclaim store space. Never 抛出. Deleted 当
 # │  参数：retention_days: int = 7, delete_orphans: bool = True, checkpoint_base: Optional[Path] = None, max_total_size_mb: int = 0, orphan_allowlist: Optional[set] = None
 # │  返回：Dict[str, int]
 # └──────────────────────────────────────────────────────────────
@@ -1695,7 +1695,7 @@ def prune_checkpoints(retention_days: int = 7, delete_orphans: bool = True, chec
 
 
 # ┌── 函数 def maybe_auto_prune_checkpoints()
-# │  作用：Idempotent wrapper around ``prune_checkpoints`` for startup hooks: writes
+# │  作用：Idempotent 包装器 around ``prune_checkpoints`` 用于 startup hooks: 写入
 # │  参数：retention_days: int = 7, min_interval_hours: int = 24, delete_orphans: bool = True, checkpoint_base: Optional[Path] = None, max_total_size_mb: int = 0
 # │  返回：Dict[str, object]
 # └──────────────────────────────────────────────────────────────
@@ -1743,7 +1743,7 @@ def maybe_auto_prune_checkpoints(retention_days: int = 7, min_interval_hours: in
 
 
 # ┌── 函数 def store_status()
-# │  作用：Summarise the shadow store: ``{"base", "store_size_bytes", "legacy_size_bytes",
+# │  作用：汇总影子存储：``{"base", "store_size_bytes", "legacy_size_bytes",……
 # │  参数：checkpoint_base: Optional[Path] = None
 # │  返回：Dict
 # └──────────────────────────────────────────────────────────────
@@ -1783,7 +1783,7 @@ def store_status(checkpoint_base: Optional[Path] = None) -> Dict:
 
 
 # ┌── 函数 def clear_all()
-# │  作用：Nuke the entire checkpoint base (store + legacy). Irreversible.
+# │  作用：Nuke entire 检查点 base (store + legacy). Irreversible.
 # │  参数：checkpoint_base: Optional[Path] = None
 # │  返回：Dict[str, int]
 # └──────────────────────────────────────────────────────────────
@@ -1807,7 +1807,7 @@ def clear_all(checkpoint_base: Optional[Path] = None) -> Dict[str, int]:
 
 
 # ┌── 函数 def clear_legacy()
-# │  作用：Delete all ``legacy-*`` archive directories. Returns ``{"bytes_freed": N, "deleted": count}``.
+# │  作用：Delete 全部 ``legacy-*`` archive directories. 返回 ``{"bytes_freed": N, "deleted": count}``.
 # │  参数：checkpoint_base: Optional[Path] = None
 # │  返回：Dict[str, int]
 # └──────────────────────────────────────────────────────────────

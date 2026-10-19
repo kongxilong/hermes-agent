@@ -87,7 +87,7 @@ def __getattr__(name: str):
 
 
 # ┌── 函数 def _resolve_requests_verify()
-# │  作用：SSL ``verify`` for ``requests`` probes; mirrors ``agent.ssl_verify.resolve_httpx_verify``.
+# │  作用：SSL ``verify`` 用于 ``请求`` probes; 镜像 ``Agent.ssl_verify.resolve_httpx_verify``.
 # │  参数：base_url: str = ''
 # │  返回：bool | str
 # └──────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ _TAILSCALE_CGNAT = ipaddress.IPv4Network("100.64.0.0/10")
 
 
 # ┌── 函数 def _strip_provider_prefix()
-# │  作用：Strip a registry-known provider prefix: ``"local:m"`` -> ``"m"``. Ollama ``model:tag``
+# │  作用：Strip registry-known 服务商 prefix: ``"local:m"`` -> ``"m"``. Ollama ``模型:tag``
 # │  参数：model: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ _endpoint_blackhole_cache: Dict[str, float] = {}  # host:port -> monotonic ts
 
 
 # ┌── 函数 def _parse_base_url()
-# │  作用：``urlparse`` of the normalized URL (``scheme`` prepended when absent); None when empty.
+# │  作用：``urlparse`` 的已归一化 URL (``scheme`` prepended 当 absent); None 当 empty.
 # │  参数：base_url: str, scheme: str = 'http'
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ def _parse_base_url(base_url: str, scheme: str = "http"):
 
 
 # ┌── 函数 def _endpoint_host_key()
-# │  作用：``host:port`` key (None without a host) so every probe path for one server shares an entry.
+# │  作用：``宿主:port`` 键 (None 不宿主) 从而每个 probe 路径用于 one 服务端 shares entry.
 # │  参数：base_url: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ def _endpoint_host_key(base_url: str) -> Optional[str]:
 
 
 # ┌── 函数 def _note_endpoint_blackholed()
-# │  作用：Record that a probe to ``base_url`` timed out during TCP connect.
+# │  作用：Record 那个 probe ``base_url`` timed out 在…期间 TCP connect.
 # │  参数：base_url: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ def _note_endpoint_blackholed(base_url: str) -> None:
 
 
 # ┌── 函数 def _endpoint_blackholed()
-# │  作用：True if a recent probe to ``base_url`` timed out during TCP connect (cache lookup only).
+# │  作用：True 若 recent probe ``base_url`` timed out 在…期间 TCP connect (缓存 lookup 仅).
 # │  参数：base_url: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -258,7 +258,7 @@ def _endpoint_blackholed(base_url: str) -> bool:
 
 
 # ┌── 函数 def _note_if_connect_timeout()
-# │  作用：Blackhole ``base_url`` when ``exc`` is a connect-phase timeout.
+# │  作用：Blackhole ``base_url`` 当 ``exc`` 是 connect-阶段超时.
 # │  参数：exc: BaseException, base_url: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -269,7 +269,7 @@ def _note_if_connect_timeout(exc: BaseException, base_url: str) -> None:
 
 
 # ┌── 函数 def _is_connect_timeout()
-# │  作用：True for connect-phase timeouts raised by httpx or requests. Read timeouts are
+# │  作用：当 connect-阶段超时抛出由 httpx 或请求. 读取超时是 时返回 True。
 # │  参数：exc: BaseException
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -304,7 +304,7 @@ def _cache_file(name: str) -> Path:
 
 
 # ┌── 函数 def _load_json_dict()
-# │  作用：JSON object at ``path``, or {} when missing/invalid.
+# │  作用：JSON 对象在 ``路径``, 或 {} 当 missing/invalid.
 # │  参数：path: Path
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ def _load_json_dict(path: Path) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _ttl_memo_get()
-# │  作用：Fresh (< ``ttl`` seconds) ``value_key`` of the ``key`` entry in a TTL memo file, else None.
+# │  作用：Fresh (< ``ttl`` seconds) ``value_key`` 的 ``键`` entry 在 TTL memo 文件, 否则 None.
 # │  参数：path: Path, key: str, ttl: float, ts_key: str, value_key: str
 # │  返回：Optional[Any]
 # └──────────────────────────────────────────────────────────────
@@ -345,7 +345,7 @@ def _ttl_memo_get(path: Path, key: str, ttl: float, *, ts_key: str, value_key: s
 
 
 # ┌── 函数 def _ttl_memo_put()
-# │  作用：Write ``key`` into a TTL memo file, dropping expired siblings. Best-effort.
+# │  作用：写入 ``键`` 进入 TTL memo 文件, 丢弃 expired siblings. 尽最大努力.
 # │  参数：path: Path, key: str, value: Any, ttl: float, ts_key: str, value_key: str, what: str, ts_first: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -372,7 +372,7 @@ def _local_probe_disk_cache_path() -> Path:
 
 
 # ┌── 函数 def _local_probe_disk_get()
-# │  作用：Return a fresh cached value for ``kind:key``, else None.
+# │  作用：返回 fresh cached 值用于 ``种类:键``, 否则 None.。
 # │  参数：kind: str, key: str
 # │  返回：Optional[Any]
 # └──────────────────────────────────────────────────────────────
@@ -383,7 +383,7 @@ def _local_probe_disk_get(kind: str, key: str) -> Optional[Any]:
 
 
 # ┌── 函数 def _local_probe_disk_put()
-# │  作用：Persist a successful probe result. Best-effort; prunes stale entries.
+# │  作用：持久化 successful probe 结果. 尽最大努力; prunes 卡死的 entries.
 # │  参数：kind: str, key: str, value: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -393,7 +393,7 @@ def _local_probe_disk_put(kind: str, key: str, value: Any) -> None:
 
 
 # ┌── 函数 def _get_model_metadata_cache_path()
-# │  作用：Path to the OpenRouter model metadata disk cache.
+# │  作用：路径 OpenRouter 模型 metadata disk 缓存.
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -404,7 +404,7 @@ def _get_model_metadata_cache_path() -> Path:
 
 
 # ┌── 函数 def _model_metadata_disk_cache_age_seconds()
-# │  作用：Disk-cache age in seconds, or None if freshness is unknown.
+# │  作用：Disk-缓存 age 在 seconds, 或 None 若 freshness 是 unknown.
 # │  参数：无
 # │  返回：Optional[float]
 # └──────────────────────────────────────────────────────────────
@@ -421,7 +421,7 @@ def _model_metadata_disk_cache_age_seconds() -> Optional[float]:
 
 
 # ┌── 函数 def _load_model_metadata_disk_cache()
-# │  作用：Processed OpenRouter metadata cache from disk ({} on any failure).
+# │  作用：Processed OpenRouter metadata 缓存从 disk ({} 在…上任意 failure).
 # │  参数：无
 # │  返回：Dict[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -453,7 +453,7 @@ def _save_model_metadata_disk_cache(data: Dict[str, Dict[str, Any]]) -> None:
 
 
 # ┌── 函数 def _get_endpoint_metadata_cache_path()
-# │  作用：On-disk memo of remote ``/models`` probes (see ``_endpoint_disk_cache_get``).
+# │  作用：在…上-disk memo 的 remote ``/模型`` probes (see ``_endpoint_disk_cache_get``).
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -464,7 +464,7 @@ def _get_endpoint_metadata_cache_path() -> Path:
 
 
 # ┌── 函数 def _endpoint_disk_cache_get()
-# │  作用：Fresh cross-process memo of a remote ``/models`` probe (same TTL as in-memory): one-shot
+# │  作用：Fresh cross-进程 memo 的 remote ``/模型`` probe (same TTL 作为在-内存): one-shot
 # │  参数：normalized: str
 # │  返回：Optional[Dict[str, Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -478,7 +478,7 @@ def _endpoint_disk_cache_get(normalized: str) -> Optional[Dict[str, Dict[str, An
 
 
 # ┌── 函数 def _endpoint_disk_cache_put()
-# │  作用：Memoize a successful remote ``/models`` probe; expired siblings are dropped.
+# │  作用：记忆化 successful remote ``/模型`` probe; expired siblings 是已丢弃.
 # │  参数：normalized: str, cache: Dict[str, Dict[str, Any]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -496,7 +496,7 @@ _FALLBACK_WARNED: set = set()  # the fallback is never cached, so dedupe its war
 
 
 # ┌── 函数 def _warn_context_length_fallback()
-# │  作用：Warn once per model+endpoint that detection failed and the hard default is used,
+# │  作用：警告一旦 per 模型+endpoint 那个 detection failed 且 hard 默认值是 used,
 # │  参数：model: str, base_url: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -599,7 +599,7 @@ _GROK_EFFORT_CAPABLE_PREFIXES = ("grok-3-mini", "grok-4.20-multi-agent", "grok-4
 
 
 # ┌── 函数 def grok_supports_reasoning_effort()
-# │  作用：Allowlist check (aggregator prefixes like ``x-ai/`` stripped); unknown Grok models get no effort dial.
+# │  作用：白名单检查 (aggregator prefixes like ``x-ai/`` stripped); unknown Grok 模型获取无 effort dial.
 # │  参数：model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -611,7 +611,7 @@ def grok_supports_reasoning_effort(model: str) -> bool:
 
 
 # ┌── 函数 def is_grok_46_family()
-# │  作用：Whether *model* is a Grok 4.6 family identifier.
+# │  作用：是否 *模型* 是 Grok 4.6 family identifier.。
 # │  参数：model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -696,7 +696,7 @@ except Exception:
 
 
 # ┌── 函数 def _infer_provider_from_url()
-# │  作用：models.dev provider name for a base URL (custom endpoints need no explicit provider).
+# │  作用：模型.dev 服务商名称用于 base URL (custom endpoints need 无 explicit 服务商).
 # │  参数：base_url: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -716,7 +716,7 @@ def _infer_provider_from_url(base_url: str) -> Optional[str]:
 
 
 # ┌── 函数 def _strip_openrouter_routing_variant()
-# │  作用：Strip an OpenRouter routing-variant suffix for catalog lookup.
+# │  作用：Strip OpenRouter routing-variant suffix 用于 catalog lookup.
 # │  参数：model: str, base_url: str = '', provider: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -774,7 +774,7 @@ def _is_known_provider_base_url(base_url: str) -> bool:
 
 
 # ┌── 函数 def _lmstudio_server_root()
-# │  作用：LM Studio server root for native ``/api/v1`` endpoints.
+# │  作用：LM Studio 服务端 root 用于 native ``/API/v1`` endpoints.
 # │  参数：base_url: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -790,7 +790,7 @@ def _lmstudio_server_root(base_url: str) -> str:
 
 
 # ┌── 函数 def _server_root()
-# │  作用：Probe root for a local server: IPv4-resolved, ``/v1`` suffix stripped.
+# │  作用：Probe root 用于 local 服务端: IPv4-resolved, ``/v1`` suffix stripped.
 # │  参数：base_url: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -802,7 +802,7 @@ def _server_root(base_url: str) -> str:
 
 
 # ┌── 函数 def _catalog_key_matches()
-# │  作用：Substring match with version separators normalised on both sides, so a relay slug like
+# │  作用：Substring match 带版本 separators normalised 在…上 both sides, 从而 relay slug like
 # │  参数：key: str, model_lower: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -814,7 +814,7 @@ def _catalog_key_matches(key: str, model_lower: str) -> bool:
 
 
 # ┌── 函数 def _longest_key_match()
-# │  作用：First ``(key, value)`` whose key is a substring of ``model_lower``, longest key first so
+# │  作用：First ``(键, 值)`` whose 键是 substring 的 ``model_lower``, longest 键 first 从而
 # │  参数：table: Dict[str, int], model_lower: str
 # │  返回：Optional[Tuple[str, int]]
 # └──────────────────────────────────────────────────────────────
@@ -830,7 +830,7 @@ def _longest_key_match(table: Dict[str, int], model_lower: str) -> Optional[Tupl
 
 
 # ┌── 函数 def _ollama_show_context()
-# │  作用：Context length from an Ollama ``/api/show`` payload. ``parameters.num_ctx`` is the RUNTIME
+# │  作用：上下文 length 从 Ollama ``/API/show`` payload. ``参数.num_ctx`` 是运行时
 # │  参数：data: Dict[str, Any], gguf_first: bool, minimum: Optional[int] = ...
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -870,7 +870,7 @@ _ENDPOINT_SCOPED_CONTEXT = (
 
 
 # ┌── 函数 def _endpoint_scoped_context_length()
-# │  作用：Context confirmed for one provider endpoint only (see _ENDPOINT_SCOPED_CONTEXT): Kimi Coding
+# │  作用：上下文 confirmed 用于 one 服务商 endpoint 仅 (see _ENDPOINT_SCOPED_CONTEXT): Kimi Coding
 # │  参数：model: str, base_url: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -895,7 +895,7 @@ def _endpoint_scoped_context_length(model: str, base_url: str) -> Optional[int]:
 
 
 # ┌── 函数 def _skip_persistent_context_cache()
-# │  作用：Providers whose disk context cache must not short-circuit probing: LM Studio (loaded
+# │  作用：服务商 whose disk 上下文缓存必须不 short-circuit probing: LM Studio (已加载
 # │  参数：base_url: str, provider: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -907,7 +907,7 @@ def _skip_persistent_context_cache(base_url: str, provider: str) -> bool:
 
 
 # ┌── 函数 def _save_unless_skipped()
-# │  作用：Persist ``ctx`` unless the provider opts out of the disk cache.
+# │  作用：持久化 ``ctx`` unless 服务商 opts out 的 disk 缓存.
 # │  参数：model: str, base_url: str, ctx: int, provider: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -918,7 +918,7 @@ def _save_unless_skipped(model: str, base_url: str, ctx: int, provider: str) -> 
 
 
 # ┌── 函数 def _maybe_cache_local_context_length()
-# │  作用：Persist a probed local window only at/above MINIMUM_CONTEXT_LENGTH: sub-minimum windows are
+# │  作用：持久化 probed local window 仅在/above MINIMUM_CONTEXT_LENGTH: sub-minimum Windows 是
 # │  参数：model: str, base_url: str, length: int
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -930,7 +930,7 @@ def _maybe_cache_local_context_length(model: str, base_url: str, length: int) ->
 
 
 # ┌── 函数 def _probe_local_context_length()
-# │  作用：Live local probe; persists a positive result unless the provider opts out of the disk cache.
+# │  作用：当前活跃的 local probe; 持久化 positive 结果 unless 服务商 opts out 的 disk 缓存.
 # │  参数：model: str, base_url: str, api_key: str, provider: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -947,7 +947,7 @@ def _probe_local_context_length(model: str, base_url: str, api_key: str, provide
 
 
 # ┌── 函数 def _reconcile_local_cached_context_length()
-# │  作用：*cached* unless a live local probe reports a different limit (operators restart
+# │  作用：*cached* unless 当前活跃的 local probe reports different 限制 (operators restart
 # │  参数：model: str, base_url: str, cached: int, api_key: str = ''
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -971,7 +971,7 @@ def _reconcile_local_cached_context_length(model: str, base_url: str, cached: in
 
 
 # ┌── 函数 def is_local_endpoint()
-# │  作用：True for loopback, container-internal DNS, unqualified hosts, RFC-1918,
+# │  作用：当 loopback, container-internal DNS, unqualified 宿主, RFC-1918, 时返回 True。
 # │  参数：base_url: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1016,7 +1016,7 @@ def is_local_endpoint(base_url: str) -> bool:
 
 
 # ┌── 函数 def _localhost_to_ipv4()
-# │  作用：``localhost`` HOST -> ``127.0.0.1`` (Windows dual-stack resolves ::1 first and pays a ~2s IPv6
+# │  作用：``localhost`` 宿主 -> ``127.0.0.1`` (Windows dual-stack resolves ::1 first 且 pays ~2s IPv6
 # │  参数：url: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1031,7 +1031,7 @@ def _localhost_to_ipv4(url: str) -> str:
 
 
 # ┌── 函数 def detect_local_server_type()
-# │  作用：Probe known endpoints: "ollama", "lm-studio", "vllm", "llamacpp", or None (TTL-cached).
+# │  作用：Probe known endpoints: "Ollama", "lm-studio", "vllm", "llamacpp", 或 None (TTL-cached).
 # │  参数：base_url: str, api_key: str = ''
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1150,7 +1150,7 @@ def _extract_first_int(payload: Dict[str, Any], keys: tuple[str, ...]) -> Option
 
 
 # ┌── 函数 def _extract_flat_context_length()
-# │  作用：Top-level-only context WINDOW read (no nested walk, so an unrelated nested section can't leak
+# │  作用：Top-级别-仅上下文窗口读取 (无 nested walk, 从而 unrelated nested section 无法 leak
 # │  参数：payload: Dict[str, Any]
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1162,7 +1162,7 @@ def _extract_flat_context_length(payload: Dict[str, Any]) -> Optional[int]:
 
 
 # ┌── 函数 def _context_length_from_model_payload()
-# │  作用：Context window from a ``/v1/models`` object: window keys first, ``max_tokens`` last (Anthropic
+# │  作用：上下文窗口从 ``/v1/模型`` 对象: window 键 first, ``max_tokens`` last (Anthropic
 # │  参数：payload: Dict[str, Any]
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1236,7 +1236,7 @@ def _add_model_aliases(cache: Dict[str, Dict[str, Any]], model_id: str, entry: D
 
 
 # ┌── 函数 def fetch_model_metadata()
-# │  作用：Fetch model metadata from OpenRouter (cached for 1 hour).
+# │  作用：Fetch 模型 metadata 从 OpenRouter (cached 用于 1 hour).
 # │  参数：force_refresh: bool = False
 # │  返回：Dict[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1296,7 +1296,7 @@ def fetch_model_metadata(force_refresh: bool = False) -> Dict[str, Dict[str, Any
 
 
 # ┌── 函数 def _endpoint_model_entry()
-# │  作用：Cache entry for one ``/models`` item; optional keys are set only when known.
+# │  作用：缓存 entry 用于 one ``/模型`` item; optional 键是 设置仅 当 known.
 # │  参数：model: Dict[str, Any], model_id: str, context_length: Optional[int]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1308,7 +1308,7 @@ def _endpoint_model_entry(model: Dict[str, Any], model_id: str, context_length: 
 
 
 # ┌── 函数 def _lmstudio_loaded_context()
-# │  作用：Context of the first loaded LM Studio instance (the runtime value), else None.
+# │  作用：上下文的 first 已加载 LM Studio instance ( 运行时值), 否则 None.
 # │  参数：model: Dict[str, Any]
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1325,7 +1325,7 @@ def _lmstudio_loaded_context(model: Dict[str, Any]) -> Optional[int]:
 
 
 # ┌── 函数 def _lmstudio_native_models()
-# │  作用：LM Studio ``/api/v1/models`` → cache; context comes from the first loaded instance.
+# │  作用：LM Studio ``/API/v1/模型`` → 缓存; 上下文 comes 从 first 已加载 instance.
 # │  参数：normalized: str, headers: Dict[str, str]
 # │  返回：Dict[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1348,7 +1348,7 @@ def _lmstudio_native_models(normalized: str, headers: Dict[str, str]) -> Dict[st
 
 
 # ┌── 函数 def _apply_llamacpp_props()
-# │  作用：Overwrite ``context_length`` with llama.cpp's allocated ``n_ctx`` from /props (``/v1/props``, then
+# │  作用：Overwrite ``context_length`` 带 llama.cpp's allocated ``n_ctx`` 从 /props (``/v1/props``, 然后
 # │  参数：cache: Dict[str, Dict[str, Any]], request_candidate: str, headers: Dict[str, str], verify
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1426,7 +1426,7 @@ def _parse_models_payload(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 # ┌── 函数 def fetch_endpoint_model_metadata()
-# │  作用：Model metadata from an OpenAI-compatible ``/models`` endpoint (cached per base URL).
+# │  作用：模型 metadata 从 OpenAI-compatible ``/模型`` endpoint (cached per base URL).
 # │  参数：base_url: str, api_key: str = '', force_refresh: bool = False
 # │  返回：Dict[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1500,7 +1500,7 @@ def fetch_endpoint_model_metadata(base_url: str, api_key: str = "", force_refres
 
 
 # ┌── 函数 def _resolve_endpoint_context_length()
-# │  作用：Resolve context length from an endpoint's live ``/models`` metadata.
+# │  作用：Resolve 上下文 length 从 endpoint's 当前活跃的 ``/模型`` metadata.
 # │  参数：model: str, base_url: str, api_key: str = ''
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1518,7 +1518,7 @@ def _resolve_endpoint_context_length(model: str, base_url: str, api_key: str = "
 
 
 # ┌── 函数 def _get_context_cache_path()
-# │  作用：Path to the persistent context length cache file.
+# │  作用：路径 persistent 上下文 length 缓存文件.
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -1530,7 +1530,7 @@ def _get_context_cache_path() -> Path:
 
 
 # ┌── 函数 def _load_context_cache()
-# │  作用：Load the model+provider -> context_length cache from disk.
+# │  作用：加载模型+服务商 -> context_length 缓存从 disk.
 # │  参数：无
 # │  返回：Dict[str, int]
 # └──────────────────────────────────────────────────────────────
@@ -1552,7 +1552,7 @@ def _load_context_cache() -> Dict[str, int]:
 
 
 # ┌── 函数 def _write_context_cache()
-# │  作用：Atomic write (a truncating write killed mid-dump leaves a partial file that
+# │  作用：Atomic 写入 ( truncating 写入 killed mid-dump leaves partial 文件那个
 # │  参数：cache: Dict[str, int]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1563,7 +1563,7 @@ def _write_context_cache(cache: Dict[str, int]) -> None:
 
 
 # ┌── 函数 def _context_cache_key()
-# │  作用：Canonical ``model@base_url`` key; trailing slashes stripped so ``/v1`` and ``/v1/`` share one entry.
+# │  作用：Canonical ``模型@base_url`` 键; trailing slashes stripped 从而 ``/v1`` 且 ``/v1/`` share one entry.
 # │  参数：model: str, base_url: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1574,7 +1574,7 @@ def _context_cache_key(model: str, base_url: str) -> str:
 
 
 # ┌── 函数 def save_context_length()
-# │  作用：Persist a discovered context length under ``model@base_url`` (same model, different providers, different limits).
+# │  作用：持久化 discovered 上下文 length under ``模型@base_url`` (same 模型, different 服务商, different 限制).
 # │  参数：model: str, base_url: str, length: int
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1598,7 +1598,7 @@ def save_context_length(model: str, base_url: str, length: int) -> None:
 
 
 # ┌── 函数 def get_cached_context_length()
-# │  作用：Look up a previously discovered context length for model+provider.
+# │  作用：Look up previously discovered 上下文 length 用于模型+服务商.
 # │  参数：model: str, base_url: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1612,7 +1612,7 @@ def get_cached_context_length(model: str, base_url: str) -> Optional[int]:
 
 
 # ┌── 函数 def _invalidate_cached_context_length()
-# │  作用：Drop a stale cache entry so it gets re-resolved on the next lookup.
+# │  作用：丢弃卡死的缓存 entry 从而它 获取 re-resolved 在…上 next lookup.
 # │  参数：model: str, base_url: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1638,7 +1638,7 @@ def _invalidate_cached_context_length(model: str, base_url: str) -> None:
 
 
 # ┌── 函数 def get_next_probe_tier()
-# │  作用：Next lower probe tier, or None if already at minimum.
+# │  作用：Next lower probe tier, 或 None 若已 在 minimum.
 # │  参数：current_length: int
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1649,7 +1649,7 @@ def get_next_probe_tier(current_length: int) -> Optional[int]:
 
 
 # ┌── 函数 def parse_context_limit_from_error()
-# │  作用：Context limit quoted in a provider error ("maximum context length is 32768 tokens"), if any.
+# │  作用：上下文限制 quoted 在服务商错误 ("maximum 上下文 length 是 32768 令牌"), 若任意.
 # │  参数：error_msg: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1684,7 +1684,7 @@ def parse_context_limit_from_error(error_msg: str) -> Optional[int]:
 
 
 # ┌── 函数 def get_context_length_from_provider_error()
-# │  作用：Provider-reported limit LOWER than the current window, else None. Overflow recovery must
+# │  作用：服务商-reported 限制 LOWER 比 current window, 否则 None. Overflow recovery 必须
 # │  参数：error_msg: str, current_context_length: int
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1698,7 +1698,7 @@ def get_context_length_from_provider_error(error_msg: str, current_context_lengt
 
 
 # ┌── 函数 def parse_available_output_tokens_from_error()
-# │  作用：Available OUTPUT tokens from a "max_tokens too large" error, or None. Distinct from "prompt
+# │  作用：Available 输出令牌从 "max_tokens too large" 错误, 或 None. Distinct 从 "提示词
 # │  参数：error_msg: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1797,7 +1797,7 @@ def _any_phrase_group(text: str, groups: tuple) -> bool:
 
 
 # ┌── 函数 def is_output_cap_error()
-# │  作用：Yes/no sibling of :func:`parse_available_output_tokens_from_error` for unparseable wordings. An
+# │  作用：Yes/无 sibling 的 :func:`parse_available_output_tokens_from_error` 用于 unparseable wordings.
 # │  参数：error_msg: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1816,7 +1816,7 @@ def is_output_cap_error(error_msg: str) -> bool:
 
 
 # ┌── 函数 def _model_id_matches()
-# │  作用：Exact match, or ``publisher/slug`` (LM Studio native ids) whose slug equals the configured name.
+# │  作用：Exact match, 或 ``publisher/slug`` (LM Studio native ids) whose slug equals configured 名称.
 # │  参数：candidate_id: str, lookup_model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1827,7 +1827,7 @@ def _model_id_matches(candidate_id: str, lookup_model: str) -> bool:
 
 
 # ┌── 函数 def _ollama_show()
-# │  作用：Ollama ``/api/show`` JSON for ``bare_model``, or None on any failure (``note_blackhole``: connect timeouts condemn the host).
+# │  作用：Ollama ``/API/show`` JSON 用于 ``bare_model``, 或 None 在…上任意 failure (``note_blackhole``: connect 超时 condemn 宿主).
 # │  参数：server_url: str, api_key: str, bare_model: str, timeout: float = 3.0, note_blackhole: bool = ...
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1865,7 +1865,7 @@ def _is_ollama_server(base_url: str, api_key: str) -> bool:
 
 
 # ┌── 函数 def query_ollama_num_ctx()
-# │  作用：Ollama ``/api/show`` context (Modelfile num_ctx, else GGUF max); the value to send as ``num_ctx``.
+# │  作用：Ollama ``/API/show`` 上下文 (Modelfile num_ctx, 否则 GGUF max); 值 send 作为 ``num_ctx``.
 # │  参数：model: str, base_url: str, api_key: str = ''
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1889,7 +1889,7 @@ def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> Option
 
 
 # ┌── 函数 def query_ollama_supports_vision()
-# │  作用：True/False when Ollama ``/api/show`` reports vision support (``capabilities`` on 0.6.0+, else
+# │  作用：True/False 当 Ollama ``/API/show`` reports vision support (``capabilities`` 在…上 0.6.0+, 否则
 # │  参数：model: str, base_url: str, api_key: str = ''
 # │  返回：Optional[bool]
 # └──────────────────────────────────────────────────────────────
@@ -1917,7 +1917,7 @@ def query_ollama_supports_vision(model: str, base_url: str, api_key: str = "") -
 
 
 # ┌── 函数 def _memo_local_probe()
-# │  作用：Short-TTL, positive-only memo of a local probe (see _LOCAL_CTX_PROBE_CACHE): a failure during
+# │  作用：Short-TTL, positive-仅 memo 的 local probe (see _LOCAL_CTX_PROBE_CACHE): failure 在…期间
 # │  参数：cache_key: tuple, probe: Callable[[], Optional[int]]
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1937,7 +1937,7 @@ def _memo_local_probe(cache_key: tuple, probe: Callable[[], Optional[int]]) -> O
 
 
 # ┌── 函数 def _query_ollama_api_show()
-# │  作用：Provider-agnostic Ollama ``/api/show`` probe (any hostname; non-Ollama servers 404 fast).
+# │  作用：服务商-agnostic Ollama ``/API/show`` probe (任意 hostname; non-Ollama 服务端 404 fast).
 # │  参数：model: str, base_url: str, api_key: str = ''
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1949,7 +1949,7 @@ def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Opti
 
 
 # ┌── 函数 def _query_ollama_api_show_uncached()
-# │  作用：Uncached body of ``_query_ollama_api_show`` — one POST to ``/api/show``.
+# │  作用：Uncached body 的 ``_query_ollama_api_show`` — one POST ``/API/show``.
 # │  参数：model: str, base_url: str, api_key: str = ''
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1966,7 +1966,7 @@ def _query_ollama_api_show_uncached(model: str, base_url: str, api_key: str = ""
 
 
 # ┌── 函数 def _model_name_suggests_kimi()
-# │  作用：Kimi family (``kimi-*``, ``moonshotai/*``) — guard against stale 32K underreports.
+# │  作用：Kimi family (``kimi-*``, ``moonshotai/*``) — 护栏 against 卡死的 32K underreports.
 # │  参数：model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1978,7 +1978,7 @@ def _model_name_suggests_kimi(model: str) -> bool:
 
 
 # ┌── 函数 def _model_name_suggests_minimax_m3()
-# │  作用：MiniMax M3 on any surface — models.dev underreport guard and agent_runtime_helpers cache-control gating.
+# │  作用：MiniMax M3 在…上任意上报 — 模型.dev underreport 护栏且 agent_runtime_helpers 缓存-control gating.
 # │  参数：model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2005,7 +2005,7 @@ _PRE_CATALOG_STALE_KEYS = frozenset({
 
 
 # ┌── 函数 def _stale_pre_catalog_cache_entry()
-# │  作用：True when a persisted window is a pre-catalog leftover: the model resolves (longest-key-first) to a
+# │  作用：当 已持久化的 window 是 pre-catalog leftover: 模型 resolves (longest-键-first) 时返回 True。
 # │  参数：model: str, cached: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2027,7 +2027,7 @@ def _stale_pre_catalog_cache_entry(model: str, cached: int) -> bool:
 
 
 # ┌── 函数 def _model_name_suggests_minimax()
-# │  作用：MiniMax family (``minimax*``, ``minimaxai/*``) — guard against stale 32K underreports (real: 204.8K).
+# │  作用：MiniMax family (``minimax*``, ``minimaxai/*``) — 护栏 against 卡死的 32K underreports (real: 204.8K).
 # │  参数：model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2039,7 +2039,7 @@ def _model_name_suggests_minimax(model: str) -> bool:
 
 
 # ┌── 函数 def _model_name_suggests_stale_32k_underreport()
-# │  作用：Model families known to be wrongly underreported as 32K.
+# │  作用：模型 families known 是 wrongly underreported 作为 32K.
 # │  参数：model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2050,7 +2050,7 @@ def _model_name_suggests_stale_32k_underreport(model: str) -> bool:
 
 
 # ┌── 函数 def _query_local_context_length()
-# │  作用：Local-server context probe, short-TTL cached (see _LOCAL_CTX_PROBE_CACHE).
+# │  作用：Local-服务端上下文 probe, short-TTL cached (see _LOCAL_CTX_PROBE_CACHE).
 # │  参数：model: str, base_url: str, api_key: str = ''
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2071,7 +2071,7 @@ def _positive_int(value: Any) -> Optional[int]:
 
 
 # ┌── 函数 def _lmstudio_context()
-# │  作用：LM Studio native /api/v1/models (the OpenAI-compat list omits context);
+# │  作用：LM Studio native /API/v1/模型 ( OpenAI-compat 列表 omits 上下文);
 # │  参数：client, lmstudio_url: str, model: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2091,7 +2091,7 @@ def _lmstudio_context(client, lmstudio_url: str, model: str) -> Optional[int]:
 
 
 # ┌── 函数 def _llamacpp_context()
-# │  作用：llama.cpp /props: the RUNTIME n_ctx, answered by the router even for a not-yet-loaded model
+# │  作用：llama.cpp /props: 运行时 n_ctx, answered 由 router even 用于不-yet-已加载模型
 # │  参数：client, server_url: str, model: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2117,7 +2117,7 @@ def _llamacpp_context(client, server_url: str, model: str) -> Optional[int]:
 
 
 # ┌── 函数 def _openai_models_list_context()
-# │  作用：/v1/models list: match by id, else the sole model on single-model servers (llama.cpp reports a GGUF path as id).
+# │  作用：/v1/模型列表: match 由 id, 否则 sole 模型在…上 single-模型服务端 (llama.cpp reports GGUF 路径作为 id).
 # │  参数：client, server_url: str, model: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2147,7 +2147,7 @@ def _openai_models_list_context(client, server_url: str, model: str) -> Optional
 
 
 # ┌── 函数 def _query_local_context_length_uncached()
-# │  作用：Query a local server for the model's context length.
+# │  作用：Query local 服务端用于模型's 上下文 length.
 # │  参数：model: str, base_url: str, api_key: str = ''
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2193,7 +2193,7 @@ def _query_local_context_length_uncached(model: str, base_url: str, api_key: str
 
 
 # ┌── 函数 def _normalize_model_version()
-# │  作用：Dots -> dashes so Nous ids (claude-opus-4-6) compare with OpenRouter's (claude-opus-4.6).
+# │  作用：Dots -> dashes 从而 Nous ids (claude-opus-4-6) compare 带 OpenRouter's (claude-opus-4.6).
 # │  参数：model: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2204,7 +2204,7 @@ def _normalize_model_version(model: str) -> str:
 
 
 # ┌── 函数 def _query_anthropic_context_length()
-# │  作用：Anthropic /v1/models max_input_tokens; OAuth tokens (sk-ant-oat*) 401 and are skipped.
+# │  作用：Anthropic /v1/模型 max_input_tokens; OAuth 令牌 (sk-ant-oat*) 401 且是 skipped.
 # │  参数：model: str, base_url: str, api_key: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2262,7 +2262,7 @@ _CODEX_900K_SNAPSHOT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 # ┌── 函数 def _bare_codex_slug()
-# │  作用：Lowercased slug without ``vendor/`` (display/auxiliary callers pass ``openai/gpt-5.6-sol-900k``).
+# │  作用：Lowercased slug 不 ``vendor/`` (展示/辅助的 callers pass ``OpenAI/gpt-5.6-sol-900k``).
 # │  参数：model: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2277,7 +2277,7 @@ def _bare_codex_slug(model: Optional[str]) -> str:
 
 
 # ┌── 函数 def is_codex_900k_base()
-# │  作用：Single source of truth for ``-900k`` eligibility (picker, resolution, /model validation, wire stripping).
+# │  作用：Single source 的 truth 用于 ``-900k`` eligibility (picker, resolution, /模型 validation, wire stripping).
 # │  参数：model: Optional[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2295,7 +2295,7 @@ def is_codex_900k_base(model: Optional[str]) -> bool:
 
 
 # ┌── 函数 def _codex_variant_base()
-# │  作用：Lowercased eligible base of a VALID ``-900k`` variant, else None (``gpt-5.5-900k`` is an invalid alias).
+# │  作用：Lowercased eligible base 的 VALID ``-900k`` variant, 否则 None (``gpt-5.5-900k`` 是 invalid 别名).
 # │  参数：model: Optional[str]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2308,7 +2308,7 @@ def _codex_variant_base(model: Optional[str]) -> Optional[str]:
 
 
 # ┌── 函数 def is_codex_context_variant()
-# │  作用：Suffix AND eligible base — ``gpt-5.5-900k`` is an invalid alias, not a variant.
+# │  作用：Suffix 且 eligible base — ``gpt-5.5-900k`` 是 invalid 别名, 不 variant.
 # │  参数：model: Optional[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2319,7 +2319,7 @@ def is_codex_context_variant(model: Optional[str]) -> bool:
 
 
 # ┌── 函数 def strip_codex_context_variant_suffix()
-# │  作用：Wire-safe slug with a VALID ``-900k`` suffix removed (vendor prefix kept); an ineligible alias is
+# │  作用：Wire-safe slug 带 VALID ``-900k`` suffix 已移除 (vendor prefix 保留); ineligible 别名是
 # │  参数：model: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2332,7 +2332,7 @@ def strip_codex_context_variant_suffix(model: Optional[str]) -> str:
 
 
 # ┌── 函数 def has_codex_context_variant()
-# │  作用：Picker-side alias of :func:`is_codex_900k_base`.
+# │  作用：Picker-side 别名的 :func:`is_codex_900k_base`.
 # │  参数：model_bare: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2343,7 +2343,7 @@ def has_codex_context_variant(model_bare: str) -> bool:
 
 
 # ┌── 函数 def _verified_codex_ctx_for_slug()
-# │  作用：Live-verified cap for a VALID ``-900k`` variant only; base slugs and ineligible aliases -> None.
+# │  作用：当前活跃的-verified cap 用于 VALID ``-900k`` variant 仅; base slugs 且 ineligible 别名 -> None.
 # │  参数：model_bare: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2373,7 +2373,7 @@ CODEX_MODELS_CATALOG_URL = f"https://chatgpt.com/backend-api/codex/models?client
 
 
 # ┌── 函数 def _codex_oauth_token_fingerprint()
-# │  作用：Non-secret cache key for a Codex OAuth access token.
+# │  作用：Non-secret 缓存键 用于 Codex OAuth access 令牌.
 # │  参数：access_token: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2384,7 +2384,7 @@ def _codex_oauth_token_fingerprint(access_token: str) -> str:
 
 
 # ┌── 函数 def _extract_chatgpt_account_id()
-# │  作用：``chatgpt_account_id`` from the Codex OAuth JWT, or None on any parse error. Without the
+# │  作用：``chatgpt_account_id`` 从 Codex OAuth JWT, 或 None 在…上任意解析错误. 不
 # │  参数：access_token: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2405,7 +2405,7 @@ def _extract_chatgpt_account_id(access_token: str) -> Optional[str]:
 
 
 # ┌── 函数 def _fetch_codex_oauth_context_lengths_with_source()
-# │  作用：Codex catalogue ``{slug: context_window}`` plus whether it came from HTTP. Cached per token
+# │  作用：Codex catalogue ``{slug: context_window}`` plus whether 它 came 从 HTTP. Cached per 令牌
 # │  参数：access_token: str
 # │  返回：Tuple[Dict[str, int], bool]
 # └──────────────────────────────────────────────────────────────
@@ -2448,7 +2448,7 @@ def _fetch_codex_oauth_context_lengths_with_source(access_token: str) -> Tuple[D
 
 
 # ┌── 函数 def _resolve_codex_oauth_context_length_with_source()
-# │  作用：``(context_length, source)`` for a Codex OAuth slug. source: "live" (fresh authenticated probe —
+# │  作用：``(context_length, source)`` 用于 Codex OAuth slug. source: "当前活跃的" (fresh authenticated probe —
 # │  参数：model: str, access_token: str = ''
 # │  返回：Tuple[Optional[int], str]
 # └──────────────────────────────────────────────────────────────
@@ -2490,7 +2490,7 @@ def _resolve_codex_oauth_context_length_with_source(model: str, access_token: st
 
 
 # ┌── 函数 def _resolve_nous_context_length()
-# │  作用：``(context_length, source)`` for a Nous Portal model: portal /v1/models is authoritative
+# │  作用：``(context_length, source)`` 用于 Nous Portal 模型: portal /v1/模型是 authoritative
 # │  参数：model: str, base_url: str = '', api_key: str = ''
 # │  返回：Tuple[Optional[int], str]
 # └──────────────────────────────────────────────────────────────
@@ -2535,7 +2535,7 @@ def _resolve_nous_context_length(model: str, base_url: str = "", api_key: str = 
 
 
 # ┌── 函数 def _validate_cached_context_length()
-# │  作用：Step 1 of get_model_context_length: accept, repair, or drop a persisted entry. Returns the
+# │  作用：步骤 1 的 get_model_context_length: 接受, repair, 或丢弃已持久化的 entry. 返回
 # │  参数：model: str, base_url: str, cached: int, is_bedrock_context: bool, api_key: str = ...
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2591,7 +2591,7 @@ def _validate_cached_context_length(model: str, base_url: str, cached: int, is_b
 
 
 # ┌── 函数 def _resolve_bedrock_context_length()
-# │  作用：Step 1b: Bedrock static table + one cached live probe (Bedrock exposes no context window via
+# │  作用：步骤 1b: Bedrock static table + one cached 当前活跃的 probe (Bedrock exposes 无上下文窗口 via
 # │  参数：model: str, base_url: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2625,7 +2625,7 @@ def _resolve_bedrock_context_length(model: str, base_url: str) -> Optional[int]:
 
 
 # ┌── 函数 def _resolve_custom_endpoint_context_length()
-# │  作用：Steps 2-3 for a truly custom endpoint: /models, local probes, Ollama /api/show, catalog, default.
+# │  作用：步骤 2-3 用于 truly custom endpoint: /模型, local probes, Ollama /API/show, catalog, 默认值.
 # │  参数：model: str, base_url: str, api_key: str, provider: str
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -2667,7 +2667,7 @@ def _resolve_custom_endpoint_context_length(model: str, base_url: str, api_key: 
 
 
 # ┌── 函数 def _resolve_moa_context_length()
-# │  作用：Step 0a: MoA virtual provider — ``model`` is a preset name, so every probe would miss. Resolve
+# │  作用：步骤 0a: MoA virtual 服务商 — ``模型`` 是 preset 名称, 从而每个 probe 会 miss. Resolve
 # │  参数：model: str, custom_providers: list | None
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2699,7 +2699,7 @@ def _resolve_moa_context_length(model: str, custom_providers: list | None) -> Op
 
 
 # ┌── 函数 def _config_override_context_length()
-# │  作用：Steps 0b-0c: config-only overrides (never touch the network). 0b: EXPLICIT model_overrides
+# │  作用：步骤 0b-0c: 配置-仅覆盖值 (never touch network). 0b: EXPLICIT model_overrides
 # │  参数：model: str, base_url: str, provider: str, custom_providers: list | None
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2731,7 +2731,7 @@ def _config_override_context_length(model: str, base_url: str, provider: str, cu
 
 
 # ┌── 函数 def _resolve_provider_aware_context_length()
-# │  作用：Step 5: provider-specific sources, tried in order; None when all miss.
+# │  作用：步骤 5: 服务商-specific sources, tried 在 order; None 当全部 miss.
 # │  参数：model: str, base_url: str, api_key: str, provider: str, effective_provider: str
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2799,7 +2799,7 @@ def _resolve_provider_aware_context_length(model: str, base_url: str, api_key: s
 
 
 # ┌── 函数 def get_model_context_length()
-# │  作用：Context length for a model. Resolution order: 0 config override / MoA aggregator /
+# │  作用：上下文 length 用于模型. Resolution order: 0 配置覆盖值 / MoA aggregator /
 # │  参数：model: str, base_url: str = '', api_key: str = '', config_context_length: int | None = None, provider: str = '', custom_providers: list | None = None
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -2916,7 +2916,7 @@ def get_model_context_length(
 
 
 # ┌── 异步函数（协程） def get_model_context_length_async()
-# │  作用：get_model_context_length on a worker thread (its blocking HTTP would stall the event loop).
+# │  作用：get_model_context_length 在…上工作线程 (其 blocking HTTP 会 stall 事件循环).
 # │  参数：model: str, base_url: str = '', api_key: str = '', config_context_length: int | None = None, provider: str = '', custom_providers: list | None = None
 # │  返回：int
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2951,7 +2951,7 @@ def _is_cjk_token_dense_char(ch: str) -> bool:
 
 
 # ┌── 函数 def estimate_tokens_rough()
-# │  作用：Rough token estimate: CJK/Hangul/Kana codepoints ~1 token each; everything else ceil(UTF-8 bytes/4).
+# │  作用：粗略的令牌估算: CJK/Hangul/Kana codepoints ~1 令牌每个; everything 否则 ceil(UTF-8 bytes/4).
 # │  参数：text: str
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -2979,7 +2979,7 @@ def estimate_tokens_rough(text: str) -> int:
 
 
 # ┌── 函数 def estimate_messages_tokens_rough()
-# │  作用：Rough token estimate for a message list (pre-flight only). Images cost the per-image price
+# │  作用：粗略的令牌估算用于消息列表 (pre-flight 仅). Images cost per-image price
 # │  参数：messages: List[Dict[str, Any]], charge_stale_thinking: bool = ...
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3005,7 +3005,7 @@ _STALE_THINKING_ESTIMATE_KEYS = ("reasoning", "reasoning_content")
 
 
 # ┌── 函数 def _strip_stale_thinking_for_estimate()
-# │  作用：Copy of ``messages`` with stale thinking keys removed (newest kept). Shallow stripped copies
+# │  作用：复制的 ``消息`` 带卡死的 thinking 键已移除 (newest 保留). Shallow stripped 复制
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -3070,7 +3070,7 @@ def _msg_fingerprint(value: Any, pins: list) -> Any:
 
 
 # ┌── 函数 def _estimate_message_tokens_cached()
-# │  作用：Text tokens + images x ``image_cost``; the memo holds text and image COUNT so a recalibrated
+# │  作用：文本令牌 + images x ``image_cost``; memo holds 文本且 image COUNT 从而 recalibrated
 # │  参数：msg: Any, image_cost: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3117,7 +3117,7 @@ def _count_parts(parts: Any, types: set) -> int:
 
 
 # ┌── 函数 def _count_image_tokens()
-# │  作用：Count image-like content parts in a message; return their token cost.
+# │  作用：Count image-like 内容 parts 在消息; 返回其 令牌 cost.
 # │  参数：msg: Dict[str, Any], cost_per_image: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3137,7 +3137,7 @@ def _count_image_tokens(msg: Dict[str, Any], cost_per_image: int) -> int:
 
 
 # ┌── 函数 def strip_opaque_replay_items()
-# │  作用：``codex_reasoning_items`` with ``encrypted_content`` blanked for local token estimation.
+# │  作用：``codex_reasoning_items`` 带 ``encrypted_content`` blanked 用于 local 令牌 estimation.
 # │  参数：items: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -3156,7 +3156,7 @@ def strip_opaque_replay_items(items: Any) -> Any:
 
 
 # ┌── 函数 def _wire_message_shadow()
-# │  作用：Shadow of a message holding only what the provider actually receives.
+# │  作用：Shadow 的消息 holding 仅什么服务商 actually receives.
 # │  参数：msg: Dict[str, Any]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -3204,7 +3204,7 @@ def _wire_message_shadow(msg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _estimate_message_tokens_without_images()
-# │  作用：Token estimate for a message shadow with image payloads stripped.
+# │  作用：令牌估算用于消息 shadow 带 image payloads stripped.
 # │  参数：msg: Dict[str, Any]
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3215,7 +3215,7 @@ def _estimate_message_tokens_without_images(msg: Dict[str, Any]) -> int:
 
 
 # ┌── 函数 def estimate_request_tokens_rough()
-# │  作用：Rough token estimate for a full request: system prompt + messages + tool schemas (50+ tools
+# │  作用：粗略的令牌估算用于 full 请求: system 提示词 + 消息 + 工具结构定义 (50+ 工具
 # │  参数：messages: List[Dict[str, Any]], system_prompt: str = ..., tools: Optional[List[Dict[str, Any]]] = ..., charge_stale_thinking: bool = ...
 # │  返回：int
 # └──────────────────────────────────────────────────────────────

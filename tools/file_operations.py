@@ -94,7 +94,7 @@ _MAGIC_SIGNATURES: tuple = (
 
 
 # ┌── 函数 def identify_binary_bytes()
-# │  作用：Best-effort human name for binary content from its magic bytes; never raises.
+# │  作用：尽最大努力 human 名称用于 binary 内容从 其 magic bytes; never 抛出.
 # │  参数：sample: bytes
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ def identify_binary_bytes(sample: bytes) -> str:
 
 
 # ┌── 函数 def describe_binary_file()
-# │  作用：One-line binary-file refusal naming the TYPE ("PNG image data, 4.1 KB"), so the
+# │  作用：One-line binary-文件 refusal naming 类型 ("PNG image data, 4.1 KB"), 从而
 # │  参数：sample: Optional[bytes], file_size: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -132,14 +132,14 @@ def describe_binary_file(sample: Optional[bytes], file_size: int) -> str:
 
 
 # ┌── 类 class FileOperations（继承自：ABC）
-# │  说明：Abstract interface for file operations across terminal backends.
+# │  说明：Abstract interface 用于文件 operations across 终端 backends.
 # │  成员：共 8 个方法；对外可用 8 个
 # └──────────────────────────────────────────────────────────────
 class FileOperations(ABC):
     """Abstract interface for file operations across terminal backends."""
 
     # ┌── 函数 def read_file()
-    # │  作用：Read a file with pagination support.
+    # │  作用：读取文件带 pagination support.
     # │  参数：self, path: str, offset: int = 1, limit: int = 2000
     # │  返回：ReadResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -149,7 +149,7 @@ class FileOperations(ABC):
         """Read a file with pagination support."""
 
     # ┌── 函数 def read_file_raw()
-    # │  作用：Whole file as a plain string: no pagination, line numbers or clamping.
+    # │  作用：Whole 文件作为 plain 字符串: 无 pagination, line numbers 或 clamping.
     # │  参数：self, path: str
     # │  返回：ReadResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -159,7 +159,7 @@ class FileOperations(ABC):
         """Whole file as a plain string: no pagination, line numbers or clamping."""
 
     # ┌── 函数 def write_file()
-    # │  作用：Write content to a file, creating directories as needed.
+    # │  作用：写入内容文件, 创建 directories 作为 needed.
     # │  参数：self, path: str, content: str, pre_content: Optional[str] = None
     # │  返回：WriteResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -169,7 +169,7 @@ class FileOperations(ABC):
         """Write content to a file, creating directories as needed."""
 
     # ┌── 函数 def patch_replace()
-    # │  作用：Replace text in a file using fuzzy matching.
+    # │  作用：Replace 文本在 文件 using fuzzy matching.
     # │  参数：self, path: str, old_string: str, new_string: str, replace_all: bool = False
     # │  返回：PatchResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -180,7 +180,7 @@ class FileOperations(ABC):
         """Replace text in a file using fuzzy matching."""
 
     # ┌── 函数 def patch_v4a()
-    # │  作用：Apply a V4A format patch.
+    # │  作用：应用 V4A 格式补丁。
     # │  参数：self, patch_content: str
     # │  返回：PatchResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -190,7 +190,7 @@ class FileOperations(ABC):
         """Apply a V4A format patch."""
 
     # ┌── 函数 def delete_file()
-    # │  作用：Delete a file. Returns WriteResult with .error set on failure.
+    # │  作用：Delete 文件. 返回 WriteResult 带 .错误设置在…上 failure.
     # │  参数：self, path: str
     # │  返回：WriteResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -200,7 +200,7 @@ class FileOperations(ABC):
         """Delete a file. Returns WriteResult with .error set on failure."""
 
     # ┌── 函数 def move_file()
-    # │  作用：Move/rename a file. Returns WriteResult with .error set on failure.
+    # │  作用：Move/rename 文件. 返回 WriteResult 带 .错误设置在…上 failure.
     # │  参数：self, src: str, dst: str
     # │  返回：WriteResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -210,7 +210,7 @@ class FileOperations(ABC):
         """Move/rename a file. Returns WriteResult with .error set on failure."""
 
     # ┌── 函数 def search()
-    # │  作用：Search for content or files.
+    # │  作用：Search 用于内容或 文件.
     # │  参数：self, pattern: str, path: str = '.', target: str = 'content', file_glob: Optional[str] = None, limit: int = 50, offset: int = 0, output_mode: str = 'content'  …共 10 个
     # │  返回：SearchResult
     # │  【语法】@abstractmethod 抽象方法：父类只声明不实现，子类必须重写。
@@ -242,7 +242,7 @@ _WRITE_SENTINEL_PREFIX = "__HERMES_WF_"
 
 
 # ┌── 函数 def _new_sentinel()
-# │  作用：Per-call separator line for a compound shell probe. 128 random bits make a
+# │  作用：每次调用的 separator line 用于 compound shell probe. 128 random bits make
 # │  参数：prefix: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -256,7 +256,7 @@ def _new_sentinel(prefix: str) -> str:
 
 
 # ┌── 函数 def _split_segments()
-# │  作用：Split compound-probe stdout on its sentinel lines. Every producer (``wc``,
+# │  作用：Split compound-probe 标准输出在…上其 sentinel lines. 每个 producer (``wc``,
 # │  参数：output: str, sentinel: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -270,7 +270,7 @@ def _split_segments(output: str, sentinel: str) -> list[str]:
 
 
 # ┌── 类 class ShellFileOperations（继承自：LintMixin, SearchMixin, FileOperations）
-# │  说明：File operations over any terminal backend exposing ``execute(command, cwd)``
+# │  说明：文件 operations over 任意终端 backend exposing ``执行(命令, cwd)``
 # │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
 # │  成员：共 50 个方法；对外可用 9 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
@@ -302,7 +302,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         self._rg_modified_capability: Dict[str, Optional[str]] = {}
 
     # ┌── 函数 def _exec()
-    # │  作用：Run ``command`` on the backend. cwd: explicit arg → live ``env.cwd`` →
+    # │  作用：运行 ``命令`` 在…上 backend. cwd: explicit arg → 当前活跃的 ``env.cwd`` →
     # │  参数：self, command: str, cwd: str = None, timeout: int = None, stdin_data: str = None
     # │  返回：ExecuteResult
     # └──────────────────────────────────────────────────────────────
@@ -326,7 +326,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return ExecuteResult(stdout=result.get("output", ""), exit_code=exit_code)
 
     # ┌── 函数 def _has_command()
-    # │  作用：Check if a command exists in the environment (cached); rg goes through
+    # │  作用：检查若 命令 exists 在 environment (cached); rg goes through
     # │  参数：self, cmd: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -343,7 +343,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return self._command_cache[cmd]
 
     # ┌── 函数 def _cat()
-    # │  作用：``cat`` the file with stderr silenced (missing file → non-zero exit).
+    # │  作用：``cat`` 文件带 标准错误 silenced (missing 文件 → non-zero exit).
     # │  参数：self, path: str
     # │  返回：ExecuteResult
     # └──────────────────────────────────────────────────────────────
@@ -362,7 +362,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return self._exec(f"head -c {nbytes} {self._escape_shell_arg(path)} 2>/dev/null")
 
     # ┌── 函数 def _run_python_snippet()
-    # │  作用：Run ``snippet`` via the backend's ``python3``, retrying with ``python``
+    # │  作用：运行 ``snippet`` via backend's ``python3``, retrying 带 ``python``
     # │  参数：self, snippet: str
     # │  返回：ExecuteResult
     # └──────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return result
 
     # ┌── 函数 def _sample_file_bytes()
-    # │  作用：First ``length`` raw bytes, base64-wrapped so they survive the terminal
+    # │  作用：First ``length`` raw bytes, base64-wrapped 从而它们 survive 终端
     # │  参数：self, path: str, length: int = 1000
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return self._decode_base64_sample(result.stdout)
 
     # ┌── 函数 def _decode_base64_sample()
-    # │  作用：Decode one ``head -c N | base64`` sample. Whitespace-joins the whole text
+    # │  作用：Decode one ``head -c N | base64`` sample. Whitespace-joins whole 文本
     # │  参数：text: str
     # │  返回：Optional[bytes]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -424,7 +424,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             return None
 
     # ┌── 函数 def _is_likely_binary_bytes()
-    # │  作用：Byte-layer binary detection: text iff valid UTF-8, allowing one incomplete
+    # │  作用：Byte-layer binary detection: 文本 iff valid UTF-8, allowing one incomplete
     # │  参数：sample: bytes
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -464,7 +464,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             return True
 
     # ┌── 函数 def _is_likely_binary()
-    # │  作用：Legacy text-layer binary check: extension, else >30% non-printable chars.
+    # │  作用：Legacy 文本-layer binary 检查: extension, 否则 >30% non-printable chars.
     # │  参数：self, path: str, content_sample: str = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -495,7 +495,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return os.path.splitext(path)[1].lower() in IMAGE_EXTENSIONS
 
     # ┌── 函数 def _add_line_numbers()
-    # │  作用：Prefix each line with a compact ``<n>|`` gutter, clamping long lines. Not
+    # │  作用：Prefix 每个 line 带 compact ``<n>|`` gutter, clamping long lines. 不
     # │  参数：self, content: str, start_line: int = 1
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -518,7 +518,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             for i, line in enumerate(content.split('\n'), start=start_line))
 
     # ┌── 函数 def _expand_path()
-    # │  作用：Expand ``~`` / ``~user`` via the backend's shell (its HOME, not the
+    # │  作用：Expand ``~`` / ``~user`` via backend's shell (其主目录, 不
     # │  参数：self, path: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -551,7 +551,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return path
 
     # ┌── 函数 def _escape_shell_arg()
-    # │  作用：Single-quote ``arg`` for the shell. On Windows, native drive paths and
+    # │  作用：Single-quote ``arg`` 用于 shell. 在…上 Windows, native drive 路径且
     # │  参数：self, arg: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return "'" + _bash_safe_path(arg).replace("'", "'\"'\"'") + "'"
 
     # ┌── 函数 def _escape_native_tool_arg()
-    # │  作用：Quote a path for a NATIVE Windows binary (rg, node, git ...): those don't
+    # │  作用：Quote 路径用于 NATIVE Windows binary (rg, node, git ...): 那些 don't
     # │  参数：self, arg: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -581,7 +581,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return "'" + arg.replace("'", "'\"'\"'") + "'"
 
     # ┌── 函数 def _atomic_write()
-    # │  作用：Write ``content`` atomically: stdin → temp file in the SAME directory →
+    # │  作用：写入 ``内容`` atomically: 标准输入 → temp 文件在 SAME directory →
     # │  参数：self, path: str, content: str
     # │  返回：'ExecuteResult'
     # └──────────────────────────────────────────────────────────────
@@ -643,7 +643,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return self._exec(script, stdin_data=content)
 
     # ┌── 函数 def _file_has_bom()
-    # │  作用：Whether the on-disk file starts with a UTF-8 BOM. ALWAYS probes disk:
+    # │  作用：是否 在…上-disk 文件 starts 带 UTF-8 BOM. ALWAYS probes disk:。
     # │  参数：self, path: str, pre_content: Optional[str] = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -669,7 +669,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
     # --- READ ---------------------------------------------------------------
 
     # ┌── 函数 def _not_regular_error()
-    # │  作用：Error for a path that exists but would block if read.
+    # │  作用：错误用于路径那个 exists 但会 block 若读取.
     # │  参数：path: str
     # │  返回：ReadResult
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -683,7 +683,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             "socket, or device). Reading it could block indefinitely."))
 
     # ┌── 函数 def _probe_regular_file()
-    # │  作用：Byte size of a REGULAR file: ``(file_size, status)`` with status ``"ok"``,
+    # │  作用：Byte size 的 REGULAR 文件: ``(file_size, status)`` 带 status ``"ok"``,
     # │  参数：self, path: str
     # │  返回：tuple[int, str]
     # └──────────────────────────────────────────────────────────────
@@ -730,7 +730,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
                                  "(the sandbox may still be starting or was removed). Retry shortly."))
 
     # ┌── 函数 def _detect_binary()
-    # │  作用：``(is_binary, sample_bytes)`` — byte-layer detection when the transport
+    # │  作用：``(is_binary, sample_bytes)`` — byte-layer detection 当 transport
     # │  参数：self, path: str
     # │  返回：tuple[bool, Optional[bytes]]
     # └──────────────────────────────────────────────────────────────
@@ -758,7 +758,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
     _UTF16_SAMPLE_BYTES = 512
 
     # ┌── 函数 def _try_read_utf16()
-    # │  作用：Read ``path`` as UTF-16 transcoded to UTF-8, or None (caller falls back
+    # │  作用：读取 ``路径`` 作为 UTF-16 transcoded UTF-8, 或 None (caller falls back
     # │  参数：self, path: str, offset: int, limit: int, file_size: int
     # │  返回：'Optional[ReadResult]'
     # └──────────────────────────────────────────────────────────────
@@ -841,7 +841,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             file_size=file_size, truncated=truncated, hint=" ".join(hint_parts))
 
     # ┌── 函数 def read_file()
-    # │  作用：Read a file with pagination, binary detection, and line numbers.
+    # │  作用：读取文件带 pagination, binary detection, 且 line numbers.
     # │  参数：self, path: str, offset: int = 1, limit: int = 2000
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -943,7 +943,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             file_size=file_size, file_ends_with_newline=file_ends_with_newline)
 
     # ┌── 函数 def _native_read_enabled()
-    # │  作用：Whether ``read_file`` and ``search_files`` may bypass the shell: only POSIX + ``LocalEnvironment``
+    # │  作用：是否 ``read_file`` 且 ``search_files`` 可以 bypass shell: 仅 POSIX + ``LocalEnvironment``。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -962,7 +962,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return sys.platform != "win32" and self._lsp_local_only()
 
     # ┌── 函数 def _read_file_native()
-    # │  作用：``read_file`` without a shell — same contract as the shell path, byte for
+    # │  作用：``read_file`` 不 shell — same contract 作为 shell 路径, byte 用于
     # │  参数：self, path: str, offset: int, limit: int
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1072,7 +1072,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
                 "Use vision_analyze with this file path to inspect the image contents."))
 
     # ┌── 函数 def _read_probe_cmd()
-    # │  作用：One shell command answering every question ``read_file`` asks: six
+    # │  作用：One shell 命令 answering 每个 question ``read_file`` asks: six
     # │  参数：self, path: str, offset: int, end_line: int, line_clamp_bytes: int, sentinel: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -1103,7 +1103,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             f"else echo {MISSING_SENTINEL}; fi")
 
     # ┌── 函数 def _read_file_missing()
-    # │  作用：Not-found recovery shared by every read path. Unicode-equivalent spellings
+    # │  作用：不-found recovery shared 由每个读取路径. Unicode-equivalent spellings
     # │  参数：self, path: str, offset: int, limit: int
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1127,7 +1127,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return self._suggest_similar_files(path)
 
     # ┌── 函数 def _read_binary_file()
-    # │  作用：Binary branch shared by every read path: UTF-16 text (Notepad, PowerShell
+    # │  作用：Binary branch shared 由每个读取路径: UTF-16 文本 (Notepad, PowerShell
     # │  参数：self, path: str, offset: int, limit: int, file_size: int, sample_bytes: Optional[bytes]
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1151,7 +1151,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             error=describe_binary_file(sample_bytes, file_size))
 
     # ┌── 函数 def _read_file_sequential()
-    # │  作用：One-probe-per-call read: the pre-compound form, kept as fallback for
+    # │  作用：One-probe-每次调用的读取: pre-compound 形态, 保留作为兜底用于
     # │  参数：self, path: str, offset: int, limit: int
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1212,7 +1212,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             file_size=file_size, file_ends_with_newline=file_ends_with_newline)
 
     # ┌── 函数 def _assemble_read_result()
-    # │  作用：Turn a raw ``sed | cut`` page into the final ``ReadResult``. Shared by every
+    # │  作用：轮次 raw ``sed | cut`` page 进入 final ``ReadResult``. Shared 由每个
     # │  参数：self, read_output: str, offset: int, end_line: int, total_lines: int, file_size: int, file_ends_with_newline: Optional[bool]
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1267,7 +1267,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
     )
 
     # ┌── 函数 def _unicode_variant_match()
-    # │  作用：On-disk spelling of a file whose name is unicode-equivalent to ``path``
+    # │  作用：在…上-disk spelling 的文件 whose 名称是 unicode-equivalent ``路径``
     # │  参数：self, path: str
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -1304,7 +1304,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return None
 
     # ┌── 函数 def _suggest_similar_files()
-    # │  作用："File not found" result listing up to 5 similar names from the same directory.
+    # │  作用："文件不 found" 结果 listing up 5 similar 名称从 same directory.
     # │  参数：self, path: str
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1347,7 +1347,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return ReadResult(error=f"File not found: {path}", similar_files=[fp for _, fp in scored[:5]])
 
     # ┌── 函数 def read_file_raw()
-    # │  作用：Whole file as a plain string (no pagination/line numbers/clamping).
+    # │  作用：Whole 文件作为 plain 字符串 (无 pagination/line numbers/clamping).
     # │  参数：self, path: str
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1381,7 +1381,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return ReadResult(content=raw_content, file_size=file_size)
 
     # ┌── 函数 def read_file_bytes()
-    # │  作用：Read binary-safe bytes (as base64) from any shell-backed environment.
+    # │  作用：读取 binary-safe bytes (作为 base64) 从任意 shell-backed environment.
     # │  参数：self, path: str, max_bytes: Optional[int] = None
     # │  返回：ReadResult
     # └──────────────────────────────────────────────────────────────
@@ -1418,7 +1418,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return ReadResult(base64_content=compact, file_size=file_size, is_binary=True)
 
     # ┌── 函数 def delete_file()
-    # │  作用：Delete a single file (directories rejected) via the backend's ``python -c``
+    # │  作用：Delete single 文件 (directories 已拒绝) via backend's ``python -c``
     # │  参数：self, path: str
     # │  返回：WriteResult
     # └──────────────────────────────────────────────────────────────
@@ -1482,7 +1482,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
     _LONE_SURROGATE_RE = re.compile(r"[\ud800-\udc7f\udd00-\udfff]")
 
     # ┌── 函数 def _reject_unencodable()
-    # │  作用：Refuse content with a lone surrogate BEFORE any subprocess: letting it
+    # │  作用：Refuse 内容带 lone surrogate 在…之前任意子进程: letting 它
     # │  参数：self, path: str, content: str
     # │  返回：Optional[WriteResult]
     # └──────────────────────────────────────────────────────────────
@@ -1501,7 +1501,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return None
 
     # ┌── 函数 def _fail_closed_syntax_error()
-    # │  作用：Fail-closed pre-write gate for ``_FAIL_CLOSED_INPROC_EXTS`` (JSON/YAML/TOML):
+    # │  作用：Fail-已关闭 pre-写入 gate 用于 ``_FAIL_CLOSED_INPROC_EXTS`` (JSON/YAML/TOML):
     # │  参数：path: str, ext: str, content: str
     # │  返回：Optional[WriteResult]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1527,7 +1527,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             "NOT created or modified. Fix the content and retry."))
 
     # ┌── 函数 def _write_probe_cmd()
-    # │  作用：One shell command for the on-disk questions ``write_file`` asks. Two
+    # │  作用：One shell 命令用于在…上-disk questions ``write_file`` asks. Two
     # │  参数：self, path: str, sentinel: str, body: Optional[str]
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -1553,7 +1553,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             f"else echo {MISSING_SENTINEL}; fi")
 
     # ┌── 函数 def _probe_write_target()
-    # │  作用：``(has_bom, pre_content, original_line_ending)`` for ``path`` in ONE
+    # │  作用：``(has_bom, pre_content, original_line_ending)`` 用于 ``路径`` 在 ONE
     # │  参数：self, path: str, pre_content: Optional[str], want_pre: bool
     # │  返回：tuple[bool, Optional[str], Optional[str]]
     # └──────────────────────────────────────────────────────────────
@@ -1619,7 +1619,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return has_bom, pre_content, ending
 
     # ┌── 函数 def _probe_write_target_sequential()
-    # │  作用：Pre-compound form of ``_probe_write_target``: one exec per question. A
+    # │  作用：Pre-compound 形态的 ``_probe_write_target``: one exec per question.
     # │  参数：self, path: str, pre_content: Optional[str], want_pre: bool
     # │  返回：tuple[bool, Optional[str], Optional[str]]
     # └──────────────────────────────────────────────────────────────
@@ -1641,7 +1641,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return self._file_has_bom(path, pre_content), pre_content, ending
 
     # ┌── 函数 def _verify_written_hash()
-    # │  作用：Compare the on-disk sha256 to the intended bytes: ``(verified, error)``.
+    # │  作用：Compare 在…上-disk sha256 intended bytes: ``(verified, 错误)``.
     # │  参数：self, path: str, content_bytes: bytes
     # │  返回：tuple[Optional[bool], Optional[WriteResult]]
     # └──────────────────────────────────────────────────────────────
@@ -1669,7 +1669,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return None, None
 
     # ┌── 函数 def write_file()
-    # │  作用：Write content atomically, creating parent directories as needed.
+    # │  作用：写入内容 atomically, 创建 parent directories 作为 needed.
     # │  参数：self, path: str, content: str, pre_content: Optional[str] = None
     # │  返回：WriteResult
     # └──────────────────────────────────────────────────────────────
@@ -1741,7 +1741,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
     # --- PATCH (replace mode) -----------------------------------------------
 
     # ┌── 函数 def _no_match_result()
-    # │  作用：PatchResult for a failed fuzzy match. Already-applied detection first: the
+    # │  作用：PatchResult 用于 failed fuzzy match. 已-applied detection first:
     # │  参数：self, path: str, content: str, old_string: str, new_string: str, match_count: int, error: Optional[str]
     # │  返回：PatchResult
     # └──────────────────────────────────────────────────────────────
@@ -1770,7 +1770,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return PatchResult(error=err_msg)
 
     # ┌── 函数 def _verify_patch_persisted()
-    # │  作用：Re-read ``path`` and confirm the intended bytes landed; error result or None.
+    # │  作用：Re-读取 ``路径`` 且 confirm intended bytes landed; 错误结果或 None.
     # │  参数：self, path: str, new_content: str
     # │  返回：Optional[PatchResult]
     # └──────────────────────────────────────────────────────────────
@@ -1799,7 +1799,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
         return None
 
     # ┌── 函数 def patch_replace()
-    # │  作用：Replace text in a file using fuzzy matching (``old_string`` must be
+    # │  作用：Replace 文本在 文件 using fuzzy matching (``old_string`` 必须是
     # │  参数：self, path: str, old_string: str, new_string: str, replace_all: bool = False
     # │  返回：PatchResult
     # └──────────────────────────────────────────────────────────────
@@ -1849,7 +1849,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
             lsp_diagnostics=write_result.lsp_diagnostics)
 
     # ┌── 函数 def patch_v4a()
-    # │  作用：Apply a V4A format patch (``*** Begin Patch`` / ``*** Update File:`` /
+    # │  作用：Apply V4A format patch (``*** Begin Patch`` / ``*** 更新文件:`` /
     # │  参数：self, patch_content: str
     # │  返回：PatchResult
     # └──────────────────────────────────────────────────────────────
@@ -1867,7 +1867,7 @@ class ShellFileOperations(LintMixin, SearchMixin, FileOperations):
     # --- SEARCH -------------------------------------------------------------
 
     # ┌── 函数 def search()
-    # │  作用：Search for content (regex, ``target="content"``) or files (glob,
+    # │  作用：Search 用于内容 (regex, ``target="内容"``) 或文件 (glob,
     # │  参数：self, pattern: str, path: str = '.', target: str = 'content', file_glob: Optional[str] = None, limit: int = 50, offset: int = 0, output_mode: str = 'content'  …共 10 个
     # │  返回：SearchResult
     # └──────────────────────────────────────────────────────────────

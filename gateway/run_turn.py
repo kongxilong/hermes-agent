@@ -81,7 +81,7 @@ _CONTEXT_OVERFLOW_ERROR_PHRASES = (
 
 
 # ┌── 函数 def is_context_overflow_failure_result()
-# │  作用：One verdict for "this failed turn is a context overflow", shared by transcript persistence
+# │  作用：One verdict 用于 "这个 failed 轮次是 上下文 overflow", shared 由 transcript persistence
 # │  参数：agent_result: dict, history_len: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -103,14 +103,14 @@ def is_context_overflow_failure_result(agent_result: dict, history_len: int) -> 
 
 
 # ┌── 类 class GatewayTurnMixin
-# │  说明：Agent-turn execution for GatewayRunner (see module docstring).
+# │  说明：Agent-轮次 execution 用于 GatewayRunner (see 模块 docstring).
 # │  成员：共 97 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class GatewayTurnMixin:
     """Agent-turn execution for GatewayRunner (see module docstring)."""
 
     # ┌── 函数 def _resolve_session_agent_runtime()
-    # │  作用：Resolve model/runtime for a session.
+    # │  作用：Resolve 模型/运行时用于会话.
     # │  参数：self, source: Optional[SessionSource] = ..., session_key: Optional[str] = ..., user_config: Optional[dict] = ...
     # │  返回：tuple[str, dict]
     # └──────────────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ class GatewayTurnMixin:
         return model, runtime_kwargs
 
     # ┌── 函数 def _resolve_turn_agent_config()
-    # │  作用：Effective model/runtime config for one turn. With `/fast` priority on, fast-mode
+    # │  作用：Effective 模型/运行时配置用于 one 轮次. 带 `/fast` priority 在…上, 快速模式
     # │  参数：self, user_message: str, model: str, runtime_kwargs: dict
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -274,7 +274,7 @@ class GatewayTurnMixin:
         return route
 
     # ┌── 函数 def _sync_session_model_from_agent()
-    # │  作用：Persist the runtime model/provider a gateway turn actually used (provider fallback can
+    # │  作用：持久化运行时模型/服务商 gateway 轮次 actually used (服务商兜底可以
     # │  参数：self, session_id: str, agent: Any
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -317,7 +317,7 @@ class GatewayTurnMixin:
             logger.debug("Failed to sync gateway session model metadata", exc_info=True)
 
     # ┌── 函数 def _event_thread_metadata()
-    # │  作用：Thread metadata for a send that replies to ``event`` on ``source``.
+    # │  作用：线程元数据用于 send 那个 replies ``事件`` 在…上 ``source``.
     # │  参数：self, event, source
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -327,7 +327,7 @@ class GatewayTurnMixin:
         return self._thread_metadata_for_source(source, self._reply_anchor_for_event(event))
 
     # ┌── 函数 def _pop_post_delivery_callback()
-    # │  作用：Pop the adapter's deferred post-delivery callback for ``key`` (legacy dict fallback).
+    # │  作用：Pop 适配器's deferred post-delivery 回调用于 ``键`` (legacy 字典兜底).
     # │  参数：adapter, key, generation
     # │  返回：（未标注类型）
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -362,7 +362,7 @@ class GatewayTurnMixin:
             return False
 
     # ┌── 异步函数（协程） def _hmwa_resolve_session()
-    # │  作用：Resolve ``source`` to its session entry (topic recovery, internal-route guards, Telegram
+    # │  作用：Resolve ``source`` 其会话 entry (topic recovery, internal-路由护栏, Telegram
     # │  参数：self, event, source
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -432,7 +432,7 @@ class GatewayTurnMixin:
         return source, session_entry, session_key
 
     # ┌── 异步函数（协程） def _hmwa_heal_telegram_topic_binding()
-    # │  作用：Follow the (chat_id, thread_id) topic binding — healed to its compression tip — or record
+    # │  作用：Follow (chat_id, thread_id) topic binding — healed 其 compression tip — 或 record
     # │  参数：self, source, session_entry, session_key
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -489,7 +489,7 @@ class GatewayTurnMixin:
         return session_entry
 
     # ┌── 异步函数（协程） def _hmwa_open_session()
-    # │  作用：Consume auto-reset / fresh-reset flags and emit ``session:start`` for new sessions.
+    # │  作用：消费 auto-reset / fresh-reset 标志且 emit ``会话:start`` 用于 new 会话.
     # │  参数：self, session_entry, session_key, source
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -530,7 +530,7 @@ class GatewayTurnMixin:
         return _was_auto_reset, _is_new_session
 
     # ┌── 异步函数（协程） def _hmwa_deliver_auto_reset_notice()
-    # │  作用：Stage the auto-reset sidecar note for the agent and notify the user (policy-gated).
+    # │  作用：阶段 auto-reset sidecar note 用于 Agent 且 notify user (策略-gated).
     # │  参数：self, session_entry, source, turn_sidecar_notes
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -576,7 +576,7 @@ class GatewayTurnMixin:
         session_entry.auto_reset_reason = None
 
     # ┌── 函数 def _hmwa_auto_load_skills()
-    # │  作用：Prepend topic/channel-bound skill payload(s) to ``event.text`` on a new session.
+    # │  作用：Prepend topic/通道-bound skill payload(s) ``事件.文本`` 在…上 new 会话.
     # │  参数：self, event, _auto, _quick_key, session_key
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -610,7 +610,7 @@ class GatewayTurnMixin:
             logger.warning("[Gateway] Failed to auto-load skill(s) %s: %s", _skill_names, e)
 
     # ┌── 异步函数（协程） def _hmwa_acquire_turn_lease()
-    # │  作用：Serialize [load history → run → flush] per resolved SESSION_ID so another routing key on
+    # │  作用：Serialize [加载 history → 运行 → 冲刷] per resolved SESSION_ID 从而 another routing 键在…上
     # │  参数：self, _quick_key, run_generation, session_entry, _session_env_tokens
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -640,7 +640,7 @@ class GatewayTurnMixin:
             self._session_state(_quick_key).turn.lease_tokens[run_generation] = _lease_token
 
     # ┌── 类 class _HygienePlan
-    # │  说明：Hygiene pre-check outcome for one turn.
+    # │  说明：整理/清理 pre-检查 outcome 用于 one 轮次.
     # │  成员：共 0 个方法；全部是下划线开头的内部方法
     # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
@@ -653,7 +653,7 @@ class GatewayTurnMixin:
         warn_token_threshold: int
 
     # ┌── 函数 def _hmwa_hygiene_read_config()
-    # │  作用：Apply model / compression knobs from the gateway config onto ``hs`` (invalid values keep the defaults).
+    # │  作用：Apply 模型 / compression knobs 从 gateway 配置 onto ``hs`` (invalid 值保留默认值).
     # │  参数：hs, data
     # │  返回：（未标注类型）
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -705,7 +705,7 @@ class GatewayTurnMixin:
         )
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_settings()
-    # │  作用：Resolve model/provider/context-length + hygiene knobs (fail-soft: errors keep defaults).
+    # │  作用：Resolve 模型/服务商/上下文-length + 整理/清理 knobs (fail-soft: 错误保留默认值).
     # │  参数：self, source, session_key
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -778,7 +778,7 @@ class GatewayTurnMixin:
         return hs
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_plan()
-    # │  作用：Decide whether hygiene compression fires this turn (token/message thresholds, DB-backed
+    # │  作用：Decide whether 整理/清理 compression fires 这个轮次 (令牌/消息阈值, 数据库-backed
     # │  参数：self, hs, history, session_entry, session_key
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -861,7 +861,7 @@ class GatewayTurnMixin:
         return self._HygienePlan(_needs_compress, _approx_tokens, _msg_count, _warn_token_threshold)
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_wait_for_summary()
-    # │  作用：Progress-aware inline wait for the detached hygiene compressor. Returns the compressed
+    # │  作用：Progress-aware inline wait 用于 detached 整理/清理 compressor. 返回 compressed
     # │  参数：self, attempt, hs, session_entry
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -931,7 +931,7 @@ class GatewayTurnMixin:
                 raise
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_cancel_or_adopt()
-    # │  作用：Cancel the worker at the commit fence; on success release its lease and defer agent
+    # │  作用：Cancel 工作线程在 commit fence; 在…上 success release 其 lease 且 defer Agent
     # │  参数：self, attempt, context
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -961,7 +961,7 @@ class GatewayTurnMixin:
         return _compressed
 
     # ┌── 函数 def _hmwa_hygiene_defer_cleanup()
-    # │  作用：Hand the agent's cleanup to the still-running worker future and mark it deferred.
+    # │  作用：Hand Agent's cleanup 仍-运行工作线程 future 且 mark 它 deferred.
     # │  参数：self, attempt, context
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -983,7 +983,7 @@ class GatewayTurnMixin:
         _stamp_hygiene_compression_provenance(agent, desc, getattr(ActivityProvenance, provenance_name), debug_label)
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_notify()
-    # │  作用：Best-effort user notice on the hygiene thread; failure is logged, never raised.
+    # │  作用：尽最大努力 user 提示在…上整理/清理线程; failure 是 logged, never 抛出.
     # │  参数：self, source, meta, message, what
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1000,7 +1000,7 @@ class GatewayTurnMixin:
             logger.warning("Failed to deliver %s to user: %s", what, _werr)
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_record_failure_cooldown()
-    # │  作用：Escalate the failure streak (off-loop) and persist the cooldown, when enabled.
+    # │  作用：Escalate failure streak (off-循环) 且持久化冷却, 当 enabled.
     # │  参数：self, hs, session_key, session_id, reason
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1017,7 +1017,7 @@ class GatewayTurnMixin:
         _record_hygiene_cooldown(self, session_id, _hyg_cooldown, reason)
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_on_turn_hold()
-    # │  作用：``except HygieneTurnHoldExceeded`` body: keep or cancel the worker's commit admission,
+    # │  作用：``except HygieneTurnHoldExceeded`` body: 保留或 cancel 工作线程's commit admission,
     # │  参数：self, attempt, hs, session_entry, session_key, source
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1111,7 +1111,7 @@ class GatewayTurnMixin:
         raise
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_on_timeout()
-    # │  作用：``except asyncio.TimeoutError`` body: cancel at the commit fence, record the failure
+    # │  作用：``except asyncio.TimeoutError`` body: cancel 在 commit fence, record failure
     # │  参数：self, attempt, hs, session_entry, session_key, source
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1183,7 +1183,7 @@ class GatewayTurnMixin:
         raise
 
     # ┌── 函数 def _hmwa_hygiene_on_unwind()
-    # │  作用：``except BaseException`` body (caller re-raises): revoke commit admission BEFORE the host
+    # │  作用：``except BaseException`` body (caller re-抛出): revoke commit admission 在…之前宿主
     # │  参数：self, attempt, hs, session_entry, session_key
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1207,7 +1207,7 @@ class GatewayTurnMixin:
                 logger.debug("hygiene unwind cooldown record failed: %s", _cd_err)
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_adopt_transcript()
-    # │  作用：Adopt a finished compression (rotation / in-place / refused); publishes the transcript to
+    # │  作用：Adopt finished compression (rotation / 在-place / refused); publishes transcript
     # │  参数：self, attempt, _compressed, history, plan, session_entry, source, _quick_key  …共 9 个
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1301,7 +1301,7 @@ class GatewayTurnMixin:
         return _hyg_rotated, _hyg_in_place, _new_count, _new_tokens
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_apply_result()
-    # │  作用：Adopt a finished hygiene compression, rebind the session + turn lease, record
+    # │  作用：Adopt finished 整理/清理 compression, rebind 会话 + 轮次 lease, record
     # │  参数：self, attempt, hs, _compressed, history, plan, session_entry, session_key  …共 11 个
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1374,7 +1374,7 @@ class GatewayTurnMixin:
             )
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_codex_compaction()
-    # │  作用：codex app-server runtime: the real context is the server-side thread, not the transcript
+    # │  作用：Codex app-服务端运行时: real 上下文是 服务端-side 线程, 不 transcript
     # │  参数：self, hs, plan, history, session_entry, session_key, _hyg_runtime
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1403,7 +1403,7 @@ class GatewayTurnMixin:
         )
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_build_agent()
-    # │  作用：Build the detached hygiene ``AIAgent`` with the live session's system prompt. Returns
+    # │  作用：构建 detached 整理/清理 ``AIAgent`` 带当前活跃的会话's system 提示词. 返回
     # │  参数：self, _hyg_model, _hyg_runtime, session_entry
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1445,7 +1445,7 @@ class GatewayTurnMixin:
         return _hyg_agent, _hyg_session_db
 
     # ┌── 异步函数（协程） def _hmwa_hygiene_detached_attempt()
-    # │  作用：Run one detached hygiene compression attempt end to end; publishes the transcript to
+    # │  作用：运行 one detached 整理/清理 compression 尝试 end end; publishes transcript
     # │  参数：self, attempt, hs, plan, history, _hyg_msgs, _hyg_model, _hyg_runtime  …共 13 个
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1517,7 +1517,7 @@ class GatewayTurnMixin:
                 await self._cleanup_agent_resources_off_loop(_hyg_agent, context="session hygiene")
 
     # ┌── 异步函数（协程） def _hmwa_run_session_hygiene()
-    # │  作用：Auto-compress pathologically large transcripts before the agent starts so oversized
+    # │  作用：Auto-compress pathologically large transcripts 在…之前 Agent starts 从而 oversized
     # │  参数：self, event, source, session_entry, session_key, history, _quick_key, run_generation
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1572,7 +1572,7 @@ class GatewayTurnMixin:
         return attempt.history
 
     # ┌── 异步函数（协程） def _hmwa_first_contact_notes()
-    # │  作用：First-ever-message onboarding note + one-time 'no home channel' prompt (both only when
+    # │  作用：First-ever-消息 onboarding note + 一次性的 '无主目录通道' 提示词 (both 仅当
     # │  参数：self, source, history, turn_sidecar_notes
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1644,7 +1644,7 @@ class GatewayTurnMixin:
             )
 
     # ┌── 函数 def _hmwa_apply_message_timestamp()
-    # │  作用：Capture the platform event time as message metadata and keep the persisted transcript
+    # │  作用：Capture 平台事件 time 作为消息 metadata 且保留已持久化的 transcript
     # │  参数：self, event, message_text
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1680,7 +1680,7 @@ class GatewayTurnMixin:
         return message_text, persist_user_message, persist_user_timestamp
 
     # ┌── 异步函数（协程） def _hmwa_stop_typing_for_turn()
-    # │  作用：Stop the typing indicator (never raises). Slack AI status is scoped to a thread/
+    # │  作用：Stop typing indicator (never 抛出). Slack AI status 是 scoped 线程/
     # │  参数：self, event, source
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1699,7 +1699,7 @@ class GatewayTurnMixin:
                 await _typing_adapter.stop_typing(source.chat_id)
 
     # ┌── 异步函数（协程） def _hmwa_shape_agent_response()
-    # │  作用：Turn the raw agent result into the outbound text: sentinel/silence handling, response
+    # │  作用：轮次 raw Agent 结果进入 outbound 文本: sentinel/silence handling, 响应
     # │  参数：self, agent_result, source, history, session_entry, session_key, _quick_key, run_generation  …共 11 个
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1785,7 +1785,7 @@ class GatewayTurnMixin:
     }
 
     # ┌── 函数 def _hmwa_prepend_reasoning()
-    # │  作用：Prepend the last reasoning block when show_reasoning is on for this platform. Mattermost
+    # │  作用：Prepend last 推理块当 show_reasoning 是在…上用于这个平台. Mattermost
     # │  参数：self, agent_result, response, source, _intentional_silence
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1836,7 +1836,7 @@ class GatewayTurnMixin:
         return f"💭 **Reasoning:**\n```\n{display_reasoning}\n```\n\n{response}"
 
     # ┌── 函数 def _hmwa_runtime_footer_line()
-    # │  作用：Runtime-metadata footer for the FINAL message of the turn; off by default
+    # │  作用：运行时-metadata footer 用于 FINAL 消息的 轮次; off 由默认值
     # │  参数：self, agent_result, source, _turn_seconds
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1861,7 +1861,7 @@ class GatewayTurnMixin:
             return ""
 
     # ┌── 异步函数（协程） def _hmwa_post_turn_hooks()
-    # │  作用：agent:end hook, process-watcher scheduling, and watch-notification drain.
+    # │  作用：Agent:end hook, 进程-watcher scheduling, 且 watch-notification drain.
     # │  参数：self, hook_ctx, agent_result, response
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1908,7 +1908,7 @@ class GatewayTurnMixin:
     )
 
     # ┌── 函数 def _hmwa_add_failed_turn_notice()
-    # │  作用：Make failed-turn delivery explicit without replacing the provider-specific guidance.
+    # │  作用：Make failed-轮次 delivery explicit 不 replacing 服务商-specific guidance.
     # │  参数：self, response, notice
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1919,7 +1919,7 @@ class GatewayTurnMixin:
         return f"{response}\n\n{notice}" if response else notice
 
     # ┌── 函数 def _hmwa_failed_turn_notice()
-    # │  作用：Choose retry guidance without assuming completed tool effects can be repeated safely.
+    # │  作用：Choose 重试 guidance 不 assuming completed 工具 effects 可以是 repeated safely.
     # │  参数：self, agent_result
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1942,7 +1942,7 @@ class GatewayTurnMixin:
         return self._FAILED_TURN_NOTICE
 
     # ┌── 异步函数（协程） def _hmwa_close_failed_turn()
-    # │  作用：Append the gateway-owned assistant boundary iff the durable tail is an open user row.
+    # │  作用：追加 gateway-持有的 assistant boundary iff durable tail 是打开 user row.
     # │  参数：self, session_id, notice
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1963,7 +1963,7 @@ class GatewayTurnMixin:
         })
 
     # ┌── 函数 def _hmwa_classify_turn_failure()
-    # │  作用：Classify a finished turn for transcript persistence. Returns
+    # │  作用：Classify finished 轮次用于 transcript persistence. 返回
     # │  参数：self, agent_result, history, session_entry
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -2005,7 +2005,7 @@ class GatewayTurnMixin:
         return agent_failed_early, hidden_reasoning_incomplete, is_context_overflow_failure
 
     # ┌── 异步函数（协程） def _hmwa_compression_exhaustion_reset()
-    # │  作用：Auto-reset a permanently oversized session so the next message starts fresh instead of
+    # │  作用：Auto-reset permanently oversized 会话从而 next 消息 starts fresh instead 的
     # │  参数：self, agent_result, response, session_entry, session_key, source
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2058,7 +2058,7 @@ class GatewayTurnMixin:
         return response, session_entry
 
     # ┌── 函数 def _hmwa_user_transcript_entry()
-    # │  作用：Transcript row for the inbound user turn (clean text + event time when captured).
+    # │  作用：Transcript row 用于 inbound user 轮次 (clean 文本 + 事件 time 当 captured).
     # │  参数：event, prepared, ts
     # │  返回：（未标注类型）
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -2088,7 +2088,7 @@ class GatewayTurnMixin:
         return _user_entry
 
     # ┌── 异步函数（协程） def _hmwa_persist_turn_transcript()
-    # │  作用：Persist this turn to the transcript (session_meta on first turn, closed failed turn on
+    # │  作用：持久化这个轮次 transcript (session_meta 在…上 first 轮次, 已关闭 failed 轮次在…上
     # │  参数：self, event, source, session_entry, session_key, agent_result, agent_messages, prepared  …共 12 个
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2193,7 +2193,7 @@ class GatewayTurnMixin:
         await self._refresh_agent_cache_message_count(session_key, sid)
 
     # ┌── 异步函数（协程） def _hmwa_deliver_turn_response()
-    # │  作用：Final delivery decisions: intentional silence, voice reply, streamed-turn media/footer.
+    # │  作用：Final delivery decisions: intentional silence, voice reply, streamed-轮次 media/footer.
     # │  参数：self, event, source, session_entry, session_key, run_generation, agent_result, agent_messages  …共 11 个
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2251,7 +2251,7 @@ class GatewayTurnMixin:
     }
 
     # ┌── 异步函数（协程） def _hmwa_agent_error_reply()
-    # │  作用：``except Exception`` body of the agent turn: stop typing, log, persist the inbound user
+    # │  作用：``except 异常`` body 的 Agent 轮次: stop typing, 日志, 持久化 inbound user
     # │  参数：self, e, event, source, session_entry, session_key, prepared
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2316,7 +2316,7 @@ class GatewayTurnMixin:
         )
 
     # ┌── 函数 def _hmwa_discard_stale_result()
-    # │  作用：A newer run generation superseded this turn: drop its deferred post-delivery callback.
+    # │  作用：newer 运行 generation superseded 这个轮次: 丢弃其 deferred post-delivery 回调.
     # │  参数：self, source, _quick_key, run_generation
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -2329,7 +2329,7 @@ class GatewayTurnMixin:
         self._pop_post_delivery_callback(self._adapter_for_source(source), _quick_key, run_generation)
 
     # ┌── 类 class _PreparedTurn
-    # │  说明：Inputs to the agent run assembled by ``_hmwa_prepare_turn``.
+    # │  说明：输入 Agent 运行 assembled 由 ``_hmwa_prepare_turn``.
     # │  成员：共 0 个方法；全部是下划线开头的内部方法
     # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
@@ -2346,7 +2346,7 @@ class GatewayTurnMixin:
         persistence_owner: Optional[str] = None
 
     # ┌── 异步函数（协程） def _hmwa_prepare_turn()
-    # │  作用：Everything between session resolution and the agent run: session open, task-local env,
+    # │  作用：Everything between 会话 resolution 且 Agent 运行: 会话打开, task-local env,
     # │  参数：self, event, source, session_entry, session_key, _quick_key, run_generation
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2450,7 +2450,7 @@ class GatewayTurnMixin:
         ), _session_env_tokens
 
     # ┌── 异步函数（协程） def _handle_message_with_agent()
-    # │  作用：Inner handler that runs under the _running_agents sentinel guard.
+    # │  作用：Inner handler 那个运行 under _running_agents sentinel 护栏.
     # │  参数：self, event, source, _quick_key: str, run_generation: int
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2573,7 +2573,7 @@ class GatewayTurnMixin:
             self._clear_session_env(_session_env_tokens)
 
     # ┌── 函数 def _profile_scope_for_source()
-    # │  作用：``_profile_runtime_scope`` for ``source``'s profile when multiplexing, else a no-op context.
+    # │  作用：``_profile_runtime_scope`` 用于 ``source``'s 配置档当 multiplexing, 否则无-op 上下文.
     # │  参数：self, source: SessionSource
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -2590,7 +2590,7 @@ class GatewayTurnMixin:
         return nullcontext()
 
     # ┌── 函数 def _media_delivery_scope_for_source()
-    # │  作用：Home + terminal-policy scope for validating a turn's MEDIA / local-file paths on the
+    # │  作用：主目录 + 终端-策略 scope 用于校验轮次's MEDIA / local-文件路径在…上
     # │  参数：self, source: SessionSource
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -2611,7 +2611,7 @@ class GatewayTurnMixin:
         return _profile_runtime_scope(self._resolve_profile_home_for_source(source), {})
 
     # ┌── 函数 def _reset_notice_session_info()
-    # │  作用：Session-info block for the auto-reset notice, resolved inside the profile serving ``source``.
+    # │  作用：会话-信息 block 用于 auto-reset 提示, resolved inside 配置档 serving ``source``.
     # │  参数：self, source: SessionSource
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -2625,7 +2625,7 @@ class GatewayTurnMixin:
             return self._format_session_info()
 
     # ┌── 函数 def _format_session_info()
-    # │  作用：Model / provider / context-length / endpoint block so users can spot bad context detection.
+    # │  作用：模型 / 服务商 / 上下文-length / endpoint block 从而 users 可以 spot bad 上下文 detection.
     # │  参数：self
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -2654,7 +2654,7 @@ class GatewayTurnMixin:
         return "\n".join(lines)
 
     # ┌── 异步函数（协程） def _run_background_task()
-    # │  作用：Profile-scoping wrapper around the background agent task (mirrors ``_run_agent``).
+    # │  作用：配置档-scoping 包装器 around background Agent task (镜像 ``_run_agent``).
     # │  参数：self, prompt: str, source: 'SessionSource', task_id: str, event_message_id: Optional[str] = None, media_urls: Optional[List[str]] = None, media_types: Optional[List[str]] = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2673,7 +2673,7 @@ class GatewayTurnMixin:
             )
 
     # ┌── 函数 def _resolve_enabled_toolsets_for_source()
-    # │  作用：Enabled toolsets for an agent run, honoring an adapter ``toolsets_for_source()`` override
+    # │  作用：Enabled 工具集用于 Agent 运行, honoring 适配器 ``toolsets_for_source()`` 覆盖值
     # │  参数：self, user_config: dict, source: 'SessionSource', platform_key: str
     # │  返回：list
     # └──────────────────────────────────────────────────────────────
@@ -2698,7 +2698,7 @@ class GatewayTurnMixin:
         return sorted(_get_platform_tools(user_config, platform_key))
 
     # ┌── 函数 def _resolve_turn_toolsets()
-    # │  作用：``(enabled_toolsets, disabled_toolsets)`` for an agent run on ``source``.
+    # │  作用：``(enabled_toolsets, disabled_toolsets)`` 用于 Agent 运行在…上 ``source``.
     # │  参数：self, user_config: dict, source: 'SessionSource', platform_key: str
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -2711,7 +2711,7 @@ class GatewayTurnMixin:
         return enabled, disabled
 
     # ┌── 异步函数（协程） def _run_background_task_inner()
-    # │  作用：Execute a background agent task and deliver the result to the chat.
+    # │  作用：执行 background Agent task 且 deliver 结果 chat.
     # │  参数：self, prompt: str, source: 'SessionSource', task_id: str, event_message_id: Optional[str] = None, media_urls: Optional[List[str]] = None, media_types: Optional[List[str]] = None
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2863,7 +2863,7 @@ class GatewayTurnMixin:
                 )
 
     # ┌── 函数 def _mcp_reload_refresh_cached_agents()
-    # │  作用：Refresh cached agents so existing sessions see new MCP tools on their next turn without
+    # │  作用：Refresh cached Agent 从而 existing 会话 see new MCP 工具在…上其 next 轮次不
     # │  参数：self, multiplex: bool, profile
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2891,7 +2891,7 @@ class GatewayTurnMixin:
             logger.debug("Failed to update cached agent tools after MCP reload: %s", _exc)
 
     # ┌── 异步函数（协程） def _execute_mcp_reload()
-    # │  作用：Disconnect, reconnect, and notify MCP tool changes (shared by button / text / no-confirm paths).
+    # │  作用：Disconnect, reconnect, 且 notify MCP 工具 changes (shared 由 button / 文本 / 无-confirm 路径).
     # │  参数：self, event: MessageEvent
     # │  返回：str
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2986,7 +2986,7 @@ class GatewayTurnMixin:
             return t("gateway.reload_mcp.failed", error=e)
 
     # ┌── 函数 def _get_proxy_url()
-    # │  作用：Proxy URL if proxy mode is configured (GATEWAY_PROXY_URL env wins over ``gateway.proxy_url``).
+    # │  作用：Proxy URL 若 proxy 模式是 configured (GATEWAY_PROXY_URL env wins over ``gateway.proxy_url``).
     # │  参数：self
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -3008,7 +3008,7 @@ class GatewayTurnMixin:
         return url.rstrip("/") if url else None
 
     # ┌── 函数 def _build_stream_consumer_config()
-    # │  作用：Build the shared ``StreamConsumerConfig`` and optional Telegram pause-typing closure.
+    # │  作用：构建 shared ``StreamConsumerConfig`` 且 optional Telegram pause-typing closure.
     # │  参数：self, source: 'SessionSource', scfg: Any, adapter: Any, on_missing_cursor: str
     # │  返回：'tuple[Any, Optional[Callable[[], None]]]'
     # └──────────────────────────────────────────────────────────────
@@ -3053,7 +3053,7 @@ class GatewayTurnMixin:
         return _consumer_cfg, _pause_typing_before_finalize
 
     # ┌── 函数 def _run_still_current_fn()
-    # │  作用：Predicate: does this run's generation still own ``session_key``? (always True when untracked).
+    # │  作用：Predicate: 这个运行's generation 仍持有 ``session_key``? (always True 当 untracked).
     # │  参数：self, session_key: Optional[str], run_generation: Optional[int]
     # │  返回：Callable[[], bool]
     # └──────────────────────────────────────────────────────────────
@@ -3080,7 +3080,7 @@ class GatewayTurnMixin:
         return {"final_response": text, "messages": [], "api_calls": 0, "tools": []}
 
     # ┌── 函数 def _proxy_stream_consumer()
-    # │  作用：Platform stream consumer for the proxy path when streaming is enabled, else ``None``.
+    # │  作用：平台 stream consumer 用于 proxy 路径当 streaming 是 enabled, 否则 ``None``.
     # │  参数：self, source: 'SessionSource', event_message_id, _thread_metadata, _run_still_current
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3124,7 +3124,7 @@ class GatewayTurnMixin:
             return None
 
     # ┌── 异步函数（协程） def _run_agent_via_proxy()
-    # │  作用：Forward the message to a remote Hermes API server instead of running a local AIAgent.
+    # │  作用：Forward 消息 remote Hermes API 服务端 instead 的运行 local AIAgent.
     # │  参数：self, message: str, context_prompt: str, history: List[Dict[str, Any]], source: 'SessionSource', session_id: str, session_key: str = None, run_generation: Optional[int] = None  …共 9 个
     # │  返回：Dict[str, Any]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3310,7 +3310,7 @@ class GatewayTurnMixin:
         }
 
     # ┌── 异步函数（协程） def _run_agent()
-    # │  作用：Profile-scoping wrapper around ``_run_agent_inner`` (same keyword parameters; pass-through
+    # │  作用：配置档-scoping 包装器 around ``_run_agent_inner`` (same keyword 参数; pass-through
     # │  参数：self, message: str, context_prompt: str, history: List[Dict[str, Any]], source: SessionSource, session_id: str, **turn_kwargs
     # │  返回：Dict[str, Any]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3327,7 +3327,7 @@ class GatewayTurnMixin:
             return await self._run_agent_inner(message, context_prompt, history, source, session_id, **turn_kwargs)
 
     # ┌── 函数 def _run_agent_display_settings()
-    # │  作用：Resolve per-platform display, progress, status and streaming-surface settings for a turn.
+    # │  作用：Resolve per-平台展示, progress, status 且 streaming-上报 settings 用于轮次.
     # │  参数：self, source: SessionSource
     # │  返回：'GatewayRunner._RunAgentDisplay'
     # └──────────────────────────────────────────────────────────────
@@ -3457,7 +3457,7 @@ class GatewayTurnMixin:
     )
 
     # ┌── 函数 def _run_agent_build_turn_context()
-    # │  作用：Build the ``TurnContext`` and its ``TurnRunner``; ``turn_params`` (history, context_prompt,
+    # │  作用：构建 ``TurnContext`` 且其 ``TurnRunner``; ``turn_params`` (history, context_prompt,
     # │  参数：self, disp: 'GatewayRunner._RunAgentDisplay', AIAgent: Any, message: str, source: SessionSource, session_key: Optional[str], run_generation: Optional[int], **turn_params
     # │  返回：Tuple[TurnContext, TurnRunner, Any]
     # └──────────────────────────────────────────────────────────────
@@ -3512,7 +3512,7 @@ class GatewayTurnMixin:
         return turn_ctx, turn_runner, _cleanup_adapter
 
     # ┌── 函数 def _thread_metadata_for_progress()
-    # │  作用：Thread metadata for a progress-lane send; relay Discord auto-thread lane falls back to the reply anchor.
+    # │  作用：线程元数据用于 progress-lane send; relay Discord auto-线程 lane falls back reply anchor.
     # │  参数：self, source: SessionSource, event_message_id: Optional[str], _progress_thread_id: Any, _relay_prospective_thread_id: Optional[str]
     # │  返回：Optional[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -3539,7 +3539,7 @@ class GatewayTurnMixin:
         return metadata
 
     # ┌── 函数 def _run_agent_progress_threading()
-    # │  作用：Resolve where progress bubbles are threaded (platform-specific).
+    # │  作用：Resolve 何处 progress bubbles 是 threaded (平台-specific).
     # │  参数：self, source: SessionSource, event_message_id: Optional[str], _native_slack_task_cards: bool
     # │  返回：Tuple[Optional[dict], Optional[str], Optional[dict]]
     # └──────────────────────────────────────────────────────────────
@@ -3613,7 +3613,7 @@ class GatewayTurnMixin:
         return _progress_metadata, _progress_reply_to, _status_thread_metadata
 
     # ┌── 异步函数（协程） def _run_agent_write_tool_log()
-    # │  作用：Drain log_queue and append tool-call lines to tool_calls.log (tool_progress=log).
+    # │  作用：Drain log_queue 且追加工具调用 lines tool_calls.日志 (tool_progress=日志).
     # │  参数：self, log_queue: Any
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3664,7 +3664,7 @@ class GatewayTurnMixin:
                 file_handler.close()
 
     # ┌── 函数 def _run_agent_start_streaming_tts()
-    # │  作用：Start the streaming-TTS consumer for a voice-input turn on an auto-TTS chat.
+    # │  作用：Start streaming-TTS consumer 用于 voice-输入轮次在…上 auto-TTS chat.
     # │  参数：self, source: SessionSource, message_type: Optional[str], _status_thread_metadata: Optional[Dict[str, Any]], streaming_tts_consumer_holder: list
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3703,7 +3703,7 @@ class GatewayTurnMixin:
             logger.debug("Could not set up streaming TTS consumer: %s", _stts_err)
 
     # ┌── 异步函数（协程） def _run_agent_stream_consumer_task()
-    # │  作用：Wait (up to 10s) for the stream consumer to be created inside run_sync, then run it.
+    # │  作用：Wait (up 10s) 用于 stream consumer 是已创建 inside run_sync, 然后运行它.
     # │  参数：self, stream_consumer_holder: list
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3719,7 +3719,7 @@ class GatewayTurnMixin:
             await asyncio.sleep(0.05)
 
     # ┌── 异步函数（协程） def _await_stream_task()
-    # │  作用：Give the stream consumer task 5s to flush, then cancel it.
+    # │  作用：Give stream consumer task 5s 冲刷, 然后 cancel 它.
     # │  参数：stream_task
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3739,7 +3739,7 @@ class GatewayTurnMixin:
                 await stream_task
 
     # ┌── 异步函数（协程） def _run_agent_track_agent()
-    # │  作用：Track this agent as running for the session (interrupt support) once it is created — only
+    # │  作用：Track 这个 Agent 作为运行用于会话 (interrupt support) 一旦它 是已创建 — 仅
     # │  参数：self, turn_ctx: TurnContext
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3764,7 +3764,7 @@ class GatewayTurnMixin:
             self._update_runtime_status("draining")
 
     # ┌── 异步函数（协程） def _run_agent_fire_pending_interrupt()
-    # │  作用：Peek the adapter's pending event, transcribe voice, then signal the agent + abort streaming TTS.
+    # │  作用：Peek 适配器's pending 事件, transcribe voice, 然后信号 Agent + abort streaming TTS.
     # │  参数：self, adapter: Any, agent: Any, source: SessionSource, session_key: str, _interrupt_detected: 'asyncio.Event', streaming_tts_consumer_holder: list, log_context: str  …共 9 个
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3809,7 +3809,7 @@ class GatewayTurnMixin:
             _stts.abort("barge-in")
 
     # ┌── 异步函数（协程） def _run_agent_monitor_for_interrupt()
-    # │  作用：Poll the adapter for interrupts (new messages) every 200ms and signal the agent.
+    # │  作用：Poll 适配器用于 interrupts (new 消息) 每个 200ms 且信号 Agent.
     # │  参数：self, turn_ctx: TurnContext, _interrupt_detected: 'asyncio.Event'
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3849,7 +3849,7 @@ class GatewayTurnMixin:
                 logger.debug("monitor_for_interrupt error (will retry): %s", _mon_err)
 
     # ┌── 异步函数（协程） def _run_agent_backup_interrupt_check()
-    # │  作用：Backup interrupt check: if the monitor task died or missed the interrupt, catch it here.
+    # │  作用：Backup interrupt 检查: 若 monitor task died 或 missed interrupt, catch 它这里.
     # │  参数：self, turn_ctx: TurnContext, _interrupt_detected: 'asyncio.Event', interrupt_monitor: 'asyncio.Task'
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3878,7 +3878,7 @@ class GatewayTurnMixin:
             )
 
     # ┌── 函数 def _run_agent_stream_confirmed_final_delivery()
-    # │  作用：True only when the actual final reply reached the user: a finalize call may carry only the
+    # │  作用：True 仅当 actual final reply reached user: finalize call 可以 carry 仅
     # │  参数：consumer, final_text: str, previewed: bool = ...
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3913,7 +3913,7 @@ class GatewayTurnMixin:
         return False
 
     # ┌── 函数 def _run_agent_start_turn_worker()
-    # │  作用：Schedule ``run_sync`` on the executor plus the inactivity watchdog thread.
+    # │  作用：Schedule ``run_sync`` 在…上 executor plus inactivity watchdog 线程.
     # │  参数：self, turn_ctx: TurnContext, run_sync: Callable[[], Any]
     # │  返回：'GatewayRunner._RunAgentWorker'
     # └──────────────────────────────────────────────────────────────
@@ -3988,7 +3988,7 @@ class GatewayTurnMixin:
         return worker
 
     # ┌── 函数 def _reaper_kwargs()
-    # │  作用：Shared kwargs of the watchdog + timeout-reaper threads.
+    # │  作用：Shared kwargs 的 watchdog + 超时-reaper 线程.
     # │  参数：worker: 'GatewayRunner._RunAgentWorker'
     # │  返回：dict
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4003,7 +4003,7 @@ class GatewayTurnMixin:
         }
 
     # ┌── 函数 def _agent_activity_summary()
-    # │  作用：``agent.get_activity_summary()`` or ``{}`` when unavailable / failing.
+    # │  作用：``Agent.get_activity_summary()`` 或 ``{}`` 当 unavailable / failing.
     # │  参数：agent: Any
     # │  返回：dict
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4019,7 +4019,7 @@ class GatewayTurnMixin:
         return {}
 
     # ┌── 异步函数（协程） def _run_agent_inactivity_warning()
-    # │  作用：Staged one-shot warning before the inactivity timeout escalates.
+    # │  作用：Staged one-shot 警告在…之前 inactivity 超时 escalates.
     # │  参数：self, worker, source, _status_thread_metadata
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4044,7 +4044,7 @@ class GatewayTurnMixin:
             logger.debug("Inactivity warning send error: %s", _warn_err)
 
     # ┌── 函数 def _run_agent_timeout_result()
-    # │  作用：Synthetic failed run dict for an inactivity timeout, with the activity-tracker diagnostic;
+    # │  作用：Synthetic failed 运行字典用于 inactivity 超时, 带 activity-tracker diagnostic;
     # │  参数：self, worker, turn_ctx: TurnContext
     # │  返回：dict
     # └──────────────────────────────────────────────────────────────
@@ -4100,7 +4100,7 @@ class GatewayTurnMixin:
         }
 
     # ┌── 异步函数（协程） def _run_agent_await_turn_worker()
-    # │  作用：Poll the executor future (inactivity timeout + backup interrupt checks); return its result,
+    # │  作用：Poll executor future (inactivity 超时 + backup interrupt 检查); 返回其 结果,
     # │  参数：self, worker: 'GatewayRunner._RunAgentWorker', turn_ctx: TurnContext, _interrupt_detected: 'asyncio.Event', interrupt_monitor: 'asyncio.Task'
     # │  返回：Any
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4144,7 +4144,7 @@ class GatewayTurnMixin:
         return self._run_agent_timeout_result(worker, turn_ctx)
 
     # ┌── 函数 def _run_agent_evict_on_fallback()
-    # │  作用：Evict the cached agent when a fallback model activated on a SUCCESSFUL run (so /model shows
+    # │  作用：Evict cached Agent 当兜底模型 activated 在…上 SUCCESSFUL 运行 (从而 /模型 shows
     # │  参数：self, turn_ctx: TurnContext
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4170,7 +4170,7 @@ class GatewayTurnMixin:
             self._evict_cached_agent(session_key)
 
     # ┌── 异步函数（协程） def _run_agent_finalize_streaming_tts()
-    # │  作用：Finalize the streaming-TTS consumer on the outer event-loop thread (covers early returns
+    # │  作用：Finalize streaming-TTS consumer 在…上 outer 事件-循环线程 (covers early 返回
     # │  参数：self, turn_ctx: TurnContext, adapter: Any
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4199,7 +4199,7 @@ class GatewayTurnMixin:
                 _mark_turn(turn_ctx.session_key, turn_ctx.run_generation)
 
     # ┌── 异步函数（协程） def _run_agent_drain_pending()
-    # │  作用：Dequeue the adapter's pending / interrupt / leftover-steer follow-up as ``(pending_event, pending)``.
+    # │  作用：Dequeue 适配器's pending / interrupt / leftover-steer follow-up 作为 ``(pending_event, pending)``.
     # │  参数：self, result: Any, adapter: Any, source: SessionSource, session_key: Optional[str]
     # │  返回：Tuple[Any, Optional[str]]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4274,7 +4274,7 @@ class GatewayTurnMixin:
         return pending_event, pending
 
     # ┌── 异步函数（协程） def _run_agent_deliver_first_response()
-    # │  作用：Deliver the first response before a queued follow-up runs, unless streaming already did.
+    # │  作用：Deliver first 响应在…之前 queued follow-up 运行, unless streaming 已 .
     # │  参数：self, turn_ctx: TurnContext, adapter: Any, response: Any, result: Any, stream_task: Any
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4335,7 +4335,7 @@ class GatewayTurnMixin:
                     await _bg_result
 
     # ┌── 异步函数（协程） def _run_agent_queued_followup()
-    # │  作用：Run the queued / interrupting follow-up as the next turn (recursive ``_run_agent``).
+    # │  作用：运行 queued / interrupting follow-up 作为 next 轮次 (recursive ``_run_agent``).
     # │  参数：self, turn_ctx: TurnContext, adapter: Any, pending: Optional[str], pending_event: Any, response: Any, result: Any, stream_task: Any
     # │  返回：Any
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4487,7 +4487,7 @@ class GatewayTurnMixin:
         return merged
 
     # ┌── 异步函数（协程） def _run_agent_cleanup_turn_tasks()
-    # │  作用：``finally`` half of a turn: cancel background tasks, flush stream, release the session slot.
+    # │  作用：``finally`` half 的轮次: cancel background tasks, 冲刷 stream, release 会话 slot.
     # │  参数：self, turn_ctx: TurnContext, progress_task: Any, log_task: Any, interrupt_monitor: 'asyncio.Task', _notify_task: 'asyncio.Task', tracking_task: 'asyncio.Task', stream_task: Any
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4543,7 +4543,7 @@ class GatewayTurnMixin:
                     logger.debug("background turn task failed during cleanup", exc_info=True)
 
     # ┌── 异步函数（协程） def _run_agent_edit_streamed_message()
-    # │  作用：Edit the stream consumer's message in place with ``content``; on success mark
+    # │  作用：Edit stream consumer's 消息在 place 带 ``内容``; 在…上 success mark
     # │  参数：self, _sc, source, response, content, _sk, ok, fail_result  …共 9 个
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4570,7 +4570,7 @@ class GatewayTurnMixin:
         logger.info(*ok)
 
     # ┌── 异步函数（协程） def _run_agent_mark_streamed_delivery()
-    # │  作用：Set ``response["already_sent"]`` when streaming already delivered the final reply.
+    # │  作用：设置 ``响应["already_sent"]`` 当 streaming 已 delivered final reply.
     # │  参数：self, response: Any, turn_ctx: TurnContext
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4662,7 +4662,7 @@ class GatewayTurnMixin:
             )
 
     # ┌── 函数 def _run_agent_schedule_bubble_cleanup()
-    # │  作用：Schedule deletion of tracked temporary progress bubbles after the final response lands.
+    # │  作用：Schedule deletion 的 tracked temporary progress bubbles 在…之后 final 响应 lands.
     # │  参数：self, response: Any, _cleanup_adapter: Any, turn_ctx: TurnContext
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4707,7 +4707,7 @@ class GatewayTurnMixin:
             logger.debug("Post-delivery cleanup registration failed: %s", _rpe)
 
     # ┌── 函数 def _run_agent_bind_turn_wiring()
-    # │  作用：Resolve progress threading, then publish progress metadata and the sync→async bridges onto
+    # │  作用：Resolve progress threading, 然后 publish progress metadata 且同步→异步 bridges onto
     # │  参数：self, turn_ctx: TurnContext, turn_runner: TurnRunner, source: SessionSource, event_message_id: Optional[str], _native_slack_task_cards: bool
     # │  返回：Optional[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -4734,7 +4734,7 @@ class GatewayTurnMixin:
         return _status_thread_metadata
 
     # ┌── 异步函数（协程） def _run_agent_notify_long_running()
-    # │  作用：Periodic "still working" heartbeat, edited in place where supported. Stops once this run
+    # │  作用：Periodic "仍 working" heartbeat, edited 在 place 何处 supported. Stops 一旦这个运行
     # │  参数：self, disp: 'GatewayRunner._RunAgentDisplay', turn_ctx: TurnContext, _executor_task_holder: list
     # │  返回：None
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4820,7 +4820,7 @@ class GatewayTurnMixin:
                 logger.debug("Long-running notification error: %s", _ne)
 
     # ┌── 异步函数（协程） def _run_agent_inner()
-    # │  作用：Run the agent; returns the full run_conversation result dict.
+    # │  作用：运行 Agent; 返回 full run_conversation 结果字典.
     # │  参数：self, message: str, context_prompt: str, history: List[Dict[str, Any]], source: SessionSource, session_id: str, session_key: str = None, run_generation: Optional[int] = None  …共 18 个
     # │  返回：Dict[str, Any]
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。

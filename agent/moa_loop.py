@@ -80,7 +80,7 @@ _MOA_PHONE_RE = re.compile(
 
 
 # ┌── 函数 def _redact_reference_text()
-# │  作用：Redact secrets (central redactor) then MoA PII patterns.
+# │  作用：Redact secrets (central redactor) 然后 MoA PII patterns.
 # │  参数：text: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ def _redact_reference_text(text: Any) -> Any:
 
 
 # ┌── 函数 def _moa_privacy_mode()
-# │  作用：Normalized privacy-filter mode from a raw ``moa`` config.
+# │  作用：已归一化 privacy-filter 模式从 raw ``moa`` 配置.
 # │  参数：moa_raw: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ def _moa_privacy_mode(moa_raw: Any) -> str:
 
 
 # ┌── 函数 def _redact_reference_outputs()
-# │  作用：Redact advisor text in reference-output tuples; accounting slot untouched.
+# │  作用：Redact advisor 文本在 reference-输出 tuples; accounting slot untouched.
 # │  参数：reference_outputs: list[tuple[str, str, Any]]
 # │  返回：list[tuple[str, str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -126,7 +126,7 @@ def _redact_reference_outputs(reference_outputs: list[tuple[str, str, Any]]) -> 
 
 
 # ┌── 函数 def _redact_message_content()
-# │  作用：Redact a message's content: a string, or the text parts of a content-part list.
+# │  作用：Redact 消息's 内容: 字符串, 或文本 parts 的内容-part 列表.
 # │  参数：content: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ def _redact_message_content(content: Any) -> Any:
 
 
 # ┌── 函数 def _redact_trace_messages()
-# │  作用：Redact message copies for trace persistence (string or content-part lists).
+# │  作用：Redact 消息复制用于 trace persistence (字符串或 内容-part 列表).
 # │  参数：messages: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ def _redact_trace_messages(messages: Any) -> Any:
 
 
 # ┌── 函数 def _redact_trace_accounting()
-# │  作用：Copy a ``_RefAccounting`` with its trace text (messages/output) redacted.
+# │  作用：复制 ``_RefAccounting`` 带其 trace 文本 (消息/输出) redacted.
 # │  参数：acct: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ _preset_cache: dict[tuple, Any] = {}
 
 
 # ┌── 函数 def _resolve_preset_cached()
-# │  作用：``(preset, raw moa config)``; the resolved preset is cached per config mtime
+# │  作用：``(preset, raw moa 配置)``; resolved preset 是 cached per 配置 mtime
 # │  参数：preset_name: str
 # │  返回：tuple[dict[str, Any], Any]
 # └──────────────────────────────────────────────────────────────
@@ -226,7 +226,7 @@ _MAX_REFERENCE_WORKERS = 8
 
 
 # ┌── 类 class _RefAccounting
-# │  说明：Per-reference usage, cost and full trace (third slot of a reference-output tuple).
+# │  说明：Per-reference usage, cost 且 full trace (third slot 的 reference-输出 tuple).
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass(slots=True)
@@ -301,7 +301,7 @@ def _slot_label(slot: dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _slot_reasoning_config()
-# │  作用：Translate optional per-MoA-slot reasoning_effort into runtime config.
+# │  作用：Translate optional per-MoA-slot reasoning_effort 进入运行时配置.
 # │  参数：slot: dict[str, Any]
 # │  返回：dict[str, Any] | None
 # └──────────────────────────────────────────────────────────────
@@ -318,7 +318,7 @@ def _slot_reasoning_config(slot: dict[str, Any]) -> dict[str, Any] | None:
 
 
 # ┌── 函数 def _aggregator_reasoning_config()
-# │  作用：Aggregator reasoning config: slot > per-model > global (shared chokepoint).
+# │  作用：Aggregator reasoning 配置: slot > 按模型的 > global (shared chokepoint).
 # │  参数：aggregator: dict[str, Any]
 # │  返回：dict[str, Any] | None
 # └──────────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ def _aggregator_reasoning_config(aggregator: dict[str, Any]) -> dict[str, Any] |
 
 
 # ┌── 函数 def _slot_runtime()
-# │  作用：Slot → ``call_llm`` kwargs with the provider's real api_mode/base_url/api_key.
+# │  作用：Slot → ``call_llm`` kwargs 带服务商's real api_mode/base_url/api_key.
 # │  参数：slot: dict[str, Any]
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -387,7 +387,7 @@ def _slot_runtime(slot: dict[str, Any]) -> dict[str, Any]:
 
 
 # ┌── 函数 def _merge_slot_extra_body()
-# │  作用：Merge slot defaults with a caller override (caller wins) for ``call_llm``.
+# │  作用：Merge slot 默认值带 caller 覆盖值 (caller wins) 用于 ``call_llm``.
 # │  参数：slot_extra_body: Any, caller_extra_body: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -404,7 +404,7 @@ def _merge_slot_extra_body(slot_extra_body: Any, caller_extra_body: Any) -> Any:
 
 
 # ┌── 函数 def _agent_cache_opts()
-# │  作用：The live agent's ``(_cache_disabled, _cache_ttl)``; ``(None, None)`` without an agent.
+# │  作用：当前活跃的 Agent's ``(_cache_disabled, _cache_ttl)``; ``(None, None)`` 不 Agent.
 # │  参数：agent: Any
 # │  返回：tuple[Any, Any]
 # └──────────────────────────────────────────────────────────────
@@ -415,7 +415,7 @@ def _agent_cache_opts(agent: Any) -> tuple[Any, Any]:
 
 
 # ┌── 函数 def _with_cache_disabled()
-# │  作用：Pin the live agent's cache disable onto a runtime snapshot (None is a no-op).
+# │  作用：Pin 当前活跃的 Agent's 缓存 disable onto 运行时 snapshot (None 是无-op).
 # │  参数：runtime: dict[str, Any], cache_disabled: Any
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -426,7 +426,7 @@ def _with_cache_disabled(runtime: dict[str, Any], cache_disabled: Any) -> dict[s
 
 
 # ┌── 函数 def _maybe_apply_moa_cache_control()
-# │  作用：Apply cache_control to an advisor/aggregator request when its route honors it.
+# │  作用：Apply cache_control advisor/aggregator 请求当 其路由 honors 它.
 # │  参数：messages: list[dict[str, Any]], runtime: dict[str, Any], cache_disabled: bool | None = ..., cache_ttl: str | None = ...
 # │  返回：list[dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -478,7 +478,7 @@ def _maybe_apply_moa_cache_control(
 
 
 # ┌── 函数 def _price_reference_response()
-# │  作用：Normalize a reference's usage with the slot's OWN provider/api_mode and price it
+# │  作用：归一化 reference's usage 带 slot's 持有服务商/api_mode 且 price 它
 # │  参数：response: Any, slot: dict[str, Any], runtime: dict[str, Any]
 # │  返回：tuple[Any, Any, str | None, str | None]
 # └──────────────────────────────────────────────────────────────
@@ -507,7 +507,7 @@ def _price_reference_response(
 
 
 # ┌── 函数 def _run_reference()
-# │  作用：Call one reference model; return ``(label, text, accounting)``. Never raises:
+# │  作用：Call one reference 模型; 返回 ``(label, 文本, accounting)``. Never 抛出:
 # │  参数：slot: dict[str, Any], ref_messages: list[dict[str, Any]], temperature: float | None = ..., max_tokens: int | None = ..., reference_timeout: float | None = ..., context_length_cache: Any = ..., cache_disabled: bool | None = ..., cache_ttl: str | None = ...
 # │  返回：tuple[str, str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -566,7 +566,7 @@ _REFERENCE_TRIM_SAFETY_FRACTION = 0.10
 
 
 # ┌── 函数 def _reference_context_length()
-# │  作用：Context window for a slot, memoized in ``cache`` per (provider, model) when given.
+# │  作用：上下文窗口用于 slot, 已记忆化的在 ``缓存`` per (服务商, 模型) 当 given.
 # │  参数：slot: dict[str, Any], runtime: dict[str, Any], cache: Any
 # │  返回：int | None
 # └──────────────────────────────────────────────────────────────
@@ -599,7 +599,7 @@ def _reference_context_length(slot: dict[str, Any], runtime: dict[str, Any], cac
 
 
 # ┌── 函数 def _trim_messages_for_reference()
-# │  作用：Trim an advisory request to fit a reference model's context window.
+# │  作用：Trim advisory 请求 fit reference 模型's 上下文窗口.
 # │  参数：messages: list[dict[str, Any]], slot: dict[str, str], runtime: dict[str, Any], reserve_output_tokens: int | None = ..., context_length_cache: Any = ...
 # │  返回：list[dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -669,7 +669,7 @@ _INTERRUPTED_REFERENCE_NOTE = "[skipped: interrupted by user]"
 
 
 # ┌── 函数 def _placeholder_output()
-# │  作用：A reference-output tuple for a slot that was not (fully) run: zero accounting.
+# │  作用：reference-输出 tuple 用于 slot 那个是 不 (fully) 运行: zero accounting.
 # │  参数：slot: dict[str, Any], note: str
 # │  返回：tuple[str, str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -680,7 +680,7 @@ def _placeholder_output(slot: dict[str, Any], note: str) -> tuple[str, str, Any]
 
 
 # ┌── 函数 def _settle_interrupted()
-# │  作用：Fill every unfinished slot after a user interrupt: cancel never-dispatched
+# │  作用：Fill 每个 unfinished slot 在…之后 user interrupt: cancel never-dispatched
 # │  参数：futures: dict[Any, int], results: list, reference_models: list[dict[str, Any]], late_accounting_sink: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -710,7 +710,7 @@ def _settle_interrupted(
 
 
 # ┌── 函数 def _record_late()
-# │  作用：Done-callback for an abandoned reference future: forward its real accounting.
+# │  作用：完成回调用于 abandoned reference future: forward 其 real accounting.
 # │  参数：sink: Any, label: str, future: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -724,7 +724,7 @@ def _record_late(sink: Any, label: str, future: Any) -> None:
 
 
 # ┌── 函数 def _run_references_parallel()
-# │  作用：Fan out all reference models in parallel; ``(label, text, _RefAccounting)`` per
+# │  作用：Fan out 全部 reference 模型在 parallel; ``(label, 文本, _RefAccounting)`` per
 # │  参数：reference_models: list[dict[str, Any]], ref_messages: list[dict[str, Any]], temperature: float | None = ..., max_tokens: int | None = ..., progress_callback: Any = ..., reference_timeout: float | None = ..., agent: Any = ..., late_accounting_sink: Any = ...
 # │  返回：list[tuple[str, str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -794,7 +794,7 @@ def _run_references_parallel(
 
 
 # ┌── 函数 def _truncate_tool_result()
-# │  作用：Head+tail preview of a tool result with an ``[... N chars omitted ...]`` marker.
+# │  作用：Head+tail preview 的工具结果带 ``[... N chars omitted ...]`` marker.
 # │  参数：text: str, budget: int = _REFERENCE_TOOL_RESULT_BUDGET
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -810,7 +810,7 @@ def _truncate_tool_result(text: str, budget: int = _REFERENCE_TOOL_RESULT_BUDGET
 
 
 # ┌── 函数 def _field()
-# │  作用：Read ``name`` from a dict or an attribute object (tool calls arrive as either).
+# │  作用：读取 ``名称`` 从字典或 属性对象 (工具调用 arrive 作为 either).
 # │  参数：obj: Any, name: str
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -824,7 +824,7 @@ def _field(obj: Any, name: str) -> Any:
 
 
 # ┌── 函数 def _render_tool_calls()
-# │  作用：Render an assistant turn's tool_calls as ``[called tool: name(args)]`` lines.
+# │  作用：Render assistant 轮次's tool_calls 作为 ``[called 工具: 名称(args)]`` lines.
 # │  参数：tool_calls: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -860,7 +860,7 @@ _ADVISORY_INSTRUCTION = (
 
 
 # ┌── 函数 def _reference_messages()
-# │  作用：Build the advisory (reference-model) view of the conversation.
+# │  作用：构建 advisory (reference-模型) view 的 conversation.
 # │  参数：messages: list[dict[str, Any]]
 # │  返回：list[dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -925,7 +925,7 @@ def _reference_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 # ┌── 函数 def _extract_text()
-# │  作用：Assistant text of a completed response: transport-normalized, else ``choices[0]``.
+# │  作用：Assistant 文本的 completed 响应: transport-已归一化, 否则 ``choices[0]``.
 # │  参数：response: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -950,7 +950,7 @@ def _extract_text(response: Any) -> str:
 
 
 # ┌── 函数 def _preset_temperature()
-# │  作用：Read an optional preset temperature; None (absent/empty/null) = provider default.
+# │  作用：读取 optional preset temperature; None (absent/empty/空) = 服务商默认值.
 # │  参数：preset: dict[str, Any], key: str
 # │  返回：float | None
 # └──────────────────────────────────────────────────────────────
@@ -981,7 +981,7 @@ def _hash_messages(msgs: list[dict[str, Any]]) -> str:
 
 
 # ┌── 函数 def _is_failed_reference()
-# │  作用：Whether a reference output is a ``[failed: …]`` / ``[skipped: …]`` sentinel.
+# │  作用：是否 reference 输出是 ``[failed: …]`` / ``[skipped: …]`` sentinel.。
 # │  参数：text: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -992,7 +992,7 @@ def _is_failed_reference(text: str) -> bool:
 
 
 # ┌── 函数 def _join_reference_outputs()
-# │  作用：Render numbered reference blocks for the aggregator, appending any degraded notice.
+# │  作用：Render numbered reference blocks 用于 aggregator, 追加任意 degraded 提示.
 # │  参数：outputs: list[tuple[str, str, Any]], degraded: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1006,7 +1006,7 @@ def _join_reference_outputs(outputs: list[tuple[str, str, Any]], degraded: str =
 
 
 # ┌── 函数 def _sum_reference_accounting()
-# │  作用：Sum fan-out usage AND cost in dollars (each advisor priced at its OWN rate).
+# │  作用：Sum fan-out usage 且 cost 在 dollars (每个 advisor priced 在其 持有 rate).
 # │  参数：outputs: list[tuple[str, str, Any]]
 # │  返回：tuple[Any, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1048,7 +1048,7 @@ def _slot_labels(slots: list[dict[str, Any]]) -> str:
 
 
 # ┌── 函数 def _guidance_inputs()
-# │  作用：``(advisor outputs for the aggregator, degraded notice, all_failed)``.
+# │  作用：``(advisor 输出用于 aggregator, degraded 提示, all_failed)``.
 # │  参数：reference_outputs: list[tuple[str, str, Any]], privacy_full: bool, policy: str
 # │  返回：tuple[list[tuple[str, str, Any]], str, bool]
 # └──────────────────────────────────────────────────────────────
@@ -1068,7 +1068,7 @@ def _guidance_inputs(
 
 
 # ┌── 函数 def aggregate_moa_context()
-# │  作用：Run configured reference models and synthesize their advice (one-shot /moa).
+# │  作用：运行 configured reference 模型且 synthesize 其 advice (one-shot /moa).
 # │  参数：user_prompt: str, api_messages: list[dict[str, Any]], reference_models: list[dict[str, Any]], aggregator: dict[str, Any], temperature: float | None = ..., aggregator_temperature: float | None = ..., reference_max_tokens: int | None = ..., reference_timeout: float | None = ...  …共 10 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1155,7 +1155,7 @@ def aggregate_moa_context(
 
 
 # ┌── 函数 def _completed_response_as_stream_chunk()
-# │  作用：Adapt a completed response into one delta stream chunk (facade boundary only).
+# │  作用：Adapt completed 响应进入 one delta stream chunk (门面 boundary 仅).
 # │  参数：response: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1191,7 +1191,7 @@ def _completed_response_as_stream_chunk(response: Any) -> Any:
 
 
 # ┌── 函数 def _attach_reference_guidance()
-# │  作用：Attach the per-turn reference block at the END of the aggregator prompt.
+# │  作用：Attach per-轮次 reference block 在 END 的 aggregator 提示词.
 # │  参数：agg_messages: list[dict[str, Any]], guidance: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1214,7 +1214,7 @@ def _attach_reference_guidance(agg_messages: list[dict[str, Any]], guidance: str
 
 
 # ┌── 函数 def peel_reference_guidance()
-# │  作用：Exact inverse of ``_attach_reference_guidance`` (the three attach shapes), so a
+# │  作用：Exact inverse 的 ``_attach_reference_guidance`` ( three attach 形态), 从而
 # │  参数：messages: list[dict[str, Any]], guidance: Any
 # │  返回：list[dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1253,7 +1253,7 @@ def peel_reference_guidance(messages: list[dict[str, Any]], guidance: Any) -> li
 
 
 # ┌── 类 class MoAChatCompletions
-# │  说明：OpenAI-chat-compatible facade where the aggregator is the acting model.
+# │  说明：OpenAI-chat-compatible 门面何处 aggregator 是 acting 模型.
 # │  成员：共 15 个方法；对外可用 6 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class MoAChatCompletions:
@@ -1296,7 +1296,7 @@ class MoAChatCompletions:
         self._privacy_mode: str = ""  # normalized moa.privacy_filter, refreshed per create()
 
     # ┌── 函数 def consume_reference_usage()
-    # │  作用：Pop pending fan-out ``(CanonicalUsage, cost_usd_or_None)`` and reset both
+    # │  作用：Pop pending fan-out ``(CanonicalUsage, cost_usd_or_None)`` 且 reset both
     # │  参数：self
     # │  返回：tuple[Any, Any]
     # └──────────────────────────────────────────────────────────────
@@ -1312,7 +1312,7 @@ class MoAChatCompletions:
         return usage, cost
 
     # ┌── 函数 def last_reference_metrics()
-    # │  作用：Per-advisor metrics from the most recent fan-out, or None (read-only).
+    # │  作用：按顾问的 metrics 从 most recent fan-out, 或 None (读取-仅).
     # │  参数：self
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -1322,7 +1322,7 @@ class MoAChatCompletions:
         return self._last_reference_metrics
 
     # ┌── 函数 def _record_late_reference_accounting()
-    # │  作用：Done-callback for abandoned (still billing) futures: fold their real spend in.
+    # │  作用：完成回调用于 abandoned (仍 billing) futures: fold 其 real spend 在.
     # │  参数：self, label: str, accounting: Any
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1334,7 +1334,7 @@ class MoAChatCompletions:
         logger.debug("MoA: recorded late accounting for interrupted reference %s", label)
 
     # ┌── 函数 def _fold_pending_accounting()
-    # │  作用：Add (never overwrite) fan-out spend so late interrupted-reference deposits survive.
+    # │  作用：添加 (never overwrite) fan-out spend 从而 late interrupted-reference deposits survive.
     # │  参数：self, usage: Any, cost: Any
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1346,7 +1346,7 @@ class MoAChatCompletions:
                 self._pending_reference_cost = (self._pending_reference_cost or 0) + cost
 
     # ┌── 函数 def consume_and_save_trace()
-    # │  作用：Flush the pending full-turn trace to disk (no-op when nothing is pending).
+    # │  作用：冲刷 pending full-轮次 trace disk (无-op 当 nothing 是 pending).
     # │  参数：self, session_id: Any = None, aggregator_output_fallback: Any = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1394,7 +1394,7 @@ class MoAChatCompletions:
             logger.debug("MoA reference_callback failed for %s: %s", event, exc)
 
     # ┌── 函数 def prepare()
-    # │  作用：Run the advisor fan-out and return the exact aggregator request, which the
+    # │  作用：运行 advisor fan-out 且返回 exact aggregator 请求, 其
     # │  参数：self, messages: list[dict[str, Any]]
     # │  返回：dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -1405,7 +1405,7 @@ class MoAChatCompletions:
         return self.create(messages=messages, _moa_prepare_only=True)
 
     # ┌── 函数 def rebase_prepared_request()
-    # │  作用：Re-attach already-generated guidance to a rebuilt (compressed) transcript.
+    # │  作用：Re-attach 已-generated guidance rebuilt (compressed) transcript.
     # │  参数：self, prepared: dict[str, Any], messages: list[dict[str, Any]]
     # │  返回：dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -1419,7 +1419,7 @@ class MoAChatCompletions:
         return {**prepared, "messages": agg_messages}
 
     # ┌── 函数 def _plan_aggregator_cache()
-    # │  作用：Cache-breakpoint the aggregator request for its destination.
+    # │  作用：缓存-breakpoint aggregator 请求用于其 destination.
     # │  参数：self, agg_messages: list[dict[str, Any]], tools: Any, guidance: Any, agg_runtime: dict[str, Any]
     # │  返回：tuple[list[dict[str, Any]], Any]
     # └──────────────────────────────────────────────────────────────
@@ -1461,7 +1461,7 @@ class MoAChatCompletions:
         return agg_messages, tools
 
     # ┌── 函数 def _call_prepared_aggregator()
-    # │  作用：Send an already prepared MoA aggregator request exactly once.
+    # │  作用：Send 已 prepared MoA aggregator 请求 exactly 一旦.
     # │  参数：self, prepared: dict[str, Any], api_kwargs: dict[str, Any]
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -1516,7 +1516,7 @@ class MoAChatCompletions:
         return agg_response
 
     # ┌── 函数 def _fanout_cache_key()
-    # │  作用：Turn-scoped reference cache key per the preset's fan-out cadence.
+    # │  作用：轮次-scoped reference 缓存键 per preset's fan-out cadence.
     # │  参数：self, preset: dict[str, Any], ref_messages: list[dict[str, Any]], reference_models: list[dict[str, Any]]
     # │  返回：tuple
     # └──────────────────────────────────────────────────────────────
@@ -1585,7 +1585,7 @@ class MoAChatCompletions:
         return (self.preset_name, _hash_messages(sig_messages), tuple(_slot_label(s) for s in reference_models))
 
     # ┌── 函数 def _run_fanout()
-    # │  作用：Cache-MISS path of ``create``: run the advisors, account, trace and emit.
+    # │  作用：缓存-MISS 路径的 ``创建``: 运行 advisors, account, trace 且 emit.
     # │  参数：self, preset: dict[str, Any], ref_messages: list[dict[str, Any]], reference_models: list[dict[str, Any]], aggregator: dict[str, Any], aggregator_temperature: Any, cache_key: tuple
     # │  返回：list[tuple[str, str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1648,7 +1648,7 @@ class MoAChatCompletions:
         return reference_outputs
 
     # ┌── 函数 def _build_guidance()
-    # │  作用：Render the reference block attached to the aggregator prompt (None = nothing).
+    # │  作用：Render reference block attached aggregator 提示词 (None = nothing).
     # │  参数：self, reference_outputs: list[tuple[str, str, Any]], aggregator: dict[str, Any], degraded_reference_policy: str
     # │  返回：str | None
     # └──────────────────────────────────────────────────────────────
@@ -1751,7 +1751,7 @@ class MoAChatCompletions:
 
 
 # ┌── 类 class MoAClient
-# │  说明：OpenAI-client-shaped wrapper: ``client.chat.completions`` is a ``MoAChatCompletions``;
+# │  说明：OpenAI-客户端-shaped 包装器: ``客户端.chat.completions`` 是 ``MoAChatCompletions``;
 # │  成员：共 5 个方法；对外可用 4 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class MoAClient:
@@ -1817,7 +1817,7 @@ _RELAY_EVENTS: dict[str, tuple[str, str | None, dict[str, str]]] = {
 
 
 # ┌── 函数 def build_moa_facade()
-# │  作用：Single construction point for ``MoAClient``: a bare ``MoAClient(preset)`` would
+# │  作用：Single construction point 用于 ``MoAClient``: bare ``MoAClient(preset)`` 会
 # │  参数：agent, preset_name: Any = None
 # │  返回：MoAClient
 # └──────────────────────────────────────────────────────────────

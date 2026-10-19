@@ -71,7 +71,7 @@ _YUANBAO_TOOLS = ["yb_query_group_info", "yb_query_group_members", "yb_send_dm",
 
 
 # ┌── 函数 def _ts()
-# │  作用：One TOOLSETS entry (fresh lists per entry; extra keys such as posture pass through).
+# │  作用：One 工具集 entry (fresh 列表 per entry; extra 键 such 作为 posture pass through).
 # │  参数：description, tools = (), includes = (), **extra
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ def _ts(description, tools=(), includes=(), **extra):
 
 
 # ┌── 函数 def _bundle()
-# │  作用：A `hermes-*` platform bundle: the shared core tools plus optional platform extras.
+# │  作用：`hermes-*` 平台 bundle: shared core 工具 plus optional 平台 extras.
 # │  参数：description, extras = ()
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ def _bundle(description, extras=()):
 
 
 # ┌── 函数 def _core_without()
-# │  作用：_HERMES_CORE_TOOLS minus *excluded* (and, unless kanban=True, every kanban_* tool); order preserved.
+# │  作用：_HERMES_CORE_TOOLS minus *excluded* (且, unless kanban=True, 每个 kanban_* 工具); order preserved.
 # │  参数：*excluded, kanban = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -281,7 +281,7 @@ TOOLSETS = {
 
 
 # ┌── 函数 def _registry()
-# │  作用：Live tool registry, or None when tools.registry can't be imported.
+# │  作用：当前活跃的工具 registry, 或 None 当工具.registry 无法是 已导入.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ def _registry():
 
 
 # ┌── 函数 def _registry_call()
-# │  作用：registry.<method>() or *default* when the registry is unavailable or the call fails.
+# │  作用：registry.<方法>() 或 *默认值* 当 registry 是 unavailable 或 call fails.
 # │  参数：method: str, default
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -325,7 +325,7 @@ def _registry_generation() -> Tuple[int, int]:
 
 
 # ┌── 函数 def get_toolset()
-# │  作用：Toolset definition, or None if unknown.
+# │  作用：工具集 definition, 或 None 若 unknown.
 # │  参数：name: str, include_registry: bool = ...
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ def get_toolset(name: str, *, include_registry: bool = True) -> Optional[Dict[st
 
 
 # ┌── 函数 def bundle_non_core_tools()
-# │  作用：A bundle's tools minus _HERMES_CORE_TOOLS (one level of includes).
+# │  作用：bundle's 工具 minus _HERMES_CORE_TOOLS (one 级别的 includes).
 # │  参数：toolset_name: str
 # │  返回：Set[str]
 # └──────────────────────────────────────────────────────────────
@@ -411,7 +411,7 @@ _resolve_toolset_memo: Dict[Tuple[str, bool, int, int, str], List[str]] = {}
 
 
 # ┌── 函数 def _plugin_platform_bundle()
-# │  作用：Implicit `hermes-<platform>` bundle for a registered plugin platform: core
+# │  作用：Implicit `hermes-<平台>` bundle 用于 registered plugin 平台: core
 # │  参数：name: str
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -442,7 +442,7 @@ def _plugin_platform_bundle(name: str) -> List[str]:
 
 
 # ┌── 函数 def resolve_toolset()
-# │  作用：Recursively resolve a toolset (and its includes) to a sorted tool-name list.
+# │  作用：Recursively resolve 工具集 (且其 includes) sorted 工具-名称列表.
 # │  参数：name: str, visited: Set[str] = None, include_registry: bool = ...
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -497,7 +497,7 @@ def resolve_toolset(name: str, visited: Set[str] = None, *, include_registry: bo
 
 
 # ┌── 函数 def _get_plugin_toolset_names()
-# │  作用：Registry toolset names absent from the static TOOLSETS dict.
+# │  作用：Registry 工具集名称 absent 从 static 工具集字典.
 # │  参数：无
 # │  返回：Set[str]
 # └──────────────────────────────────────────────────────────────
@@ -518,7 +518,7 @@ def _get_registry_toolset_aliases() -> Dict[str, str]:
 
 
 # ┌── 函数 def _display_alias()
-# │  作用：First non-static alias pointing at *ts_name*, or None.
+# │  作用：First non-static 别名 pointing 在 *ts_name*, 或 None.
 # │  参数：ts_name: str, aliases: Dict[str, str]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -529,7 +529,7 @@ def _display_alias(ts_name: str, aliases: Dict[str, str]) -> Optional[str]:
 
 
 # ┌── 函数 def _plugin_display_names()
-# │  作用：Plugin toolset names, shown under their first non-static alias when one exists.
+# │  作用：Plugin 工具集名称, shown under 其 first non-static 别名当 one exists.
 # │  参数：无
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -541,7 +541,7 @@ def _plugin_display_names() -> List[str]:
 
 
 # ┌── 函数 def get_all_toolsets()
-# │  作用：All toolset definitions: static plus plugin-registered.
+# │  作用：全部工具集 definitions: static plus plugin-registered.
 # │  参数：无
 # │  返回：Dict[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -561,7 +561,7 @@ def get_all_toolsets() -> Dict[str, Dict[str, Any]]:
 
 
 # ┌── 函数 def get_toolset_names()
-# │  作用：Sorted names of all toolsets (static + plugin), excluding aliases.
+# │  作用：Sorted 名称的 全部工具集 (static + plugin), excluding 别名.
 # │  参数：无
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -583,7 +583,7 @@ def validate_toolset(name: str) -> bool:
 
 
 # ┌── 函数 def create_custom_toolset()
-# │  作用：Register a runtime toolset in TOOLSETS.
+# │  作用：Register 运行时工具集在 工具集.
 # │  参数：name: str, description: str, tools: List[str] = None, includes: List[str] = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -593,7 +593,7 @@ def create_custom_toolset(name: str, description: str, tools: List[str] = None, 
 
 
 # ┌── 函数 def get_toolset_info()
-# │  作用：Toolset definition plus its resolved tools, or None if unknown.
+# │  作用：工具集 definition plus 其 resolved 工具, 或 None 若 unknown.
 # │  参数：name: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -619,7 +619,7 @@ def get_toolset_info(name: str) -> Dict[str, Any]:
 # The whole block is removed by reverting the commit that added it.
 
 # ┌── 函数 def resolve_multiple_toolsets()
-# │  作用：Resolve multiple toolsets and combine their tools.
+# │  作用：Resolve multiple 工具集且 combine 其工具.
 # │  参数：toolset_names: List[str]
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────

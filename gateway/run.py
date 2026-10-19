@@ -138,7 +138,7 @@ _HYGIENE_TURNHOLD_RETRY_SECONDS = 60.0
 
 
 # ┌── 函数 def _gateway_session_db_inner()
-# │  作用：The raw SessionDB behind ``gateway._session_db`` (unwrapping the async facade), or None.
+# │  作用：raw 会话数据库 behind ``gateway._session_db`` (unwrapping 异步门面), 或 None.
 # │  参数：gateway
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ def _gateway_session_db_inner(gateway):
 
 
 # ┌── 函数 def _hygiene_cooldown_for_failure()
-# │  作用：Bump the hygiene failure streak and return the escalated cooldown (x1/x3/x9 over base, clamped).
+# │  作用：递增整理/清理 failure streak 且返回 escalated 冷却 (x1/x3/x9 over base, clamped).
 # │  参数：gateway, session_key: str, base_cooldown_seconds: float
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ def _hygiene_cooldown_for_failure(gateway, session_key: str, base_cooldown_secon
 
 
 # ┌── 函数 def _reset_hygiene_failure_streak()
-# │  作用：Clear the hygiene failure streak after a compression that reduced context.
+# │  作用：清除整理/清理 failure streak 在…之后 compression 那个 reduced 上下文.
 # │  参数：gateway, session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ def _reset_hygiene_failure_streak(gateway, session_key: str) -> None:
 
 
 # ┌── 函数 def hygiene_compaction_recovered()
-# │  作用：True when a hygiene run actually recovered the session (extracted to be unit testable).
+# │  作用：当 整理/清理运行 actually recovered 会话 (extracted 是 unit testable). 时返回 True。
 # │  参数：aborted: bool, rotated: bool, in_place: bool, msg_count: int, new_count: int, approx_tokens: int, new_tokens: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -248,7 +248,7 @@ def hygiene_compaction_recovered(
 
 
 # ┌── 函数 def _hygiene_compression_timeout_message()
-# │  作用：Describe the host timeout that actually ended hygiene compression.
+# │  作用：描述宿主超时那个 actually ended 整理/清理 compression.
 # │  参数：total_exhausted: bool, elapsed: float, idle_timeout: float, progress_observed: bool
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -271,7 +271,7 @@ def _hygiene_compression_timeout_message(
 
 
 # ┌── 函数 def _cached_agent_for_hygiene()
-# │  作用：The cached live AIAgent for ``session_key`` (or the pending sentinel / None), read under the cache lock.
+# │  作用：cached 当前活跃的 AIAgent 用于 ``session_key`` (或 pending sentinel / None), 读取 under 缓存锁.
 # │  参数：gateway, session_key: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ def _cached_agent_for_hygiene(gateway, session_key: str):
 
 
 # ┌── 异步函数（协程） def run_codex_hygiene_compaction()
-# │  作用：Session hygiene for ``codex_app_server`` sessions.
+# │  作用：会话整理/清理用于 ``codex_app_server`` 会话.
 # │  参数：gateway, session_key: str, session_id: str, auto_mode: str, history: list, approx_tokens: int, timeout_seconds: float, failure_cooldown_seconds: float = ...
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -368,7 +368,7 @@ async def run_codex_hygiene_compaction(
     return "failed:no-boundary"
 
 # ┌── 函数 def hygiene_wait_should_extend()
-# │  作用：Whether the hygiene host should keep waiting for a slow summary.
+# │  作用：是否 整理/清理宿主应当保留 waiting 用于 slow 摘要.。
 # │  参数：idle: float, timeout: float, waited: float, ceiling: float, fence_cancelled: bool = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -386,7 +386,7 @@ def hygiene_wait_should_extend(
 
 
 # ┌── 函数 def _record_hygiene_cooldown()
-# │  作用：Persist a session-hygiene compression-failure cooldown to the state DB (survives restarts).
+# │  作用：持久化会话-整理/清理 compression-failure 冷却状态数据库 (survives restarts).
 # │  参数：gateway, session_id: str, cooldown_seconds: float, error: Optional[str] = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -411,7 +411,7 @@ def _record_hygiene_cooldown(
 
 
 # ┌── 函数 def _status_template_to_regex()
-# │  作用：Compile a compression status template constant into a regex source.
+# │  作用：编译 compression status template constant 进入 regex source.
 # │  参数：template: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -443,7 +443,7 @@ _COMPRESSION_PROGRESS_STATUS_RE = re.compile(
 
 
 # ┌── 函数 def _gateway_compression_progress_notices_enabled()
-# │  作用：True when ``compression.progress_notices`` is on (default False: chat is silent by design).
+# │  作用：当 ``compression.progress_notices`` 是在…上 (默认值 False: chat 是 silent 由 design). 时返回 True。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -472,7 +472,7 @@ _GATEWAY_RAW_TEXT_PLATFORMS = frozenset({"local", "api_server", "webhook", "msgr
 
 
 # ┌── 函数 def _gateway_surface_passes_raw_text()
-# │  作用：True only for programmatic/local surfaces that must keep raw text.
+# │  作用：True 仅用于 programmatic/local 上报那个必须保留原始文本.
 # │  参数：platform: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -512,7 +512,7 @@ _CONNECTION_ERROR_MARKERS = (
 _GATEWAY_CONNECTION_ERROR_RE = re.compile("(" + "|".join(_CONNECTION_ERROR_MARKERS) + ")", re.IGNORECASE)
 
 # ┌── 函数 def _ensure_windows_gateway_venv_imports()
-# │  作用：Make detached Windows gateway runs see the Hermes venv packages.
+# │  作用：Make detached Windows gateway 运行 see Hermes venv packages.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ def _ensure_windows_gateway_venv_imports() -> None:
 
 
 # ┌── 函数 def _gateway_platform_value()
-# │  作用：Return a normalized gateway platform value for enums or raw strings.
+# │  作用：返回 已归一化 gateway 平台值 用于 enums 或 raw strings.。
 # │  参数：platform: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -576,7 +576,7 @@ def _gateway_platform_value(platform: Any) -> str:
 
 
 # ┌── 函数 def _non_conversational_metadata()
-# │  作用：Mark Discord lifecycle/status sends without changing other platforms.
+# │  作用：Mark Discord lifecycle/status sends 不 changing other 平台.
 # │  参数：metadata: Optional[Dict[str, Any]] = None, platform: Any = ...
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -593,7 +593,7 @@ def _non_conversational_metadata(
 
 
 # ┌── 函数 def _interim_metadata()
-# │  作用：Mark a mid-turn status/advisory send as NOT the turn-final.
+# │  作用：Mark 轮次中段的 status/advisory send 作为不 轮次-final.
 # │  参数：metadata: Optional[Dict[str, Any]] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -609,7 +609,7 @@ def _interim_metadata(metadata: Optional[Dict[str, Any]] = None) -> Dict[str, An
 
 
 # ┌── 函数 def _seed_hygiene_system_prompt()
-# │  作用：Keep gateway hygiene from rebuilding a live session's system prompt.
+# │  作用：保留 gateway 整理/清理从 rebuilding 当前活跃的会话's system 提示词.
 # │  参数：agent: Any, session_row: Optional[Dict[str, Any]]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -636,7 +636,7 @@ _TRANSIENT_NETWORK_ERROR_CLASS_NAMES = frozenset({
 
 
 # ┌── 函数 def _is_transient_network_error()
-# │  作用：True for transient network errors safe to log + swallow (the next poll recovers; never crash).
+# │  作用：当 transient network 错误 safe 日志 + swallow ( next poll recovers; never crash). 时返回 True。
 # │  参数：exc: BaseException
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -668,7 +668,7 @@ def _is_transient_network_error(exc: BaseException) -> bool:
 
 
 # ┌── 函数 def _gateway_loop_exception_handler()
-# │  作用：Loop-level safety net for transient network errors (installed once by ``start_gateway``).
+# │  作用：循环-级别 safety net 用于 transient network 错误 (installed 一旦由 ``start_gateway``).
 # │  参数：loop: 'asyncio.AbstractEventLoop', context: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -699,7 +699,7 @@ def _gateway_loop_exception_handler(
 
 
 # ┌── 函数 def _redact_gateway_user_facing_secrets()
-# │  作用：Secret redaction before text can leave the gateway for a chat platform: the shared egress scrub
+# │  作用：Secret redaction 在…之前文本可以 leave gateway 用于 chat 平台: shared egress scrub
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -713,7 +713,7 @@ def _redact_gateway_user_facing_secrets(text: str) -> str:
 
 
 # ┌── 函数 def _redact_approval_command()
-# │  作用：Redact credentials from a command before it goes into an approval prompt.
+# │  作用：Redact credentials 从命令在…之前它 goes 进入 approval 提示词.
 # │  参数：cmd: 'str | None'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -735,7 +735,7 @@ def _redact_approval_command(cmd: "str | None") -> str:
 
 
 # ┌── 函数 def _format_exec_approval_fallback()
-# │  作用：Render the text fallback from approval capabilities, not platform names.
+# │  作用：Render 文本兜底从 approval capabilities, 不平台名称.
 # │  参数：command: str, description: str, command_prefix: str, allow_permanent: bool = ..., allow_session: bool = ..., smart_denied: bool = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -770,7 +770,7 @@ _PROVIDER_ERROR_REPLIES = (
 
 
 # ┌── 函数 def _gateway_provider_error_reply()
-# │  作用：Map raw provider/API errors to a short user-safe Telegram reply.
+# │  作用：Map raw 服务商/API 错误 short user-safe Telegram reply.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -799,7 +799,7 @@ _GATEWAY_PROVIDER_ERROR_SHAPE_RE = re.compile(
 
 
 # ┌── 函数 def _looks_like_gateway_provider_error()
-# │  作用：True when text is a provider failure envelope, not normal content.
+# │  作用：当 文本是 服务商 failure envelope, 不 normal 内容. 时返回 True。
 # │  参数：text: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -819,7 +819,7 @@ def _looks_like_gateway_provider_error(text: str) -> bool:
 
 
 # ┌── 函数 def _sanitize_gateway_final_response()
-# │  作用：Sanitize final gateway replies for chat surfaces: concise, secret-redacted provider failure
+# │  作用：Sanitize final gateway replies 用于 chat 上报: concise, secret-redacted 服务商 failure
 # │  参数：platform: Any, text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -856,7 +856,7 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
 
 
 # ┌── 函数 def _prepare_gateway_status_message()
-# │  作用：Filter/sanitize agent status callbacks before platform delivery.
+# │  作用：Filter/sanitize Agent status 回调在…之前平台 delivery.
 # │  参数：platform: Any, event_type: str, message: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -887,7 +887,7 @@ def _prepare_gateway_status_message(platform: Any, event_type: str, message: str
 
 
 # ┌── 函数 def render_notice_line()
-# │  作用：Render an AgentNotice to a single plaintext line (messaging has no status bar: one-shot push).
+# │  作用：Render AgentNotice single plaintext line (messaging 有无 status bar: one-shot push).
 # │  参数：notice
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -900,7 +900,7 @@ def render_notice_line(notice) -> str:
 
 
 # ┌── 异步函数（协程） def _send_or_update_status_coro()
-# │  作用：Route a status through adapter.send_or_update_status when supported (edits the previous
+# │  作用：路由 status through 适配器.send_or_update_status 当 supported (edits previous
 # │  参数：adapter, chat_id, status_key, content, metadata
 # │  返回：（未标注类型）
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -922,7 +922,7 @@ async def _send_or_update_status_coro(adapter, chat_id, status_key, content, met
 
 
 # ┌── 函数 def _approval_send_outcome()
-# │  作用：Classify an approval prompt send as ``sent`` / ``failed`` / ``ambiguous``.
+# │  作用：Classify approval 提示词 send 作为 ``sent`` / ``failed`` / ``ambiguous``.
 # │  参数：future, timeout: float
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -988,7 +988,7 @@ def _approval_send_outcome(future, timeout: float) -> str:
 
 
 # ┌── 函数 def _clarify_send_disposition()
-# │  作用：Decide whether a clarify prompt send aborts the wait; returns the abort sentinel or ``None``.
+# │  作用：Decide whether clarify 提示词 send aborts wait; 返回 abort sentinel 或 ``None``.
 # │  参数：fut, session_key: str, clarify_mod
 # │  返回：'str | None'
 # └──────────────────────────────────────────────────────────────
@@ -1026,7 +1026,7 @@ def _clarify_send_disposition(fut, *, session_key: str, clarify_mod) -> "str | N
 
 
 # ┌── 函数 def _clarify_send_then_wait()
-# │  作用：Resolve a clarify prompt: send disposition, then the bounded wait.
+# │  作用：Resolve clarify 提示词: send disposition, 然后 bounded wait.
 # │  参数：fut, clarify_id: str, session_key: str, clarify_mod
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1046,7 +1046,7 @@ def _clarify_send_then_wait(fut, *, clarify_id: str, session_key: str, clarify_m
 
 
 # ┌── 函数 def _resolve_progress_thread_id()
-# │  作用：Return thread/root ID that progress/status bubbles should target.
+# │  作用：返回 线程/root ID 那个 progress/status bubbles 应当 target.。
 # │  参数：platform: Any, source_thread_id: Any, event_message_id: Any, reply_in_thread: bool = ...
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1078,7 +1078,7 @@ def _resolve_progress_thread_id(
 
 
 # ┌── 函数 def _has_platform_display_override()
-# │  作用：Return True when display.platforms.<platform> explicitly sets setting.
+# │  作用：当 展示.平台.<平台> explicitly 设置设置. 时返回 True。
 # │  参数：user_config: dict, platform_key: str, setting: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1098,7 +1098,7 @@ def _has_platform_display_override(user_config: dict, platform_key: str, setting
 
 
 # ┌── 函数 def _resolve_gateway_display_bool()
-# │  作用：Resolve a boolean display setting with optional platform-only opt-in.
+# │  作用：Resolve 布尔值展示设置带 optional 平台-仅 opt-在.
 # │  参数：user_config: dict, platform_key: str, setting: str, default: bool = ..., platform: Any = ..., require_platform_override_for: set[Any] | None = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1134,7 +1134,7 @@ def _resolve_gateway_display_bool(
 
 
 # ┌── 函数 def _telegramize_command_mentions()
-# │  作用：Rewrite slash-command mentions to Telegram-valid names (lowercase/digits/underscore); no-op elsewhere.
+# │  作用：Rewrite slash-命令 mentions Telegram-valid 名称 (lowercase/digits/underscore); 无-op elsewhere.
 # │  参数：text: str, platform: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1169,7 +1169,7 @@ _STARTUP_WARMUP_TIMEOUT_SECS_DEFAULT = 20.0
 
 
 # ┌── 函数 def _coerce_gateway_timestamp()
-# │  作用：Best-effort conversion of stored gateway timestamps to epoch seconds.
+# │  作用：尽最大努力 conversion 的 stored gateway timestamps 纪元/版本 seconds.
 # │  参数：value: Any
 # │  返回：Optional[float]
 # └──────────────────────────────────────────────────────────────
@@ -1209,7 +1209,7 @@ def _coerce_gateway_timestamp(value: Any) -> Optional[float]:
 
 
 # ┌── 函数 def _auto_continue_freshness_window()
-# │  作用：Auto-continue freshness window in seconds (non-positive disables the gate).
+# │  作用：Auto-continue freshness window 在 seconds (non-positive disables gate).
 # │  参数：无
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -1223,7 +1223,7 @@ def _auto_continue_freshness_window() -> float:
 
 
 # ┌── 函数 def _startup_restore_drain_timeout_secs()
-# │  作用：Max seconds ``_finish_startup_restore`` holds the inbound gate for boot auto-resume; <=0 disables.
+# │  作用：Max seconds ``_finish_startup_restore`` holds inbound gate 用于 boot auto-resume; <=0 disables.
 # │  参数：无
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -1237,7 +1237,7 @@ def _startup_restore_drain_timeout_secs() -> float:
 
 
 # ┌── 函数 def _startup_warmup_timeout_secs()
-# │  作用：Max seconds the boot warm-up (``_warm_turn_prerequisites``) may hold the inbound gate shut.
+# │  作用：Max seconds boot warm-up (``_warm_turn_prerequisites``) 可以 hold inbound gate shut.
 # │  参数：无
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -1250,7 +1250,7 @@ def _startup_warmup_timeout_secs() -> float:
 
 
 # ┌── 函数 def _warm_turn_machinery_sync()
-# │  作用：Synchronously initialize first-turn prerequisites (executor thread); returns the schema count.
+# │  作用：Synchronously initialize first-轮次 prerequisites (executor 线程); 返回结构定义 count.
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1284,7 +1284,7 @@ def _warm_turn_machinery_sync() -> int:
 
 
 # ┌── 函数 def _as_thread_info()
-# │  作用：*info* as a (thread_id, initial_name) pair, or None if it isn't one.
+# │  作用：*信息* 作为 (thread_id, initial_name) pair, 或 None 若它 isn't one.
 # │  参数：info: Any
 # │  返回：Optional[Tuple[str, str]]
 # └──────────────────────────────────────────────────────────────
@@ -1300,7 +1300,7 @@ def _as_thread_info(info: Any) -> Optional[Tuple[str, str]]:
 
 
 # ┌── 函数 def _float_env()
-# │  作用：Read an env var as float; unset/empty/malformed fall back to ``default`` (never crash the gateway).
+# │  作用：读取环境变量作为浮点数; unset/empty/格式非法的 fall back ``默认值`` (never crash gateway).
 # │  参数：name: str, default: float
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -1320,7 +1320,7 @@ def _float_env(name: str, default: float) -> float:
 
 
 # ┌── 函数 def _stamp_hygiene_compression_provenance()
-# │  作用：Best-effort activity provenance stamp for hygiene compression transitions.
+# │  作用：尽最大努力 activity provenance stamp 用于整理/清理 compression transitions.
 # │  参数：agent: Any, desc: str, provenance: ActivityProvenance, debug_label: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1335,7 +1335,7 @@ def _stamp_hygiene_compression_provenance(
 
 
 # ┌── 函数 def _is_fresh_gateway_interruption()
-# │  作用：True when an interruption marker is fresh enough to auto-continue (unknown timestamps count as fresh).
+# │  作用：当 interruption marker 是 fresh enough auto-continue (unknown timestamps count 作为 fresh). 时返回 True。
 # │  参数：value: Any, now: Optional[float] = ..., window_secs: Optional[float] = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1356,7 +1356,7 @@ def _is_fresh_gateway_interruption(
 
 
 # ┌── 函数 def build_resume_recovery_note()
-# │  作用：Build the resume-pending recovery system note for an interrupted turn (empty ``message`` = auto-resume).
+# │  作用：构建 resume-pending recovery system note 用于 interrupted 轮次 (empty ``消息`` = auto-resume).
 # │  参数：reason: Optional[str], message: str = '', interactive: bool = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1405,7 +1405,7 @@ def build_resume_recovery_note(
 
 
 # ┌── 函数 def _prepare_resume_pending_message()
-# │  作用：Return the recovery message and the user text to persist.
+# │  作用：返回 recovery 消息且 user 文本持久化.。
 # │  参数：reason: Optional[str], message: Optional[str], interactive: bool = ...
 # │  返回：tuple[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -1449,7 +1449,7 @@ _ASSISTANT_REPLAY_FIELDS: tuple[str, ...] = (
 
 
 # ┌── 函数 def _build_replay_entry()
-# │  作用：Build a replay entry for a non-tool-calling message, preserving ``_ASSISTANT_REPLAY_FIELDS``.
+# │  作用：构建重放 entry 用于 non-工具-calling 消息, preserving ``_ASSISTANT_REPLAY_FIELDS``.
 # │  参数：role: str, content: Any, msg: Dict[str, Any], preserve_timestamp: bool = False
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1498,7 +1498,7 @@ _CURRENT_ADDRESSED_MESSAGE_HEADER = "[Current addressed message - answer only th
 
 
 # ┌── 函数 def _uses_telegram_observed_group_context()
-# │  作用：Return True for Telegram group turns that may include observed chatter.
+# │  作用：当 Telegram group 轮次那个可以 include observed chatter. 时返回 True。
 # │  参数：channel_prompt: Optional[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1512,7 +1512,7 @@ def _uses_telegram_observed_group_context(channel_prompt: Optional[str]) -> bool
 
 
 # ┌── 函数 def _csv_or_list_to_set()
-# │  作用：Normalize a config list or comma-separated scalar into a string set.
+# │  作用：归一化配置列表或 comma-separated scalar 进入字符串设置.
 # │  参数：raw: Any
 # │  返回：set[str]
 # └──────────────────────────────────────────────────────────────
@@ -1529,7 +1529,7 @@ def _csv_or_list_to_set(raw: Any) -> set[str]:
 
 
 # ┌── 函数 def _slack_ignored_channels_from_gateway_config()
-# │  作用：Return Slack channels that the generic gateway must never dispatch.
+# │  作用：返回 Slack 通道那个 generic gateway 必须 never dispatch.。
 # │  参数：config: Any, adapter: Any = None
 # │  返回：set[str]
 # └──────────────────────────────────────────────────────────────
@@ -1555,7 +1555,7 @@ def _slack_ignored_channels_from_gateway_config(config: Any, adapter: Any = None
 
 
 # ┌── 函数 def _slack_parent_channel_id()
-# │  作用：Return the parent Slack channel from a possibly thread-scoped chat ID.
+# │  作用：返回 parent Slack 通道从 possibly 线程-scoped chat ID.。
 # │  参数：chat_id: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1566,7 +1566,7 @@ def _slack_parent_channel_id(chat_id: Any) -> str:
 
 
 # ┌── 函数 def _is_slack_ignored_channel()
-# │  作用：Check the generic Slack gateway blacklist for channel or thread IDs (``adapter`` = the source's
+# │  作用：检查 generic Slack gateway blacklist 用于通道或 线程 IDs (``适配器`` = source's
 # │  参数：config: Any, chat_id: Any, adapter: Any = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1580,7 +1580,7 @@ def _is_slack_ignored_channel(config: Any, chat_id: Any, adapter: Any = None) ->
 
 
 # ┌── 函数 def _message_timestamps_enabled()
-# │  作用：True when gateway.message_timestamps.enabled is opted in (default OFF: changes what the model sees).
+# │  作用：当 gateway.message_timestamps.enabled 是 opted 在 (默认值 OFF: changes 什么模型 sees). 时返回 True。
 # │  参数：user_config: Optional[dict]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1603,7 +1603,7 @@ def _message_timestamps_enabled(user_config: Optional[dict]) -> bool:
 
 
 # ┌── 函数 def _build_gateway_agent_history()
-# │  作用：Convert stored gateway transcript rows into agent replay messages.
+# │  作用：Convert stored gateway transcript rows 进入 Agent 重放消息.
 # │  参数：history: List[Dict[str, Any]], channel_prompt: Optional[str] = ..., inject_timestamps: bool = ...
 # │  返回：tuple[List[Dict[str, Any]], Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -1685,7 +1685,7 @@ def _build_gateway_agent_history(
 
 
 # ┌── 函数 def _select_cached_agent_history()
-# │  作用：Prefer the cached live transcript only when it is longer AND has a real, non-ephemeral unpersisted row.
+# │  作用：Prefer cached 当前活跃的 transcript 仅当 它是 longer 且有 real, non-ephemeral unpersisted row.
 # │  参数：persisted_history: List[Dict[str, Any]], live_history: Any
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1716,7 +1716,7 @@ def _select_cached_agent_history(
 
 
 # ┌── 函数 def _wrap_current_message_with_observed_context()
-# │  作用：Prepend observed Telegram context to the API-only current user turn.
+# │  作用：Prepend observed Telegram 上下文 API-仅 current user 轮次.
 # │  参数：message: Any, observed_context: Optional[str]
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1747,7 +1747,7 @@ def _wrap_current_message_with_observed_context(message: Any, observed_context: 
 
 
 # ┌── 函数 def _last_transcript_timestamp()
-# │  作用：Return the ``timestamp`` of the last usable (non-metadata) transcript row, if any.
+# │  作用：返回 ``时间戳`` 的 last usable (non-metadata) transcript row, 若任意.。
 # │  参数：history: Optional[List[Dict[str, Any]]]
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1787,7 +1787,7 @@ _AUTO_CONTINUE_FALLBACK_PREFIX = "[System note: A new message"
 
 
 # ┌── 函数 def _is_auto_continue_noise()
-# │  作用：Return True if this user-message content is a gateway-injected auto-continue note (never replay it).
+# │  作用：返回 True 若这个 user-消息内容是 gateway-已注入 auto-continue note (never 重放它).。
 # │  参数：content: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1799,7 +1799,7 @@ def _is_auto_continue_noise(content: Any) -> bool:
 
 
 # ┌── 函数 def _strip_auto_continue_noise()
-# │  作用：Strip leading persisted auto-continue notes from user text; the trailing real question is preserved.
+# │  作用：Strip leading 已持久化的 auto-continue notes 从 user 文本; trailing real question 是 preserved.
 # │  参数：content: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1836,7 +1836,7 @@ from gateway.media_repair import tool_name_by_call_id as _tool_name_by_call_id  
 
 
 # ┌── 函数 def _collect_auto_append_media_tags()
-# │  作用：Collect real media tags from current-turn producer-tool results only.
+# │  作用：Collect real media tags 从 current-轮次 producer-工具结果仅.
 # │  参数：messages: List[Dict[str, Any]], history_offset: int = 0, history_media_paths: Optional[set] = None
 # │  返回：tuple[List[str], bool]
 # └──────────────────────────────────────────────────────────────
@@ -1903,7 +1903,7 @@ def _collect_auto_append_media_tags(
 
 
 # ┌── 函数 def _collect_history_media_paths()
-# │  作用：Dedup set of media paths already delivered (JSON-payload and assistant-message shapes alike).
+# │  作用：Dedup 设置的 media 路径已 delivered (JSON-payload 且 assistant-消息形态 alike).
 # │  参数：agent_history: List[Dict[str, Any]]
 # │  返回：set
 # └──────────────────────────────────────────────────────────────
@@ -1952,7 +1952,7 @@ def _collect_history_media_paths(agent_history: List[Dict[str, Any]]) -> set:
     return paths
 
 # ┌── 函数 def _ensure_ssl_certs()
-# │  作用：Set SSL_CERT_FILE when the system hides CA certs from Python (NixOS etc.); must run BEFORE any
+# │  作用：设置 SSL_CERT_FILE 当 system hides CA certs 从 Python (NixOS etc.); 必须运行在…之前任意
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2001,7 +2001,7 @@ def _ensure_ssl_certs() -> None:
             return
 
 # ┌── 函数 def _home_target_env_var()
-# │  作用：Home-target env var: built-in ``_HOME_TARGET_ENV_VARS``, plugin registry, then
+# │  作用：主目录-target 环境变量: 已构建-在 ``_HOME_TARGET_ENV_VARS``, plugin registry, 然后
 # │  参数：platform_name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2014,7 +2014,7 @@ def _home_target_env_var(platform_name: str) -> str:
 
 
 # ┌── 函数 def _home_thread_env_var()
-# │  作用：Return the optional thread/topic env var for a platform home target.
+# │  作用：返回 optional 线程/topic 环境变量用于平台主目录 target.。
 # │  参数：platform_name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2025,7 +2025,7 @@ def _home_thread_env_var(platform_name: str) -> str:
 
 
 # ┌── 函数 def _restart_notification_pending()
-# │  作用：Return True when a /restart completion marker is waiting to be delivered.
+# │  作用：当 /restart completion marker 是 waiting 是 delivered. 时返回 True。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2046,7 +2046,7 @@ def _planned_restart_notification_path() -> Path:
 
 
 # ┌── 函数 def _planned_restart_notification_pending()
-# │  作用：Return True when a non-chat planned restart should notify home channels.
+# │  作用：当 non-chat planned restart 应当 notify 主目录通道. 时返回 True。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2082,7 +2082,7 @@ load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve(
 
 
 # ┌── 函数 def _reload_runtime_env_preserving_config_authority()
-# │  作用：Reload .env per turn for rotated keys while config.yaml stays authoritative for budgets (else a
+# │  作用：Reload .env per 轮次用于 rotated 键当 配置.YAML stays authoritative 用于预算 (否则
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2099,7 +2099,7 @@ def _reload_runtime_env_preserving_config_authority() -> None:
 
 
 # ┌── 函数 def _bridge_max_turns_from_config()
-# │  作用：Re-bridge agent.max_turns (+ sessions.*) per turn; managed overlay applies or it reverts.
+# │  作用：Re-bridge Agent.max_turns (+ 会话.*) per 轮次; managed 叠加 applies 或它 reverts.
 # │  参数：home: 'Path'
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2123,7 +2123,7 @@ def _bridge_max_turns_from_config(home: "Path") -> None:
 
 
 # ┌── 函数 def _current_max_iterations()
-# │  作用：Return the per-turn iteration budget after runtime env refresh; ``resolve_turn_limit`` maps
+# │  作用：返回 per-轮次 iteration 预算在…之后运行时 env refresh; ``resolve_turn_limit`` maps。
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -2154,7 +2154,7 @@ from contextlib import asynccontextmanager as _asynccontextmanager, contextmanag
 
 
 # ┌── 类 class MultiplexConfigError（继承自：RuntimeError）
-# │  说明：Invalid profile multiplexer config: the operator must fix config.yaml, so it propagates to the
+# │  说明：Invalid 配置档 multiplexer 配置: operator 必须 fix 配置.YAML, 从而它 propagates
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class MultiplexConfigError(RuntimeError):
@@ -2163,7 +2163,7 @@ class MultiplexConfigError(RuntimeError):
 
 
 # ┌── 类 class HygieneTurnHoldExceeded（继承自：Exception）
-# │  说明：Hygiene-compression turn-hold budget elapsed mid-stream. Availability boundary, not a failure:
+# │  说明：整理/清理-compression 轮次-hold 预算 elapsed mid-stream. Availability boundary, 不 failure:
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class HygieneTurnHoldExceeded(Exception):
@@ -2172,7 +2172,7 @@ class HygieneTurnHoldExceeded(Exception):
 
 
 # ┌── 函数 def _multiplex_profile_homes()
-# │  作用：Return the authoritative profile set for one multiplex gateway config.
+# │  作用：返回 authoritative 配置档设置用于 one multiplex gateway 配置.。
 # │  参数：config: object
 # │  返回：list[tuple[str, 'Path']]
 # └──────────────────────────────────────────────────────────────
@@ -2184,7 +2184,7 @@ def _multiplex_profile_homes(config: object) -> list[tuple[str, "Path"]]:
 
 
 # ┌── 函数 def _cron_tick_profile_homes()
-# │  作用：Profile homes the in-process ticker visits under multiplex: the served set PLUS the
+# │  作用：配置档 homes 在-进程 ticker visits under multiplex: served 设置 PLUS
 # │  参数：config: object
 # │  返回：list[tuple[str, 'Path']]
 # └──────────────────────────────────────────────────────────────
@@ -2210,7 +2210,7 @@ def _cron_tick_profile_homes(config: object) -> list[tuple[str, "Path"]]:
 
 
 # ┌── 函数 def _enable_multiplex_log_routing()
-# │  作用：Route agent.log/errors.log/gateway.log records to their owning profile (inert single-profile).
+# │  作用：路由 Agent.日志/错误.日志/gateway.日志 records 其持有配置档 (inert single-配置档).
 # │  参数：config: object
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2238,7 +2238,7 @@ def _enable_multiplex_log_routing(config: object) -> bool:
 
 
 # ┌── 函数 def _handoff_watch_scopes()
-# │  作用：``(profile_name, home)`` pairs whose ``state.db`` the watcher must poll; ``(None, None)`` = root
+# │  作用：``(profile_name, 主目录)`` pairs whose ``状态.数据库`` watcher 必须 poll; ``(None, None)`` = root
 # │  参数：runner: object
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -2263,7 +2263,7 @@ def _handoff_watch_scopes(runner: object) -> list:
 
 
 # ┌── 异步函数（协程） def _reclaim_stale()
-# │  作用：Fail handoffs left in ``running`` by a gateway that died mid-dispatch (once per store at startup).
+# │  作用：Fail handoffs left 在 ``运行`` 由 gateway 那个 died mid-dispatch (一旦 per store 在 startup).
 # │  参数：runner: object
 # │  返回：None
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2290,7 +2290,7 @@ async def _reclaim_stale(runner: object) -> None:
 
 
 # ┌── 函数 def _terminal_scope_cwd()
-# │  作用：Scope-aware TERMINAL_CWD read for footer/context surfaces. Only an import failure falls back:
+# │  作用：Scope-aware TERMINAL_CWD 读取用于 footer/上下文上报. 仅导入 failure falls back:
 # │  参数：default: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2308,7 +2308,7 @@ def _terminal_scope_cwd(default: str = "") -> str:
 
 
 # ┌── 函数 def _load_profile_secret_scope()
-# │  作用：Hydrate and load one profile's secrets under its home override.
+# │  作用：Hydrate 且加载 one 配置档's secrets under 其主目录覆盖值.
 # │  参数：profile_home: 'Path'
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -2330,7 +2330,7 @@ def _load_profile_secret_scope(profile_home: "Path") -> dict:
 
 
 # ┌── 函数 def _profile_runtime_scope()
-# │  作用：Scope config/skills/memory AND credentials to a profile for one turn (multiplexed path only).
+# │  作用：Scope 配置/skills/内存且 credentials 配置档用于 one 轮次 (multiplexed 路径仅).
 # │  参数：profile_home: 'Path', prepared_secret_scope: Optional[dict] = None, hydrate_secrets: bool = ...
 # │  返回：（未标注类型）
 # │  【语法】带 @_contextmanager 装饰器：调用本函数时，等价于 _profile_runtime_scope = _contextmanager(_profile_runtime_scope)，即先经过一层包装。
@@ -2371,7 +2371,7 @@ def _profile_runtime_scope(
 
 
 # ┌── 异步函数（协程） def _async_profile_runtime_scope()
-# │  作用：Enter a profile scope without loading secret files on the event loop.
+# │  作用：Enter 配置档 scope 不加载 secret 文件在…上事件循环.
 # │  参数：profile_home: 'Path'
 # │  返回：（未标注类型）
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2388,7 +2388,7 @@ async def _async_profile_runtime_scope(profile_home: "Path"):
 
 
 # ┌── 函数 def load_gateway_config_for_runner()
-# │  作用：Load gateway config for the process-level GatewayRunner. Multiplexed: reload under the default
+# │  作用：加载 gateway 配置用于进程-级别 GatewayRunner. Multiplexed: reload under 默认值
 # │  参数：无
 # │  返回：'GatewayConfig'
 # └──────────────────────────────────────────────────────────────
@@ -2422,7 +2422,7 @@ def load_gateway_config_for_runner() -> "GatewayConfig":
 
 
 # ┌── 异步函数（协程） def _discover_gateway_mcp_tools()
-# │  作用：Run startup MCP discovery for every profile this gateway serves: ``discover_mcp_tools`` reads
+# │  作用：运行 startup MCP discovery 用于每个配置档这个 gateway serves: ``discover_mcp_tools`` 读取
 # │  参数：config: object
 # │  返回：None
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -2460,7 +2460,7 @@ async def _discover_gateway_mcp_tools(config: object) -> None:
 
 
 # ┌── 函数 def _platform_has_bot_credential()
-# │  作用：Return True when a token-authenticated platform has a usable bot credential; platforms not using
+# │  作用：当 令牌-authenticated 平台有 usable 机器人 credential; 平台不 using 时返回 True。
 # │  参数：platform: 'Platform', platform_config: 'PlatformConfig'
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2525,7 +2525,7 @@ _DISPLAY_ENV_BRIDGE = {
 
 
 # ┌── 函数 def _bridge_section_to_env()
-# │  作用：Export every present ``mapping`` key of a config section as ``str(value)``.
+# │  作用：Export 每个 present ``mapping`` 键的 配置 section 作为 ``str(值)``.
 # │  参数：section: Any, mapping: Dict[str, str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2538,7 +2538,7 @@ def _bridge_section_to_env(section: Any, mapping: Dict[str, str]) -> None:
 
 
 # ┌── 函数 def _bridge_max_turns_to_env()
-# │  作用：Bridge ``agent.max_turns`` preserving its raw spelling ("none", "unlimited", "120"); Python None
+# │  作用：Bridge ``Agent.max_turns`` preserving 其 raw spelling ("None", "unlimited", "120"); Python None
 # │  参数：agent_cfg: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2556,7 +2556,7 @@ def _bridge_max_turns_to_env(agent_cfg: Any) -> None:
 
 
 # ┌── 函数 def _bridge_terminal_config_to_env()
-# │  作用：Bridge nested ``terminal.*`` config to TERMINAL_* env vars (config.yaml overrides .env here).
+# │  作用：Bridge nested ``终端.*`` 配置 TERMINAL_* env vars (配置.YAML 覆盖值 .env 这里).
 # │  参数：_terminal_cfg: dict
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2614,7 +2614,7 @@ def _bridge_terminal_config_to_env(_terminal_cfg: dict) -> None:
 
 
 # ┌── 函数 def _bridge_auxiliary_config_to_env()
-# │  作用：Bridge auxiliary model/endpoint overrides (vision, approval, plugins); compression reads yaml.
+# │  作用：Bridge 辅助的模型/endpoint 覆盖值 (vision, approval, plugins); compression 读取 YAML.
 # │  参数：_auxiliary_cfg: dict
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2643,7 +2643,7 @@ def _bridge_auxiliary_config_to_env(_auxiliary_cfg: dict) -> None:
 
 
 # ┌── 函数 def _bridge_config_to_env()
-# │  作用：Export config.yaml settings to the env vars os.getenv() consumers read.
+# │  作用：Export 配置.YAML settings env vars os.getenv() consumers 读取.
 # │  参数：_cfg: dict
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2693,7 +2693,7 @@ def _bridge_config_to_env(_cfg: dict) -> None:
 
 
 # ┌── 函数 def _load_bridge_config()
-# │  作用：Effective USER config (no defaults) for the presence-sensitive env bridge: only keys the user
+# │  作用：Effective USER 配置 (无默认值) 用于 presence-sensitive env bridge: 仅键 user
 # │  参数：config_path: Path
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -2813,7 +2813,7 @@ logger = logging.getLogger(__name__)
 
 
 # ┌── 函数 def _best_effort()
-# │  作用：Call ``fn``; return None on any Exception (debug-logged via ``debug_msg`` ``%s`` if given).
+# │  作用：Call ``fn``; 返回 None 在…上任意异常 (调试-logged via ``debug_msg`` ``%s`` 若 given).
 # │  参数：fn: Callable[[], Any], debug_msg: Optional[str] = None
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -2844,7 +2844,7 @@ _OWN_POLICY_OPEN_ENV = {
 
 
 # ┌── 函数 def _own_policy_open_startup_violation()
-# │  作用：Return a startup-abort reason when open policy lacks allow-all opt-in.
+# │  作用：当 打开策略 lacks allow-全部 opt-在. 时返回 startup-abort reason。
 # │  参数：config
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -2908,7 +2908,7 @@ _CONVERSATION_SCOPED_STATE: tuple = (
 
 
 # ┌── 函数 def _resolve_runtime_agent_kwargs()
-# │  作用：Resolve provider credentials for gateway-created AIAgent instances.
+# │  作用：Resolve 服务商 credentials 用于 gateway-已创建 AIAgent instances.
 # │  参数：无
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -2951,7 +2951,7 @@ def _resolve_runtime_agent_kwargs() -> dict:
 
 
 # ┌── 函数 def _runtime_agent_kwargs()
-# │  作用：AIAgent constructor kwargs shared by every runtime-provider resolution.
+# │  作用：AIAgent constructor kwargs shared 由每个运行时-服务商 resolution.
 # │  参数：runtime: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -2972,7 +2972,7 @@ def _runtime_agent_kwargs(runtime: dict) -> dict:
 
 
 # ┌── 类 class _GatewayModelContext
-# │  说明：Effective gateway model route and context-window resolution.
+# │  说明：Effective gateway 模型路由且 上下文-window resolution.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclasses.dataclass(frozen=True)
@@ -2987,7 +2987,7 @@ class _GatewayModelContext:
 
 
 # ┌── 函数 def _resolve_gateway_model_context()
-# │  作用：Resolve the configured gateway route and effective context window. Call off-loop (may block).
+# │  作用：Resolve configured gateway 路由且 effective 上下文窗口. Call off-循环 (可以 block).
 # │  参数：model: Optional[str] = None
 # │  返回：_GatewayModelContext
 # └──────────────────────────────────────────────────────────────
@@ -3062,7 +3062,7 @@ def _resolve_gateway_model_context(model: Optional[str] = None) -> _GatewayModel
 
 
 # ┌── 函数 def _resolve_runtime_agent_kwargs_for_provider()
-# │  作用：Resolve runtime credentials for a specific provider (e.g. from channel override).
+# │  作用：Resolve 运行时 credentials 用于 specific 服务商 (e.g. 从通道覆盖值).
 # │  参数：provider: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -3083,7 +3083,7 @@ def _resolve_runtime_agent_kwargs_for_provider(provider: str) -> dict:
 
 
 # ┌── 函数 def _deep_merge_request_overrides()
-# │  作用：Merge request_overrides dicts, deep-merging nested dictionaries.
+# │  作用：合并 request_overrides 字典，对嵌套字典做深合并。
 # │  参数：base: Optional[dict], override: Optional[dict]
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -3103,7 +3103,7 @@ def _deep_merge_request_overrides(base: Optional[dict], override: Optional[dict]
 
 
 # ┌── 函数 def _credential_pool_for_provider()
-# │  作用：Return the live credential pool for a provider id (e.g. ``custom:hyper``).
+# │  作用：返回 当前活跃的 credential pool 用于服务商 id (e.g. ``custom:hyper``).。
 # │  参数：provider: Optional[str]
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -3123,7 +3123,7 @@ def _credential_pool_for_provider(provider: Optional[str]):
 
 
 # ┌── 函数 def _try_resolve_fallback_provider()
-# │  作用：Attempt to resolve credentials from the fallback_model/fallback_providers config.
+# │  作用：尝试 resolve credentials 从 fallback_model/fallback_providers 配置.
 # │  参数：无
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -3166,7 +3166,7 @@ def _try_resolve_fallback_provider() -> dict | None:
 
 
 # ┌── 函数 def _event_media_type_at()
-# │  作用：Per-attachment MIME at *index*; "" when the adapter set only a message-level type.
+# │  作用：Per-attachment MIME 在 *index*; "" 当适配器设置仅 消息-级别类型.
 # │  参数：event, index: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3178,7 +3178,7 @@ def _event_media_type_at(event, index: int) -> str:
 
 
 # ┌── 函数 def _event_media_kind_is()
-# │  作用：Per-attachment MIME first, message-level type only when unknown (else a document uploaded
+# │  作用：Per-attachment MIME first, 消息-级别类型仅 当 unknown (否则 document uploaded
 # │  参数：event, index: int, mime_prefix: str, fallback_types: frozenset
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3214,7 +3214,7 @@ def _event_media_is_audio(event, index: int) -> bool:
 
 
 # ┌── 函数 def _event_media_is_stt_input()
-# │  作用：True when an audio attachment should enter the automatic STT pipeline.
+# │  作用：当 audio attachment 应当 enter automatic STT pipeline. 时返回 True。
 # │  参数：event, index: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3239,7 +3239,7 @@ def _event_media_is_video(event, index: int) -> bool:
 
 
 # ┌── 函数 def _build_media_placeholder()
-# │  作用：Text placeholder for media-only events (later replaced by vision enrichment).
+# │  作用：文本 placeholder 用于 media-仅事件 (later replaced 由 vision enrichment).
 # │  参数：event
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3262,7 +3262,7 @@ def _build_media_placeholder(event) -> str:
 
 
 # ┌── 函数 def _build_document_context_note()
-# │  作用：Context note prepended to a user turn when they attach a document.
+# │  作用：上下文 note prepended user 轮次当 它们 attach document.
 # │  参数：display_name: str, agent_path: str, mtype: str, content_inlined: bool = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3308,7 +3308,7 @@ def _format_duration(seconds: float) -> str:
 
 
 # ┌── 异步函数（协程） def _probe_audio_duration()
-# │  作用：Best-effort duration probe. Returns formatted MM:SS / HH:MM:SS, or None on failure.
+# │  作用：尽最大努力 duration probe. 返回 formatted MM:SS / HH:MM:SS, 或 None 在…上 failure.
 # │  参数：path: str
 # │  返回：Optional[str]
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -3356,7 +3356,7 @@ async def _probe_audio_duration(path: str) -> Optional[str]:
 
 
 # ┌── 函数 def _dequeue_pending_event()
-# │  作用：Consume and return the pending event; media metadata is kept so follow-ups re-enter preprocessing.
+# │  作用：消费且 返回 pending 事件; media metadata 是保留从而 follow-ups re-enter preprocessing.
 # │  参数：adapter, session_key: str
 # │  返回：MessageEvent | None
 # └──────────────────────────────────────────────────────────────
@@ -3377,7 +3377,7 @@ _INTERRUPT_REASON_GATEWAY_RESTART = "Gateway restarting"
 
 
 # ┌── 函数 def _reap_gateway_turn_processes()
-# │  作用：Reap only background processes created by one abandoned turn.
+# │  作用：Reap 仅 background 进程已创建由 one abandoned 轮次.
 # │  参数：task_id: str, process_baseline, source: str, is_still_current: Optional[Callable[[], bool]] = ...
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3429,7 +3429,7 @@ _TURN_STACK_DUMP_FRAME_MARKERS = (
 
 
 # ┌── 函数 def _dump_wedged_turn_stacks()
-# │  作用：Log the stack of every thread that looks like turn work, at reap time.
+# │  作用：日志 stack 的每个线程那个 looks like 轮次 work, 在 reap time.
 # │  参数：task_id: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3467,7 +3467,7 @@ def _dump_wedged_turn_stacks(task_id: str) -> None:
 
 
 # ┌── 函数 def _abandon_timed_out_gateway_turn()
-# │  作用：Interrupt one timed-out turn and reap only processes it created.
+# │  作用：Interrupt one timed-out 轮次且 reap 仅进程它 已创建.
 # │  参数：agent_holder, task_id: str, process_baseline, worker_done: threading.Event, timeout_fired: threading.Event, cleanup_lock: threading.Lock, is_still_current: Optional[Callable[[], bool]] = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3506,7 +3506,7 @@ def _abandon_timed_out_gateway_turn(
 
 
 # ┌── 函数 def _watch_gateway_turn_inactivity()
-# │  作用：Thread watchdog that remains runnable when gateway asyncio is starved.
+# │  作用：线程 watchdog 那个 remains runnable 当 gateway asyncio 是 starved.
 # │  参数：agent_holder, task_id: str, process_baseline, timeout: float, worker_done: threading.Event, timeout_fired: threading.Event, cleanup_lock: threading.Lock, poll_interval: float = ...  …共 9 个
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3541,7 +3541,7 @@ _CONTROL_INTERRUPT_MESSAGES = frozenset({
 
 
 # ┌── 函数 def _is_control_interrupt_message()
-# │  作用：Return True when an interrupt message is internal control flow.
+# │  作用：当 interrupt 消息是 internal control flow. 时返回 True。
 # │  参数：message: Optional[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3555,7 +3555,7 @@ def _is_control_interrupt_message(message: Optional[str]) -> bool:
 
 
 # ┌── 函数 def _strip_response_attachments_for_direct_send()
-# │  作用：Return the visible text portion of a response before direct send().
+# │  作用：返回 visible 文本 portion 的响应在…之前 direct send().。
 # │  参数：response: str, adapter
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3573,7 +3573,7 @@ def _strip_response_attachments_for_direct_send(response: str, adapter) -> str:
 
 
 # ┌── 函数 def _skill_slug_from_frontmatter()
-# │  作用：Derive ``(slug, declared_name)`` from a SKILL.md; ``(None, None)`` if unreadable or no ``name:``.
+# │  作用：Derive ``(slug, declared_name)`` 从 SKILL.md; ``(None, None)`` 若 unreadable 或无 ``名称:``.
 # │  参数：skill_md: Path
 # │  返回：tuple[str | None, str | None]
 # └──────────────────────────────────────────────────────────────
@@ -3615,7 +3615,7 @@ def _skill_slug_from_frontmatter(skill_md: Path) -> tuple[str | None, str | None
 
 
 # ┌── 函数 def _check_unavailable_skill()
-# │  作用：Hint when a command matches a skill that is disabled or optional-install only; else None.
+# │  作用：Hint 当命令 matches skill 那个是 disabled 或 optional-安装仅; 否则 None.
 # │  参数：command_name: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -3669,7 +3669,7 @@ def _check_unavailable_skill(command_name: str) -> str | None:
 
 
 # ┌── 函数 def _platform_config_key()
-# │  作用：Map a Platform enum to its config.yaml key (LOCAL→"cli", rest→enum value).
+# │  作用：Map 平台枚举其 配置.YAML 键 (LOCAL→"cli", rest→枚举值).
 # │  参数：platform: 'Platform'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3680,7 +3680,7 @@ def _platform_config_key(platform: "Platform") -> str:
 
 
 # ┌── 函数 def _teams_pipeline_plugin_enabled()
-# │  作用：Return True when the standalone Teams pipeline plugin is enabled.
+# │  作用：当 standalone Teams pipeline plugin 是 enabled. 时返回 True。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3692,7 +3692,7 @@ def _teams_pipeline_plugin_enabled() -> bool:
 
 
 # ┌── 函数 def _gateway_config_home()
-# │  作用：Return the Hermes home that gateway config reads should use.
+# │  作用：返回 Hermes 主目录那个 gateway 配置读取应当 use.。
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -3704,7 +3704,7 @@ def _gateway_config_home() -> Path:
 
 
 # ┌── 函数 def _load_gateway_config()
-# │  作用：The effective user config.yaml (managed overlay, ``${VAR}`` expansion, model-key canon; no
+# │  作用：effective user 配置.YAML (managed 叠加, ``${VAR}`` expansion, 模型-键 canon; 无
 # │  参数：config_path: 'Path | None' = None
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -3727,7 +3727,7 @@ def _load_gateway_config(config_path: "Path | None" = None) -> dict:
 
 
 # ┌── 函数 def _checkpoint_agent_kwargs()
-# │  作用：Translate gateway checkpoint config into ``AIAgent`` constructor args.
+# │  作用：Translate gateway 检查点配置进入 ``AIAgent`` constructor args.
 # │  参数：config: dict | None
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -3750,7 +3750,7 @@ def _checkpoint_agent_kwargs(config: dict | None) -> dict:
 
 
 # ┌── 函数 def _resolve_gateway_model()
-# │  作用：Read model from config.yaml (single source of truth), else temporary AIAgents (e.g. /compress)
+# │  作用：读取模型从 配置.YAML (single source 的 truth), 否则 temporary AIAgents (e.g. /compress)
 # │  参数：config: dict | None = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3770,7 +3770,7 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
 
 
 # ┌── 函数 def _channel_override_lookup_keys()
-# │  作用：Ordered, de-duplicated ``channel_overrides`` lookup keys (matches ``resolve_channel_prompt``:
+# │  作用：Ordered, de-duplicated ``channel_overrides`` lookup 键 (matches ``resolve_channel_prompt``:
 # │  参数：chat_id: str, thread_id: Optional[str] = ..., parent_id: Optional[str] = ...
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -3783,7 +3783,7 @@ def _channel_override_lookup_keys(
 
 
 # ┌── 函数 def _get_channel_override()
-# │  作用：Per-channel override via chat_id, then thread_id, then parent_id; None if absent.
+# │  作用：Per-通道覆盖值 via chat_id, 然后 thread_id, 然后 parent_id; None 若 absent.
 # │  参数：config: GatewayConfig, platform: Platform, chat_id: str, thread_id: Optional[str] = ..., parent_id: Optional[str] = ...
 # │  返回：Optional[ChannelOverride]
 # └──────────────────────────────────────────────────────────────
@@ -3810,7 +3810,7 @@ def _get_channel_override(
 
 
 # ┌── 函数 def _resolve_hermes_bin()
-# │  作用：Hermes update command argv: ``hermes`` on PATH, else ``python -m hermes_cli.main``, else None.
+# │  作用：Hermes 更新命令 argv: ``hermes`` 在…上路径, 否则 ``python -m hermes_cli.main``, 否则 None.
 # │  参数：无
 # │  返回：Optional[list[str]]
 # └──────────────────────────────────────────────────────────────
@@ -3837,7 +3837,7 @@ _PROFILE_ID_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
 # ┌── 函数 def _parse_session_key()
-# │  作用：Parse a session key (``agent:{ns}:{platform}:{chat_type}:{chat_id}[:{extra}...]``).
+# │  作用：解析会话键 (``Agent:{ns}:{平台}:{chat_type}:{chat_id}[:{extra}...]``).
 # │  参数：session_key: str
 # │  返回：'dict | None'
 # └──────────────────────────────────────────────────────────────
@@ -3869,7 +3869,7 @@ def _parse_session_key(session_key: str) -> "dict | None":
 
 
 # ┌── 函数 def _shorten_command_for_display()
-# │  作用：Collapse a shell command onto one line and cap its length for display.
+# │  作用：Collapse shell 命令 onto one line 且 cap 其 length 用于展示.
 # │  参数：command: str, limit: int = 80
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3883,7 +3883,7 @@ def _shorten_command_for_display(command: str, limit: int = 80) -> str:
 
 
 # ┌── 函数 def _format_concise_process_notification()
-# │  作用：One-line completion message for ``concise`` display mode; failure appends a short output tail.
+# │  作用：One-line completion 消息用于 ``concise`` 展示模式; failure 追加 short 输出 tail.
 # │  参数：session_id: str, command: str, exit_code, output: str, duration_seconds = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3919,7 +3919,7 @@ def _format_concise_process_notification(
 
 
 # ┌── 函数 def _format_gateway_process_notification()
-# │  作用：Format a watch pattern event from completion_queue into a [IMPORTANT:] message.
+# │  作用：Format watch pattern 事件从 completion_queue 进入 [IMPORTANT:] 消息.
 # │  参数：evt: dict
 # │  返回：'str | None'
 # └──────────────────────────────────────────────────────────────
@@ -3958,7 +3958,7 @@ def _format_gateway_process_notification(evt: dict) -> "str | None":
 
 
 # ┌── 函数 def _drain_gateway_watch_events()
-# │  作用：Drain gateway-owned watch events without spinning on requeued events.
+# │  作用：Drain gateway-持有的 watch 事件不 spinning 在…上 requeued 事件.
 # │  参数：completion_queue
 # │  返回：'list[dict]'
 # └──────────────────────────────────────────────────────────────
@@ -3992,7 +3992,7 @@ _gateway_runner_ref: _weakref.ref = lambda: None
 
 
 # ┌── 函数 def _normalize_empty_agent_response()
-# │  作用：Normalize empty/None agent responses into user-facing messages.
+# │  作用：归一化 empty/None Agent 响应进入面向用户的消息.
 # │  参数：agent_result: dict, response: str, history_len: int = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -4089,7 +4089,7 @@ def _normalize_empty_agent_response(
 
 
 # ┌── 函数 def _is_gateway_hidden_reasoning_incomplete_turn()
-# │  作用：Detect retry-exhausted turns with hidden reasoning but no visible answer.
+# │  作用：检测重试-exhausted 轮次带 hidden reasoning 但无 visible answer.
 # │  参数：agent_result: dict
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -4111,7 +4111,7 @@ def _is_gateway_hidden_reasoning_incomplete_turn(agent_result: dict) -> bool:
 
 
 # ┌── 函数 def _should_clear_resume_pending_after_turn()
-# │  作用：True only when a gateway turn really completed successfully.
+# │  作用：True 仅当 gateway 轮次 really completed successfully.
 # │  参数：agent_result: dict
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -4130,7 +4130,7 @@ def _should_clear_resume_pending_after_turn(agent_result: dict) -> bool:
 
 
 # ┌── 函数 def _preserve_queued_followup_history_offset()
-# │  作用：Carry the outer history offset through queued follow-up drains.
+# │  作用：在排队的后续抽取过程中，保留外层的历史偏移量。
 # │  参数：current_result: dict, followup_result: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -4155,7 +4155,7 @@ def _preserve_queued_followup_history_offset(
 
 
 # ┌── 异步函数（协程） def _dispose_unused_adapter()
-# │  作用：Best-effort dispose for an adapter that never made it onto ``self.adapters`` (may be ``None``).
+# │  作用：尽最大努力 dispose 用于适配器那个 never made 它 onto ``self.adapters`` (可以是 ``None``).
 # │  参数：adapter: 'BasePlatformAdapter | None'
 # │  返回：None
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -4197,7 +4197,7 @@ _RECONNECT_ATTENTION_AFTER_SECONDS = _float_env("HERMES_RECONNECT_ATTENTION_AFTE
 
 
 # ┌── 函数 def _reconnect_backoff()
-# │  作用：Exponential reconnect backoff: 30s, 60s, 120s, ... capped at 5 min.
+# │  作用：Exponential reconnect backoff: 30s, 60s, 120s, ... capped 在 5 min.
 # │  参数：attempt: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -4208,7 +4208,7 @@ def _reconnect_backoff(attempt: int) -> int:
 
 
 # ┌── 函数 def _reconnect_needs_attention()
-# │  作用：True when a reconnect-queue entry has waited long enough for NEEDS_ATTENTION.
+# │  作用：当 reconnect-队列 entry 有 waited long enough 用于 NEEDS_ATTENTION. 时返回 True。
 # │  参数：info: dict, now: float
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -4239,7 +4239,7 @@ _AUTO_RESET_CONTEXT_NOTES = {
 
 
 # ┌── 函数 def _write_runtime_status_quiet()
-# │  作用：Best-effort ``gateway_state.json`` write; status persistence must never abort the caller.
+# │  作用：尽最大努力 ``gateway_state.JSON`` 写入; status persistence 必须 never abort caller.
 # │  参数：**fields
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -4254,7 +4254,7 @@ def _write_runtime_status_quiet(**fields: Any) -> None:
 
 
 # ┌── 函数 def _command_origin_for_source()
-# │  作用：Delivery origin for a shared CLI/gateway command so its job replies to this chat/thread.
+# │  作用：Delivery origin 用于 shared CLI/gateway 命令从而其 job replies 这个 chat/线程.
 # │  参数：source: Any
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -4278,7 +4278,7 @@ def _command_origin_for_source(source: Any) -> Optional[dict]:
 
 
 # ┌── 函数 def _builtin_adapter_import()
-# │  作用：Lazy-import ``(adapter_cls, requirements_ok)`` from ``gateway.platforms.<module>``.
+# │  作用：Lazy-导入 ``(adapter_cls, requirements_ok)`` 从 ``gateway.平台.<模块>``.
 # │  参数：module: str, adapter_name: str, requirement: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -4313,7 +4313,7 @@ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
 
 
 # ┌── 函数 def _instantiate_builtin_adapter()
-# │  作用：Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown.
+# │  作用：Instantiate core (non-plugin) 适配器, 或 None 当其 requirements 是 unmet/unknown.
 # │  参数：platform: Platform, config: Any
 # │  返回：Optional[BasePlatformAdapter]
 # └──────────────────────────────────────────────────────────────
@@ -4340,7 +4340,7 @@ def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[Ba
 
 
 # ┌── 类 class GatewayRunner（继承自：GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin, GatewayVoiceMixin, GatewayAdapterLifecycleMixin, GatewayTopicThreadsMixin, GatewayTurnMixin, GatewayShutdownMixin, GatewayBusySessionMixin, GatewayConfigLoadersMixin, GatewayStartupMixin, GatewaySessionWatchersMixin, GatewayNotificationsMixin, GatewayInboundMixin, GatewayGoalsMixin, GatewayAgentCacheMixin, GatewayProfileReconcileMixin）
-# │  说明：Main gateway controller: manages adapter lifecycles, routes messages to/from the agent.
+# │  说明：Main gateway controller: manages 适配器 lifecycles, 路由消息 /从 Agent.
 # │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
 # │  成员：共 47 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
@@ -4398,7 +4398,7 @@ class GatewayRunner(
     _update_prompt_pending = legacy_dict_property("_update_prompt_pending")
 
     # ┌── 函数 def _sessions_map()
-    # │  作用：Per-session state map; lazily created so bare ``object.__new__`` test runners work.
+    # │  作用：Per-会话状态 map; lazily 已创建从而 bare ``对象.__new__`` 测试 runners work.
     # │  参数：self
     # │  返回：Dict[str, 'SessionState']
     # └──────────────────────────────────────────────────────────────
@@ -4412,7 +4412,7 @@ class GatewayRunner(
         return sessions
 
     # ┌── 函数 def _session_state()
-    # │  作用：Get-or-create the :class:`SessionState` for ``session_key``.
+    # │  作用：获取-或-创建 :类:`SessionState` 用于 ``session_key``.
     # │  参数：self, session_key: str
     # │  返回：'SessionState'
     # └──────────────────────────────────────────────────────────────
@@ -4427,7 +4427,7 @@ class GatewayRunner(
         return state
 
     # ┌── 函数 def _peek_session_state()
-    # │  作用：Return the SessionState for ``session_key`` without creating one.
+    # │  作用：返回 SessionState 用于 ``session_key`` 不创建 one.。
     # │  参数：self, session_key: str
     # │  返回：Optional['SessionState']
     # └──────────────────────────────────────────────────────────────
@@ -4438,7 +4438,7 @@ class GatewayRunner(
         return sessions.get(session_key) if sessions else None
 
     # ┌── 函数 def _is_session_running()
-    # │  作用：True when the session holds a running-turn slot (agent or sentinel).
+    # │  作用：当 会话 holds 运行-轮次 slot (Agent 或 sentinel). 时返回 True。
     # │  参数：self, session_key: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4449,7 +4449,7 @@ class GatewayRunner(
         return state is not None and state.turn.agent is not None
 
     # ┌── 函数 def _running_agent_items()
-    # │  作用：(session_key, agent) pairs for sessions with a running turn (incl. pending sentinels).
+    # │  作用：(session_key, Agent) pairs 用于会话带 运行轮次 (incl. pending sentinels).
     # │  参数：self
     # │  返回：List[tuple]
     # └──────────────────────────────────────────────────────────────
@@ -4508,7 +4508,7 @@ class GatewayRunner(
         self._init_registries_and_clocks()
 
     # ┌── 函数 def _init_runtime_settings()
-    # │  作用：Load ephemeral per-call config (prefill, reasoning, busy modes, timeouts, routing).
+    # │  作用：加载 ephemeral 每次调用的配置 (预填充, reasoning, busy 模式, 超时, routing).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4531,7 +4531,7 @@ class GatewayRunner(
         self._fallback_model = self._load_fallback_model()
 
     # ┌── 函数 def _init_session_store()
-    # │  作用：Build the SessionStore (with process-registry reset guard), its async facade and the router.
+    # │  作用：构建 SessionStore (带进程-registry reset 护栏), 其异步门面且 router.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4547,7 +4547,7 @@ class GatewayRunner(
         self.delivery_router = DeliveryRouter(self.config)
 
     # ┌── 函数 def _init_lifecycle_state()
-    # │  作用：Initialise run/exit/restart flags, per-session state, and completion-delivery bookkeeping.
+    # │  作用：Initialise 运行/exit/restart 标志, per-会话状态, 且 completion-delivery bookkeeping.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4632,7 +4632,7 @@ class GatewayRunner(
         self._completion_notification_batches_stopping = False
 
     # ┌── 函数 def _init_runtime_caches()
-    # │  作用：Agent cache, profile identity, Teams runtime, failed-platform tracking, slash-confirm counter.
+    # │  作用：Agent 缓存, 配置档身份, Teams 运行时, failed-平台 tracking, slash-confirm counter.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4658,7 +4658,7 @@ class GatewayRunner(
         self._slash_confirm_counter = itertools.count(1)
 
     # ┌── 函数 def _init_startup_checks()
-    # │  作用：Ensure tirith is installed and warn when manual approvals have no automated assessor.
+    # │  作用：Ensure tirith 是 installed 且警告当 manual approvals 有无 automated assessor.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4696,7 +4696,7 @@ class GatewayRunner(
             logger.debug("approvals.mode startup check skipped", exc_info=True)
 
     # ┌── 函数 def _init_session_db()
-    # │  作用：Open the session DB for the active scope and run opportunistic state.db / checkpoint maintenance.
+    # │  作用：打开会话数据库用于 active scope 且运行 opportunistic 状态.数据库 / 检查点 maintenance.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4767,7 +4767,7 @@ class GatewayRunner(
             logger.debug("checkpoint auto-maintenance skipped: %s", exc)
 
     # ┌── 函数 def _init_registries_and_clocks()
-    # │  作用：Pairing stores, hook registry, voice modes, background-task set, liveness and idle clocks.
+    # │  作用：Pairing stores, hook registry, voice 模式, background-task 设置, liveness 且 idle clocks.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4802,7 +4802,7 @@ class GatewayRunner(
         self._scale_to_zero_no_suspend_logged: bool = False
 
     # ┌── 函数 def _open_session_db_for_active_scope()
-    # │  作用：AsyncSessionDB for the active profile scope, resolved per access (not in ``__init__``) since
+    # │  作用：AsyncSessionDB 用于 active 配置档 scope, resolved per access (不在 ``__init__``) since
     # │  参数：self, raise_on_error: bool = False
     # │  返回：Any
     # └──────────────────────────────────────────────────────────────
@@ -4872,7 +4872,7 @@ class GatewayRunner(
         return cache.get(path, _open, raise_on_error=raise_on_error, on_recovered=_recovered)
 
     # ┌── 函数 def _session_db()
-    # │  作用：The AsyncSessionDB for the active profile scope, or a pinned override (assigning
+    # │  作用：AsyncSessionDB 用于 active 配置档 scope, 或 pinned 覆盖值 (assigning
     # │  参数：self
     # │  返回：Any
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -4898,7 +4898,7 @@ class GatewayRunner(
         self._session_db_pinned = value
 
     # ┌── 函数 def close_all_session_db_handles()
-    # │  作用：Close every per-profile AsyncSessionDB this runner opened.
+    # │  作用：关闭每个按配置档的 AsyncSessionDB 这个 runner 已打开.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4928,7 +4928,7 @@ class GatewayRunner(
         self._session_db_handle_cache.close_all(_close)
 
     # ┌── 函数 def _wire_teams_pipeline_runtime()
-    # │  作用：Bind the Teams meeting pipeline runtime to Graph webhook ingress (no-op if adapter/plugin off).
+    # │  作用：Bind Teams meeting pipeline 运行时 Graph webhook ingress (无-op 若适配器/plugin off).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4958,7 +4958,7 @@ class GatewayRunner(
                 "Teams pipeline runtime unavailable: %s", self._teams_pipeline_runtime_error)
 
     # ┌── 函数 def _warn_if_docker_media_delivery_is_risky()
-    # │  作用：Warn when Docker-backed gateways lack an explicit export mount: MEDIA delivery runs in the
+    # │  作用：警告当 Docker-backed gateways lack explicit export mount: MEDIA delivery 运行在
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -5001,7 +5001,7 @@ class GatewayRunner(
     exit_code = property(lambda self: self._exit_code)
 
     # ┌── 函数 def _session_key_for_source()
-    # │  作用：Resolve the current session key for a source, honoring gateway config when available.
+    # │  作用：Resolve current 会话键 用于 source, honoring gateway 配置当 available.
     # │  参数：self, source: SessionSource
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -5041,7 +5041,7 @@ class GatewayRunner(
     _TELEGRAM_LOBBY_REMINDER_COOLDOWN_S = 30.0
 
     # ┌── 函数 def _normalize_source_for_session_key()
-    # │  作用：Apply Telegram DM topic recovery to a source for session-key purposes. Always derive override
+    # │  作用：Apply Telegram 私信 topic recovery source 用于会话-键 purposes. Always derive 覆盖值
     # │  参数：self, source: SessionSource
     # │  返回：SessionSource
     # └──────────────────────────────────────────────────────────────
@@ -5068,7 +5068,7 @@ class GatewayRunner(
         return source if recovered is None else dataclasses.replace(source, thread_id=recovered)
 
     # ┌── 函数 def _resolve_session_key_or_none()
-    # │  作用：``session_key`` if given, else the key for ``source`` (None when it cannot be derived).
+    # │  作用：``session_key`` 若 given, 否则键 用于 ``source`` (None 当它 无法是 derived).
     # │  参数：self, source, session_key: Optional[str]
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -5127,7 +5127,7 @@ class GatewayRunner(
             active_work=active_work)
 
     # ┌── 函数 def _persist_active_agents()
-    # │  作用：Persist the live in-flight agent count to ``gateway_state.json`` at every turn boundary.
+    # │  作用：持久化当前活跃的在-flight Agent count ``gateway_state.JSON`` 在每个轮次 boundary.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -5138,7 +5138,7 @@ class GatewayRunner(
         _write_runtime_status_quiet(active_agents=self._active_work_count())
 
     # ┌── 函数 def _running_agent_ids()
-    # │  作用：``id()`` of every agent mid-turn — identity-keyed so the lookup is O(1) and independent of
+    # │  作用：``id()`` 的每个 Agent 轮次中段的 — 身份-keyed 从而 lookup 是 O(1) 且 independent 的
     # │  参数：self
     # │  返回：set
     # └──────────────────────────────────────────────────────────────
@@ -5207,7 +5207,7 @@ class GatewayRunner(
         "moa": "Agent is running — wait or /stop first, then run /moa."}
 
     # ┌── 函数 def _active_profile_name()
-    # │  作用：Return the profile name this gateway represents.
+    # │  作用：返回 配置档名称这个 gateway represents.。
     # │  参数：self
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -5223,7 +5223,7 @@ class GatewayRunner(
             return "default"
 
     # ┌── 函数 def _is_user_authorized_for_source()
-    # │  作用：Authorize under the live transport's profile, not the routed runtime (which need not copy the
+    # │  作用：Authorize under 当前活跃的 transport's 配置档, 不 routed 运行时 (其 need 不复制
     # │  参数：self, source: SessionSource, allow_adapter_delegation: bool = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5243,7 +5243,7 @@ class GatewayRunner(
         return self._under_authorization_profile(source, _check)
 
     # ┌── 函数 def _admit_bot_message_for_source()
-    # │  作用：Count a bot message under the profile that authorized it, so the guard's peek, count and
+    # │  作用：Count 机器人消息 under 配置档那个 authorized 它, 从而护栏's peek, count 且
     # │  参数：self, source: SessionSource
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5295,7 +5295,7 @@ class GatewayRunner(
             pass
 
     # ┌── 函数 def async_session_store()
-    # │  作用：Return the single async facade for this runner's SessionStore.
+    # │  作用：返回 single 异步门面用于这个 runner's SessionStore.。
     # │  参数：self
     # │  返回：AsyncSessionStore
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -5328,7 +5328,7 @@ class GatewayRunner(
         return source
 
     # ┌── 类 class _HygieneSettings
-    # │  说明：Resolved session-hygiene configuration for one inbound turn.
+    # │  说明：Resolved 会话-整理/清理 configuration 用于 one inbound 轮次.
     # │  成员：共 0 个方法；全部是下划线开头的内部方法
     # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
@@ -5349,7 +5349,7 @@ class GatewayRunner(
         data: Any
 
     # ┌── 类 class _HygieneAttempt
-    # │  说明：One detached hygiene compression attempt. ``cleanup_deferred`` is shared mutable state: wait
+    # │  说明：One detached 整理/清理 compression 尝试. ``cleanup_deferred`` 是 shared mutable 状态: wait
     # │  成员：共 0 个方法；全部是下划线开头的内部方法
     # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
@@ -5365,7 +5365,7 @@ class GatewayRunner(
         history: Any = None
 
     # ┌── 函数 def _thread_metadata_for_source()
-    # │  作用：Build the metadata dict platforms need for thread-aware replies.
+    # │  作用：构建 metadata 字典平台 need 用于线程-aware replies.
     # │  参数：self, source, reply_to_message_id: Optional[str] = None
     # │  返回：Optional[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -5409,7 +5409,7 @@ class GatewayRunner(
         return metadata
 
     # ┌── 函数 def _thread_metadata_for_target()
-    # │  作用：Build thread metadata for synthetic sends that only have routing state.
+    # │  作用：构建线程元数据用于 synthetic sends 那个仅 有 routing 状态.
     # │  参数：self, platform: Optional[Platform], chat_id: Optional[str], thread_id: Optional[str], chat_type: Optional[str] = ..., reply_to_message_id: Optional[str] = ..., adapter: Optional[Any] = ...
     # │  返回：Optional[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -5438,7 +5438,7 @@ class GatewayRunner(
         return metadata
 
     # ┌── 函数 def _is_telegram_dm_topic_target()
-    # │  作用：Return True when a target is a Telegram private DM topic lane.
+    # │  作用：当 target 是 Telegram private DM topic lane. 时返回 True。
     # │  参数：platform: Optional[Platform], chat_id: Optional[str], thread_id: Optional[str], chat_type: Optional[str] = ..., adapter: Optional[Any] = ...
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -5481,7 +5481,7 @@ class GatewayRunner(
     })
 
     # ┌── 函数 def _set_session_env()
-    # │  作用：Set session context variables (contextvars, not os.environ, so concurrent messages can't
+    # │  作用：设置会话上下文 variables (contextvars, 不 os.environ, 从而 concurrent 消息无法
     # │  参数：self, context: SessionContext
     # │  返回：list
     # └──────────────────────────────────────────────────────────────
@@ -5512,7 +5512,7 @@ class GatewayRunner(
             cron_session="")
 
     # ┌── 函数 def _clear_session_env()
-    # │  作用：Restore session context variables to their pre-handler values.
+    # │  作用：恢复会话上下文 variables 其 pre-handler 值.
     # │  参数：self, tokens: list
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -5522,7 +5522,7 @@ class GatewayRunner(
         clear_session_vars(tokens)
 
     # ┌── 异步函数（协程） def _run_in_executor_with_context()
-    # │  作用：Run blocking work in the thread pool while preserving session contextvars.
+    # │  作用：运行 blocking work 在线程 pool 当 preserving 会话 contextvars.
     # │  参数：self, func, *args
     # │  返回：（未标注类型）
     # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -5536,7 +5536,7 @@ class GatewayRunner(
         return await loop.run_in_executor(self._get_executor(), ctx.run, func, *args)
 
     # ┌── 函数 def _get_executor()
-    # │  作用：Return the gateway-owned executor for blocking agent work.
+    # │  作用：返回 gateway-持有的 executor 用于 blocking Agent work.。
     # │  参数：self
     # │  返回：concurrent.futures.ThreadPoolExecutor
     # └──────────────────────────────────────────────────────────────
@@ -5559,7 +5559,7 @@ class GatewayRunner(
             return executor
 
     # ┌── 函数 def _shutdown_executor()
-    # │  作用：Stop the gateway-owned executor; returns the number of worker threads still running.
+    # │  作用：Stop gateway-持有的 executor; 返回 number 的工作线程线程仍 运行.
     # │  参数：self, drain_timeout: float = 0.0
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5618,7 +5618,7 @@ class GatewayRunner(
         ("checkpoints", "max_total_size_mb"), ("checkpoints", "max_file_size_mb"))
 
     # ┌── 函数 def _init_cached_agent_for_turn()
-    # │  作用：Reset per-turn state on a cached agent before a new turn starts.
+    # │  作用：Reset per-轮次状态在…上 cached Agent 在…之前 new 轮次 starts.
     # │  参数：agent: Any, interrupt_depth: int
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -5647,7 +5647,7 @@ class GatewayRunner(
         agent._api_call_count = 0
 
     # ┌── 函数 def _profile_name_for_source()
-    # │  作用：Resolve the profile name for an inbound source via configured routes (most specific wins).
+    # │  作用：Resolve 配置档名称用于 inbound source via configured 路由 (most specific wins).
     # │  参数：self, source: SessionSource, adapter_profile: Optional[str] = None
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -5709,7 +5709,7 @@ class GatewayRunner(
         return None
 
     # ┌── 函数 def _resolve_profile_home_for_source()
-    # │  作用：Resolve which profile's HERMES_HOME serves this source: ``source.profile``, then
+    # │  作用：Resolve 其配置档's HERMES_HOME serves 这个 source: ``source.配置档``, 然后
     # │  参数：self, source: SessionSource
     # │  返回：'Path'
     # └──────────────────────────────────────────────────────────────
@@ -5750,7 +5750,7 @@ class GatewayRunner(
             return get_hermes_home()
 
     # ┌── 类 class _RunAgentDisplay
-    # │  说明：Per-turn display / progress settings resolved by ``_run_agent_display_settings``.
+    # │  说明：Per-轮次展示 / progress settings resolved 由 ``_run_agent_display_settings``.
     # │  成员：共 0 个方法；全部是下划线开头的内部方法
     # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
@@ -5776,7 +5776,7 @@ class GatewayRunner(
         _generic_status_phrase: Any = None
 
     # ┌── 类 class _RunAgentWorker
-    # │  说明：Executor future + inactivity-watchdog handles for one ``_run_agent_inner`` turn.
+    # │  说明：Executor future + inactivity-watchdog handles 用于 one ``_run_agent_inner`` 轮次.
     # │  成员：共 0 个方法；全部是下划线开头的内部方法
     # └──────────────────────────────────────────────────────────────
     @dataclasses.dataclass
@@ -5794,7 +5794,7 @@ class GatewayRunner(
 
 
 # ┌── 函数 def _run_planned_stop_watcher()
-# │  作用：Poll for the planned-stop marker and trigger graceful shutdown (Windows lacks
+# │  作用：Poll 用于 planned-stop marker 且 trigger graceful shutdown (Windows lacks
 # │  参数：stop_event: threading.Event, runner, loop: asyncio.AbstractEventLoop, shutdown_handler, poll_interval: float = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5845,7 +5845,7 @@ def _run_planned_stop_watcher(
 
 
 # ┌── 函数 def _housekeeping_chore()
-# │  作用：Run one housekeeping chore; failures log at debug (a persistent failure such as a broken
+# │  作用：运行 one housekeeping chore; failures 日志在 调试 ( persistent failure such 作为 broken
 # │  参数：label: str, fn, *args, **kwargs
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5877,7 +5877,7 @@ def _housekeeping_channel_directory(adapters, loop) -> None:
 
 
 # ┌── 函数 def _housekeeping_media_caches()
-# │  作用：Every platform media cache prunes on the same hourly cadence (24h max age).
+# │  作用：每个平台 media 缓存 prunes 在…上 same hourly cadence (24h max age).
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5917,7 +5917,7 @@ def _housekeeping_paste_sweep() -> None:
 
 
 # ┌── 函数 def _housekeeping_misfire_catch_up()
-# │  作用：External cron providers only: fire jobs whose time passed with no external fire delivered (dead
+# │  作用：External cron 服务商仅: fire jobs whose time passed 带无 external fire delivered (dead
 # │  参数：cron_provider, adapters, loop
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5931,7 +5931,7 @@ def _housekeeping_misfire_catch_up(cron_provider, adapters, loop) -> None:
 
 
 # ┌── 函数 def _housekeeping_curator()
-# │  作用：maybe_run_curator() is gated by config.interval_hours (7 days default); this is the poll.
+# │  作用：maybe_run_curator() 是 gated 由配置.interval_hours (7 days 默认值); 这个是 poll.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5942,7 +5942,7 @@ def _housekeeping_curator() -> None:
 
 
 # ┌── 函数 def _housekeeping_skill_sync()
-# │  作用：Inert unless the access gate is open and a sync base URL is configured.
+# │  作用：Inert unless access gate 是打开且 同步 base URL 是 configured.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5953,7 +5953,7 @@ def _housekeeping_skill_sync() -> None:
 
 
 # ┌── 函数 def _housekeeping_org_skill_sync()
-# │  作用：Gated on real org membership (the token must carry an org role): solo accounts never reach the network.
+# │  作用：Gated 在…上 real org membership ( 令牌必须 carry org 角色): solo accounts never reach network.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5964,7 +5964,7 @@ def _housekeeping_org_skill_sync() -> None:
 
 
 # ┌── 函数 def _housekeeping_auto_archive()
-# │  作用：Stale-session auto-archive on a live timer (the startup hook fires once); maybe_auto_archive()
+# │  作用：卡死的-会话 auto-archive 在…上当前活跃的 timer ( startup hook fires 一旦); maybe_auto_archive()
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5986,7 +5986,7 @@ def _housekeeping_auto_archive() -> None:
 
 
 # ┌── 函数 def _housekeeping_deferred_fts_retry()
-# │  作用：A SessionDB opened while another process held the rebuild lock fails closed onto the LIKE fallback
+# │  作用：会话数据库已打开当 another 进程 held rebuild 锁 fails 已关闭 onto LIKE 兜底
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -6007,7 +6007,7 @@ def _housekeeping_deferred_fts_retry() -> None:
 
 
 # ┌── 函数 def _housekeeping_memory_trim()
-# │  作用：Messaging-gateway counterpart to the TUI idle reaper; config-gated and rate-limited inside.
+# │  作用：Messaging-gateway counterpart TUI idle reaper; 配置-gated 且 rate-limited inside.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -6018,7 +6018,7 @@ def _housekeeping_memory_trim() -> None:
 
 
 # ┌── 函数 def _drain_restart_safe_cron_deliveries()
-# │  作用：Drain each profile's worker queue through its matching live adapters. A credential-less satellite
+# │  作用：Drain 每个配置档's 工作线程队列 through 其 matching 当前活跃的 adapters. credential-less satellite
 # │  参数：adapters, loop, runner = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -6048,7 +6048,7 @@ def _drain_restart_safe_cron_deliveries(adapters, loop, runner=None) -> None:
 
 
 # ┌── 函数 def _start_gateway_housekeeping()
-# │  作用：Background thread for gateway-only periodic chores (NOT cron). Separate from the cron trigger
+# │  作用：Background 线程用于 gateway-仅 periodic chores (不 cron). Separate 从 cron trigger
 # │  参数：stop_event: threading.Event, adapters = None, loop = None, interval: int = 60, cron_provider = None, runner = None, cron_thread = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -6097,7 +6097,7 @@ def _start_gateway_housekeeping(
 
 
 # ┌── 函数 def _start_cron_ticker()
-# │  作用：DEPRECATED shim — runs ONLY the built-in in-process cron tick loop; the trigger now lives behind
+# │  作用：DEPRECATED shim — 运行仅 已构建-在在-进程 cron tick 循环; trigger now lives behind
 # │  参数：stop_event: threading.Event, adapters = None, loop = None, interval: int = 60
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -6109,7 +6109,7 @@ def _start_cron_ticker(stop_event: threading.Event, adapters=None, loop=None, in
 
 
 # ┌── 函数 def _stop_cron_provider()
-# │  作用：Stop a cron provider without letting it choose the gateway exit code.
+# │  作用：Stop cron 服务商不 letting 它 choose gateway exit code.
 # │  参数：provider
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -6133,7 +6133,7 @@ _HOUSEKEEPING_SHUTDOWN_DRAIN_TIMEOUT = 35.0
 
 
 # ┌── 异步函数（协程） def _await_thread_exit()
-# │  作用：Wait for a daemon thread to exit WITHOUT blocking the event loop; True if it exited in time.
+# │  作用：Wait 用于 daemon 线程 exit 不 blocking 事件循环; True 若它 exited 在 time.
 # │  参数：thread: Optional[threading.Thread], timeout: float, poll: float = 0.1
 # │  返回：bool
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6158,7 +6158,7 @@ async def _await_thread_exit(
 
 
 # ┌── 异步函数（协程） def _shutdown_mcp_servers_nonblocking()
-# │  作用：Close MCP servers off-loop with a bounded wait; True when done within ``timeout``.
+# │  作用：关闭 MCP 服务端 off-循环带 bounded wait; True 当 done within ``超时``.
 # │  参数：timeout: float = 5.0
 # │  返回：bool
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6192,7 +6192,7 @@ async def _shutdown_mcp_servers_nonblocking(timeout: float = 5.0) -> bool:
 
 
 # ┌── 函数 def _shutdown_gateway_health_export()
-# │  作用：Idempotently drain and detach Gateway Health OTLP export.
+# │  作用：Idempotently drain 且 detach Gateway Health OTLP export.
 # │  参数：runner: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -6210,7 +6210,7 @@ def _shutdown_gateway_health_export(runner: Any) -> None:
 
 
 # ┌── 函数 def _gateway_stderr_formatter()
-# │  作用：Return the redacting formatter used by the gateway stderr stream.
+# │  作用：返回 redacting formatter used 由 gateway 标准错误 stream.。
 # │  参数：无
 # │  返回：logging.Formatter
 # └──────────────────────────────────────────────────────────────
@@ -6223,7 +6223,7 @@ def _gateway_stderr_formatter() -> logging.Formatter:
 
 # ownership guard inserted below (PR #93084)
 # ┌── 函数 def _replace_target_belongs_to_other_profile()
-# │  作用：Return True when ``--replace`` must refuse to signal ``existing_pid``.
+# │  作用：当 ``--replace`` 必须 refuse 信号 ``existing_pid``. 时返回 True。
 # │  参数：existing_pid: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -6301,7 +6301,7 @@ def _replace_target_belongs_to_other_profile(existing_pid: int) -> bool:
 
 
 # ┌── 函数 def _looks_like_profile_conflict_from_cmdline()
-# │  作用：Token-exact contradiction check between a target argv and our home (authority is the pid record).
+# │  作用：令牌-exact contradiction 检查 between target argv 且我们的主目录 (authority 是进程 ID record).
 # │  参数：command: str, our_home
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -6361,7 +6361,7 @@ def _looks_like_profile_conflict_from_cmdline(command: str, our_home) -> bool:
 
 
 # ┌── 函数 def _clear_takeover_marker_quiet()
-# │  作用：Best-effort: the marker is scoped to one target; a stale one would grief an unrelated shutdown.
+# │  作用：尽最大努力: marker 是 scoped one target; 卡死的 one 会 grief unrelated shutdown.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -6376,7 +6376,7 @@ def _clear_takeover_marker_quiet() -> None:
 
 
 # ┌── 异步函数（协程） def _wait_for_pid_exit()
-# │  作用：Poll for process exit without blocking the loop (a blocking sleep freezes signal handlers and
+# │  作用：Poll 用于进程 exit 不 blocking 循环 ( blocking sleep freezes 信号 handlers 且
 # │  参数：pid: int, attempts: int, delay: float
 # │  返回：bool
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6396,7 +6396,7 @@ async def _wait_for_pid_exit(pid: int, attempts: int, delay: float) -> bool:
 
 
 # ┌── 异步函数（协程） def _start_gateway_replace_existing_instance()
-# │  作用：Handle a live gateway PID under this HERMES_HOME: replace it (``--replace``) or refuse.
+# │  作用：Handle 当前活跃的 gateway 进程 ID under 这个 HERMES_HOME: replace 它 (``--replace``) 或 refuse.
 # │  参数：existing_pid: int, replace: bool
 # │  返回：bool
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6496,7 +6496,7 @@ async def _start_gateway_replace_existing_instance(existing_pid: int, replace: b
 
 
 # ┌── 函数 def _start_gateway_configure_logging()
-# │  作用：Sync bundled skills, set up file logging + startup security audit, and the -v/-q stderr handler.
+# │  作用：同步 bundled skills, 设置 up 文件日志 + startup security audit, 且 -v/-q 标准错误 handler.
 # │  参数：verbosity: Optional[int]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -6538,7 +6538,7 @@ def _start_gateway_configure_logging(verbosity: Optional[int]) -> None:
 
 
 # ┌── 函数 def _start_gateway_make_shutdown_signal_handler()
-# │  作用：Build the SIGINT/SIGTERM handler; ``_signal_initiated_shutdown[0]`` records an unplanned signal.
+# │  作用：构建 SIGINT/SIGTERM handler; ``_signal_initiated_shutdown[0]`` records unplanned 信号.
 # │  参数：runner, _signal_initiated_shutdown: list
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -6600,7 +6600,7 @@ def _start_gateway_make_shutdown_signal_handler(runner, _signal_initiated_shutdo
 
 
 # ┌── 函数 def _start_gateway_claim_pid_file()
-# │  作用：Claim the runtime lock + PID file (O_EXCL winner is the authoritative gateway). False = lost.
+# │  作用：Claim 运行时锁 + 进程 ID 文件 (O_EXCL winner 是 authoritative gateway). False = lost.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -6635,7 +6635,7 @@ def _start_gateway_claim_pid_file() -> bool:
 
 
 # ┌── 异步函数（协程） def _start_gateway_start_control_socket()
-# │  作用：Start the gateway control socket (identify/status/pause-for-update); None when unavailable.
+# │  作用：Start gateway control socket (identify/status/pause-用于-更新); None 当 unavailable.
 # │  参数：runner
 # │  返回：（未标注类型）
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6716,7 +6716,7 @@ async def _start_gateway_start_control_socket(runner):
 
 
 # ┌── 函数 def _start_gateway_start_cron_and_housekeeping()
-# │  作用：Start the cron scheduler thread + gateway housekeeping thread; returns
+# │  作用：Start cron scheduler 线程 + gateway housekeeping 线程; 返回
 # │  参数：runner
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -6795,7 +6795,7 @@ def _start_gateway_start_cron_and_housekeeping(runner):
 
 
 # ┌── 异步函数（协程） def _start_gateway_shutdown_tail()
-# │  作用：Post-``wait_for_shutdown`` teardown; returns the process exit verdict (True = exit 0).
+# │  作用：Post-``wait_for_shutdown`` teardown; 返回进程 exit verdict (True = exit 0).
 # │  参数：runner, _control_server, cron_stop: threading.Event, cron_provider, cron_thread: Any, housekeeping_thread: threading.Thread, _planned_stop_watcher_stop: threading.Event, _planned_stop_watcher_thread: threading.Thread  …共 9 个
 # │  返回：bool
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -6853,7 +6853,7 @@ async def _start_gateway_shutdown_tail(
 
 
 # ┌── 异步函数（协程） def start_gateway()
-# │  作用：Start the gateway and run until interrupted; False if it failed to start (non-zero exit so
+# │  作用：Start gateway 且运行 until interrupted; False 若它 failed start (non-zero exit 从而
 # │  参数：config: Optional[GatewayConfig] = None, replace: bool = False, verbosity: Optional[int] = 0
 # │  返回：bool
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -7022,7 +7022,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
 
 # ┌── 函数 def _guard_corrupt_user_config()
-# │  作用：Fail closed when the active profile's config.yaml cannot be parsed: nobody can repair it on this
+# │  作用：Fail 已关闭当 active 配置档's 配置.YAML 无法是 已解析: nobody 可以 repair 它在…上这个
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -7042,7 +7042,7 @@ def _guard_corrupt_user_config() -> None:
 
 
 # ┌── 函数 def main()
-# │  作用：CLI entry point for the gateway.
+# │  作用：CLI entry point 用于 gateway.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -7111,7 +7111,7 @@ def main():
 
 
 # ┌── 函数 def _exit_after_graceful_shutdown()
-# │  作用：Flush stdio, release the PID file + runtime lock, then hard-exit.
+# │  作用：冲刷 stdio, release 进程 ID 文件 + 运行时锁, 然后 hard-exit.
 # │  参数：exit_code: int
 # │  返回：None
 # └──────────────────────────────────────────────────────────────

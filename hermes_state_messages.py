@@ -72,7 +72,7 @@ _INVALID = object()  # _json_or sentinel where the fallback must be distinguisha
 
 
 # ┌── 函数 def _json_or()
-# │  作用：``json.loads(raw)``; on failure log *warning* and return *fallback*.
+# │  作用：``JSON.加载(raw)``; 在…上 failure 日志 *警告* 且返回 *兜底*.
 # │  参数：raw: Any, fallback: Any, warning: str
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ def _json_or(raw: Any, fallback: Any, warning: str) -> Any:
 
 
 # ┌── 函数 def _coerce_timestamp()
-# │  作用：Explicit message timestamp (datetime or number) or *default* when invalid or outside the sane
+# │  作用：Explicit 消息时间戳 (datetime 或 number) 或 *默认值* 当 invalid 或 outside sane
 # │  参数：value: Any, default: float
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ def _coerce_timestamp(value: Any, default: float) -> float:
 
 
 # ┌── 函数 def _parse_tool_calls()
-# │  作用：tool_calls is a list (live agent) or JSON string (import/export); parse so json.dumps never double-encodes.
+# │  作用：tool_calls 是列表 (当前活跃的 Agent) 或 JSON 字符串 (导入/export); 解析从而 JSON.dumps never double-encodes.
 # │  参数：tool_calls: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ def _tool_calls_count(tool_calls: Any) -> int:
 
 
 # ┌── 函数 def _tool_calls_len()
-# │  作用：Count of a stored ``tool_calls`` column: list length, *scalar* for a truthy non-list, else 0.
+# │  作用：Count 的 stored ``tool_calls`` column: 列表 length, *scalar* 用于 truthy non-列表, 否则 0.
 # │  参数：raw: Any, scalar: int = 0
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ def _tool_calls_len(raw: Any, scalar: int = 0) -> int:
 
 
 # ┌── 函数 def _scrub_surrogates()
-# │  作用：Lone surrogates make sqlite3 raise UnicodeEncodeError and abort the whole write.
+# │  作用：Lone surrogates make sqlite3 抛出 UnicodeEncodeError 且 abort whole 写入.
 # │  参数：value: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ def _scrub_surrogates(value: Any) -> Any:
 
 
 # ┌── 函数 def _stale_holder()
-# │  作用：A lock/lease row whose holder is expired or a provably dead local process.
+# │  作用：锁/lease row whose holder 是 expired 或 provably dead local 进程.
 # │  参数：row, now: float
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -172,14 +172,14 @@ def _stale_holder(row, now: float) -> bool:
 
 
 # ┌── 类 class SessionMessagesMixin
-# │  说明：Message append/replace/rewind, reactions, resume conversations, replay dedupe.
+# │  说明：消息追加/replace/rewind, reactions, resume conversations, 重放 dedupe.
 # │  成员：共 66 个方法；对外可用 35 个
 # └──────────────────────────────────────────────────────────────
 class SessionMessagesMixin:
     """Message append/replace/rewind, reactions, resume conversations, replay dedupe."""
 
     # ┌── 函数 def _bump_conversation_generation()
-    # │  作用：Advance the peer's conversation generation past a boundary, in the txn that writes it. Only
+    # │  作用：Advance peer's conversation generation past boundary, 在 txn 那个写入它. 仅
     # │  参数：self, conn, session_id: str, end_reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ class SessionMessagesMixin:
             conn.execute(_BUMP_GENERATION_SQL, (source, session_key))
 
     # ┌── 函数 def _encode_content()
-    # │  作用：Serialize list/dict content (multimodal parts) as a sentinel-prefixed JSON string (sqlite3 binds
+    # │  作用：Serialize 列表/字典内容 (multimodal parts) 作为 sentinel-prefixed JSON 字符串 (sqlite3 binds
     # │  参数：cls, content: Any
     # │  返回：Any
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -223,7 +223,7 @@ class SessionMessagesMixin:
             return _sanitize_surrogates(str(content))
 
     # ┌── 函数 def _decode_content()
-    # │  作用：Reverse :meth:`_encode_content`; returns scalars unchanged.
+    # │  作用：Reverse :meth:`_encode_content`; 返回 scalars unchanged.
     # │  参数：cls, content: Any
     # │  返回：Any
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -239,7 +239,7 @@ class SessionMessagesMixin:
         return content
 
     # ┌── 函数 def _encode_display_metadata()
-    # │  作用：Serialize ``display_metadata`` for its TEXT column; an already-serialized JSON string
+    # │  作用：Serialize ``display_metadata`` 用于其 文本 column; 已-serialized JSON 字符串
     # │  参数：display_metadata: Any
     # │  返回：Optional[str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -268,7 +268,7 @@ class SessionMessagesMixin:
         return json.dumps(display_metadata)
 
     # ┌── 函数 def _decode_display_metadata()
-    # │  作用：Decode a ``display_metadata`` column to a dict (never raw TEXT: the desktop does ``'task_count'
+    # │  作用：Decode ``display_metadata`` column 字典 (never 原始文本: desktop ``'task_count'
     # │  参数：raw: Any
     # │  返回：Optional[Dict[str, Any]]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -295,7 +295,7 @@ class SessionMessagesMixin:
         return meta
 
     # ┌── 函数 def _reasoning_json_text()
-    # │  作用：Serialize a structured reasoning field for its TEXT column. Strings are stored as-is: round-trips
+    # │  作用：Serialize 结构化的 reasoning 字段用于其 文本 column. Strings 是 stored 作为-是: 轮-trips
     # │  参数：value: Any
     # │  返回：Optional[str]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -309,7 +309,7 @@ class SessionMessagesMixin:
         return None if not value else (value if isinstance(value, str) else json.dumps(value))
 
     # ┌── 函数 def _check_transcript_write_guards()
-    # │  作用：Transcript-write admission checks, run INSIDE the write txn by every writer. Ordinary appends do
+    # │  作用：Transcript-写入 admission 检查, 运行 INSIDE 写入 txn 由每个 writer. Ordinary 追加
     # │  参数：self, conn, session_id: str, compression_lock_holder: Optional[str], turn_lease_holder: Optional[str] = None, turn_lease_ttl_seconds: float = 300.0, reject_active_turn_lease: bool = False, reject_active_compression_lock: bool = False  …共 9 个
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ class SessionMessagesMixin:
             raise CompressionSessionClosedError(session_id)
 
     # ┌── 函数 def _message_row_params()
-    # │  作用：Bind values for ``_INSERT_MESSAGE_SQL`` from one message dict (*tool_calls* already parsed;
+    # │  作用：Bind 值用于 ``_INSERT_MESSAGE_SQL`` 从 one 消息字典 (*tool_calls* 已已解析;
     # │  参数：self, session_id: str, role: str, msg: Dict[str, Any], tool_calls: Any, message_timestamp: float, keep_reasoning: bool
     # │  返回：tuple
     # └──────────────────────────────────────────────────────────────
@@ -409,7 +409,7 @@ class SessionMessagesMixin:
             display_metadata, self._display_identity(self._display_dedupe_key(identity_row)))
 
     # ┌── 函数 def _bump_session_counters()
-    # │  作用：Bump sessions.* counters after an insert; *unit* bakes the ``+ 1`` literal into the SQL.
+    # │  作用：递增会话.* counters 在…之后 insert; *unit* bakes ``+ 1`` literal 进入 SQL.
     # │  参数：conn, session_id: str, inserted: int, tool_calls: int, unit: bool
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -428,7 +428,7 @@ class SessionMessagesMixin:
                 f"UPDATE sessions SET message_count = message_count + {inc} WHERE id = ?", (*params, session_id))
 
     # ┌── 函数 def append_message()
-    # │  作用：Append one message; returns the row id and bumps the session counters. ``platform_message_id``:
+    # │  作用：追加 one 消息; 返回 row id 且递增会话 counters. ``platform_message_id``:
     # │  参数：self, session_id: str, role: str, content: str = None, tool_name: str = None, tool_calls: Any = None, tool_call_id: str = None, token_count: int = None  …共 25 个
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -464,7 +464,7 @@ class SessionMessagesMixin:
         return self._execute_write(_do, patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
 
     # ┌── 函数 def append_delegation_delivery()
-    # │  作用：Record a detached API result once, between client turns, including replay after rotation.
+    # │  作用：Record detached API 结果一旦, between 客户端轮次, including 重放在…之后 rotation.
     # │  参数：self, session_id: str, content: str, metadata: Dict[str, Any]
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -505,7 +505,7 @@ class SessionMessagesMixin:
         return self._execute_write(_do, patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
 
     # ┌── 函数 def append_messages_batch()
-    # │  作用：Append *messages* in ONE write txn (all rows land or none, guards run once); returns the inserted
+    # │  作用：追加 *消息* 在 ONE 写入 txn (全部 rows land 或 None, 护栏运行一旦); 返回 inserted
     # │  参数：self, session_id: str, messages: List[Dict[str, Any]], compression_lock_holder: Optional[str] = None, turn_lease_holder: Optional[str] = None, chunk_rows: Optional[int] = None, turn_lease_ttl_seconds: float = 300.0
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -538,7 +538,7 @@ class SessionMessagesMixin:
         return self._execute_write(_do, patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
 
     # ┌── 函数 def set_latest_matching_message_display_kind()
-    # │  作用：Stamp presentation metadata on this turn's freshly persisted row (newest active row by content,
+    # │  作用：Stamp presentation metadata 在…上这个轮次's freshly 已持久化的 row (newest active row 由内容,
     # │  参数：self, session_id: str, role: str, content: str, display_kind: str, display_metadata: Optional[Dict[str, Any]] = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -566,7 +566,7 @@ class SessionMessagesMixin:
         return self._execute_write(_do)
 
     # ┌── 函数 def _reaction_list()
-    # │  作用：Well-formed (dict) reactions stored under ``REACTIONS_METADATA_KEY``.
+    # │  作用：Well-formed (字典) reactions stored under ``REACTIONS_METADATA_KEY``.
     # │  参数：self, meta: Optional[Dict[str, Any]]
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -577,7 +577,7 @@ class SessionMessagesMixin:
         return [r for r in reactions if isinstance(r, dict)] if isinstance(reactions, list) else []
 
     # ┌── 函数 def set_message_reaction()
-    # │  作用：Set (``emoji=None``: clear) *author*'s reaction. Tapback semantics: one per author per message;
+    # │  作用：设置 (``emoji=None``: 清除) *author*'s reaction. Tapback semantics: one per author per 消息;
     # │  参数：self, session_id: str, message_row_id: int, emoji: Optional[str], author: str = ...
     # │  返回：Optional[List[Dict[str, Any]]]
     # └──────────────────────────────────────────────────────────────
@@ -611,7 +611,7 @@ class SessionMessagesMixin:
         return self._execute_write(_do)
 
     # ┌── 函数 def get_message_reactions()
-    # │  作用：Reaction list persisted on one message row (never ``None``).
+    # │  作用：Reaction 列表已持久化的在…上 one 消息 row (never ``None``).
     # │  参数：self, session_id: str, message_row_id: int
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -625,7 +625,7 @@ class SessionMessagesMixin:
         return self._reaction_list(self._decode_display_metadata(row[0])) if row is not None else []
 
     # ┌── 函数 def take_unseen_reactions()
-    # │  作用：Return *author*'s not-yet-surfaced reactions and mark them seen. Reactions are announced on the
+    # │  作用：返回 *author*'s 不-yet-已上报 reactions 且 mark them seen. Reactions 是 announced 在…上。
     # │  参数：self, session_id: str, author: str = ...
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -662,7 +662,7 @@ class SessionMessagesMixin:
         return self._execute_write(_do)
 
     # ┌── 函数 def latest_message_row_id()
-    # │  作用：Row id of the most recent active *role* message, or ``None``. ``offset`` steps back; ``require_text``
+    # │  作用：Row id 的 most recent active *角色* 消息, 或 ``None``. ``offset`` 步骤 back; ``require_text``
     # │  参数：self, session_id: str, role: str = ..., offset: int = ..., require_text: bool = ...
     # │  返回：Optional[int]
     # └──────────────────────────────────────────────────────────────
@@ -681,7 +681,7 @@ class SessionMessagesMixin:
         return row[0] if row else None
 
     # ┌── 函数 def latest_conversation_role()
-    # │  作用：Role of the newest active user/assistant/tool row, or ``None``. ``session_meta`` /
+    # │  作用：角色的 newest active user/assistant/工具 row, 或 ``None``. ``session_meta`` /
     # │  参数：self, session_id: str
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -696,7 +696,7 @@ class SessionMessagesMixin:
         return row[0] if row else None
 
     # ┌── 函数 def get_message_role()
-    # │  作用：Role of the active message at *row_id* in *session_id*, or ``None``.
+    # │  作用：角色的 active 消息在 *row_id* 在 *session_id*, 或 ``None``.
     # │  参数：self, session_id: str, row_id: int
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -710,7 +710,7 @@ class SessionMessagesMixin:
         return row[0] if row else None
 
     # ┌── 函数 def _insert_message_rows()
-    # │  作用：Insert *messages* as fresh active rows in the caller's txn -> ``(inserted, tool_call_count)``.
+    # │  作用：Insert *消息* 作为 fresh active rows 在 caller's txn -> ``(inserted, tool_call_count)``.
     # │  参数：self, conn, session_id: str, messages: List[Dict[str, Any]]
     # │  返回：tuple[int, int]
     # └──────────────────────────────────────────────────────────────
@@ -734,7 +734,7 @@ class SessionMessagesMixin:
         return inserted, tool_calls_total
 
     # ┌── 函数 def replace_messages()
-    # │  作用：Atomically replace a session's messages (/retry, /undo, /compress). DESTRUCTIVE by default (rows
+    # │  作用：Atomically replace 会话's 消息 (/重试, /undo, /compress). DESTRUCTIVE 由默认值 (rows
     # │  参数：self, session_id: str, messages: List[Dict[str, Any]], active_only: bool = False, archive_dropped: bool = False, reject_active_turn_lease: bool = False
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -774,7 +774,7 @@ class SessionMessagesMixin:
         self._execute_write(_do)
 
     # ┌── 函数 def has_archived_messages()
-    # │  作用：True if the session has any soft-archived (``active = 0``) rows (tests/diagnostics).
+    # │  作用：True 若会话有 任意 soft-archived (``active = 0``) rows (测试/diagnostics).
     # │  参数：self, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -790,7 +790,7 @@ class SessionMessagesMixin:
             "SELECT 1 FROM messages WHERE session_id = ? AND active = 0 LIMIT 1", (session_id,)) is not None
 
     # ┌── 函数 def get_active_message_watermark()
-    # │  作用：MAX(id) of the active rows (0 if none), captured at compression START: every active row above it
+    # │  作用：MAX(id) 的 active rows (0 若 None), captured 在 compression START: 每个 active row above 它
     # │  参数：self, session_id: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -805,7 +805,7 @@ class SessionMessagesMixin:
             "SELECT COALESCE(MAX(id), 0) FROM messages WHERE session_id = ? AND active = 1", (session_id,))[0])
 
     # ┌── 函数 def _tail_rows_after_watermark()
-    # │  作用：``(ids, tool_call_count)`` of the concurrent-tail rows selected by *sql* (``SELECT id, tool_calls``).
+    # │  作用：``(ids, tool_call_count)`` 的 concurrent-tail rows selected 由 *sql* (``SELECT id, tool_calls``).
     # │  参数：self, conn, sql: str, params
     # │  返回：Tuple[List[int], int]
     # └──────────────────────────────────────────────────────────────
@@ -816,7 +816,7 @@ class SessionMessagesMixin:
         return [int(r["id"]) for r in rows], sum(_tool_calls_len(r["tool_calls"]) for r in rows)
 
     # ┌── 函数 def _clone_message_rows()
-    # │  作用：Pure-SQL clone of *tail_ids* as fresh live rows (new id/display order, active=1, compacted=0;
+    # │  作用：Pure-SQL clone 的 *tail_ids* 作为 fresh 当前活跃的 rows (new id/展示 order, active=1, compacted=0;
     # │  参数：self, conn, tail_ids: List[int], session_id: Optional[str] = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -836,7 +836,7 @@ class SessionMessagesMixin:
             [session_id, *tail_ids] if retarget else tail_ids)
 
     # ┌── 函数 def archive_and_compact()
-    # │  作用：Non-destructive in-place compaction under ONE session id: soft-archive the active rows (``active=0,
+    # │  作用：Non-destructive 在-place 压缩 under ONE 会话 id: soft-archive active rows (``active=0,
     # │  参数：self, session_id: str, compacted_messages: List[Dict[str, Any]], model_config_patch: Optional[Dict[str, Any]] = None, watermark: Optional[int] = None, lock_holder: Optional[str] = None, tail_count: int = 0
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -906,7 +906,7 @@ class SessionMessagesMixin:
         return self._execute_write(_do)
 
     # ┌── 函数 def _message_column_names()
-    # │  作用：Column names of the messages table, cached per-connection era.
+    # │  作用：Column 名称的 消息 table, cached per-连接 era.
     # │  参数：self, conn
     # │  返回：List[str]
     # └──────────────────────────────────────────────────────────────
@@ -918,7 +918,7 @@ class SessionMessagesMixin:
         return self._message_columns_cache
 
     # ┌── 函数 def set_latest_user_api_content()
-    # │  作用：Backfill the ``api_content`` sidecar onto the newest ACTIVE user row (0/1 rows). Preflight compaction
+    # │  作用：Backfill ``api_content`` sidecar onto newest ACTIVE user row (0/1 rows). Preflight 压缩
     # │  参数：self, session_id: str, content: Any, api_content: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -947,7 +947,7 @@ class SessionMessagesMixin:
             (_scrub_surrogates(api_content), session_id, self._encode_content(content)))
 
     # ┌── 函数 def set_message_api_content()
-    # │  作用：Backfill the ``api_content`` sidecar onto ONE known durable row.
+    # │  作用：把 ``api_content`` 附属数据回填到「一条」已知的持久化行上。
     # │  参数：self, session_id: str, row_id: int, content: Any, api_content: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -981,7 +981,7 @@ class SessionMessagesMixin:
             (_scrub_surrogates(api_content), row_id, session_id, self._encode_content(content)))
 
     # ┌── 函数 def _display_dedupe_key()
-    # │  作用：Historical display identity, including normalized live content from user handoff carriers.
+    # │  作用：Historical 展示身份, including 已归一化当前活跃的内容从 user 交接 carriers.
     # │  参数：self, row
     # │  返回：Tuple[Any, ...]
     # └──────────────────────────────────────────────────────────────
@@ -1000,7 +1000,7 @@ class SessionMessagesMixin:
                 row["tool_call_id"], row["tool_calls"], row["tool_name"])
 
     # ┌── 函数 def _display_identity()
-    # │  作用：Fixed-width durable identity for indexed display-generation lookup.
+    # │  作用：Fixed-width durable 身份用于 indexed 展示-generation lookup.
     # │  参数：key: Tuple[Any, ...]
     # │  返回：bytes
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1012,7 +1012,7 @@ class SessionMessagesMixin:
         return hashlib.sha256(repr(key).encode("utf-8", "surrogatepass")).digest()
 
     # ┌── 函数 def _dedupe_display_generations()
-    # │  作用：Collapse compaction generations so each logical message appears once (the protected tail is copied
+    # │  作用：Collapse 压缩 generations 从而每个 logical 消息 appears 一旦 ( protected tail 是已复制
     # │  参数：self, rows
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1034,7 +1034,7 @@ class SessionMessagesMixin:
         return [seen[key] for key in sorted(seen, key=first_id.__getitem__)]
 
     # ┌── 函数 def _ensure_display_order()
-    # │  作用：Backfill one legacy session once, preserving the pre-index display identity exactly.
+    # │  作用：Backfill one legacy 会话一旦, preserving pre-index 展示身份 exactly.
     # │  参数：self, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1079,7 +1079,7 @@ class SessionMessagesMixin:
         return bool(self._execute_write(_do))
 
     # ┌── 函数 def _row_to_message_dict()
-    # │  作用：``dict(row)`` with content/tool_calls/display_metadata decoded; *summary_flag* keeps
+    # │  作用：``字典(row)`` 带内容/tool_calls/display_metadata decoded; *summary_flag* 保留
     # │  参数：self, row, warn_context: str, summary_flag: bool
     # │  返回：Dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -1101,7 +1101,7 @@ class SessionMessagesMixin:
         return msg
 
     # ┌── 函数 def _active_clause()
-    # │  作用：Audit: every row; display: active plus compaction-archived (never Undo/Rewind rows); default: live.
+    # │  作用：Audit: 每个 row; 展示: active plus 压缩-archived (never Undo/Rewind rows); 默认值: 当前活跃的.
     # │  参数：include_inactive: bool, include_compacted: bool
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1113,7 +1113,7 @@ class SessionMessagesMixin:
         return "" if include_inactive else (_DISPLAY_ACTIVE_CLAUSE if include_compacted else " AND active = 1")
 
     # ┌── 函数 def get_messages()
-    # │  作用：Load messages in insertion order (id, never timestamp: clocks regress). ``include_inactive``:
+    # │  作用：加载消息在 insertion order (id, never 时间戳: clocks regress). ``include_inactive``:
     # │  参数：self, session_id: str, include_inactive: bool = False, include_compacted: bool = False, limit: Optional[int] = None, offset: int = 0, latest: bool = False, after_id: Optional[int] = None
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1168,7 +1168,7 @@ class SessionMessagesMixin:
         return [self._row_to_message_dict(row, warn_context="get_messages", summary_flag=True) for row in rows]
 
     # ┌── 函数 def find_pr_url_messages()
-    # │  作用：Tool results containing ``/pull/``: a deliberately loose scan, oldest-first so the caller takes the last.
+    # │  作用：工具结果 containing ``/pull/``: deliberately loose scan, oldest-first 从而 caller takes last.
     # │  参数：self, session_ids: List[str]
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1185,7 +1185,7 @@ class SessionMessagesMixin:
                 chunk)]
 
     # ┌── 函数 def get_messages_around()
-    # │  作用：Up to *window* messages either side of an anchor id (ascending). ``messages_before``/``_after`` count
+    # │  作用：Up *window* 消息 either side 的 anchor id (ascending). ``messages_before``/``_after`` count
     # │  参数：self, session_id: str, around_message_id: int, window: int = 5
     # │  返回：Dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -1211,7 +1211,7 @@ class SessionMessagesMixin:
         return {"window": window_msgs, "messages_before": max(0, len(before_rows) - 1), "messages_after": len(after_rows)}
 
     # ┌── 函数 def resolve_resume_session_id()
-    # │  作用：Redirect a resume target to the descendant holding the messages: follow the compression chain to
+    # │  作用：Redirect resume target descendant holding 消息: follow compression chain
     # │  参数：self, session_id: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -1262,7 +1262,7 @@ class SessionMessagesMixin:
             return best if best is not None else session_id
 
     # ┌── 函数 def _fetch_conversation_rows()
-    # │  作用：``_CONVERSATION_ROW_COLUMNS`` rows for *session_ids* ORDER BY id (timestamps are not monotonic
+    # │  作用：``_CONVERSATION_ROW_COLUMNS`` rows 用于 *session_ids* ORDER 由 id (timestamps 是不 monotonic
     # │  参数：self, session_ids: List[str], active_clause: str, with_session_id: bool
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1276,7 +1276,7 @@ class SessionMessagesMixin:
             f"{active_clause} ORDER BY id", tuple(session_ids))
 
     # ┌── 函数 def get_messages_as_conversation()
-    # │  作用：Load messages in OpenAI format. ``include_compacted`` (deduped display history) is for DISPLAY reads
+    # │  作用：加载消息在 OpenAI format. ``include_compacted`` (deduped 展示 history) 是用于展示读取
     # │  参数：self, session_id: str, include_ancestors: bool = False, include_inactive: bool = False, repair_alternation: bool = False, include_row_ids: bool = False, include_compacted: bool = False
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1300,7 +1300,7 @@ class SessionMessagesMixin:
             include_summary_markers=repair_alternation)
 
     # ┌── 函数 def _dedupe_replayed_user()
-    # │  作用：Ancestor-lineage dedupe of one decoded user *msg* -> ``(skip, exact_clone_key)``. Rotation
+    # │  作用：Ancestor-lineage dedupe 的 one decoded user *msg* -> ``(skip, exact_clone_key)``. Rotation
     # │  参数：self, messages, msg, exact_user_clones
     # │  返回：Tuple[bool, Any]
     # └──────────────────────────────────────────────────────────────
@@ -1329,7 +1329,7 @@ class SessionMessagesMixin:
         return not prefer_current, exact_clone_key
 
     # ┌── 函数 def _rows_to_conversation()
-    # │  作用：Decode fetched rows (ordered by id, pre-filtered) into OpenAI format, stable key order. Every dict is
+    # │  作用：Decode fetched rows (ordered 由 id, pre-filtered) 进入 OpenAI format, stable 键 order. 每个字典是
     # │  参数：self, rows, session_id: str, include_ancestors: bool, repair_alternation: bool, include_row_ids: bool = ..., include_summary_markers: bool = ...
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1399,7 +1399,7 @@ class SessionMessagesMixin:
         return messages
 
     # ┌── 函数 def get_resume_conversations()
-    # │  作用：``(model_history, display_history)`` for a resume from ONE SELECT; byte-identical to the separate
+    # │  作用：``(model_history, display_history)`` 用于 resume 从 ONE SELECT; byte-identical separate
     # │  参数：self, session_id: str
     # │  返回：Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]
     # └──────────────────────────────────────────────────────────────
@@ -1427,7 +1427,7 @@ class SessionMessagesMixin:
         return model_history, display_history
 
     # ┌── 函数 def _resume_lineage_ids()
-    # │  作用：Session ids a display resume materializes: the compression lineage, or the session alone for an
+    # │  作用：会话 ids 展示 resume materializes: compression lineage, 或会话 alone 用于
     # │  参数：self, session_id: str
     # │  返回：List[str]
     # └──────────────────────────────────────────────────────────────
@@ -1438,7 +1438,7 @@ class SessionMessagesMixin:
         return [session_id] if self._is_explicit_branch_session(session_id) else self._session_lineage_root_to_tip(session_id)
 
     # ┌── 函数 def _resume_count_scope()
-    # │  作用：``tip_only``: the tip's ACTIVE rows (model restore); else the full-lineage DISPLAY set.
+    # │  作用：``tip_only``: tip's ACTIVE rows (模型恢复); 否则 full-lineage 展示设置.
     # │  参数：self, session_id: str, tip_only: bool
     # │  返回：Tuple[List[str], str]
     # └──────────────────────────────────────────────────────────────
@@ -1451,7 +1451,7 @@ class SessionMessagesMixin:
         return self._resume_lineage_ids(session_id), "(active = 1 OR compacted = 1)"
 
     # ┌── 函数 def get_resume_message_count()
-    # │  作用：Count the rows a resume would materialize (see ``_resume_count_scope``).
+    # │  作用：Count rows resume 会 materialize (see ``_resume_count_scope``).
     # │  参数：self, session_id: str, tip_only: bool = ...
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -1464,7 +1464,7 @@ class SessionMessagesMixin:
             tuple(session_ids))[0])
 
     # ┌── 函数 def assert_resume_safe()
-    # │  作用：Resume row count, or raise ``SessionResumeTooLargeError``. ``max_messages=None`` reads config; 0
+    # │  作用：Resume row count, 或抛出 ``SessionResumeTooLargeError``. ``max_messages=None`` 读取配置; 0
     # │  参数：self, session_id: str, max_messages: Optional[int] = None, tip_only: bool = ...
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -1493,7 +1493,7 @@ class SessionMessagesMixin:
         return message_count
 
     # ┌── 函数 def get_ancestor_display_prefix()
-    # │  作用：Ancestor-only display messages of a lineage (row ``session_id != tip``) that ``session.resume``
+    # │  作用：Ancestor-仅展示消息的 lineage (row ``session_id != tip``) 那个 ``会话.resume``
     # │  参数：self, session_id: str
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -1518,7 +1518,7 @@ class SessionMessagesMixin:
             for message in lineage if message.get("_row_id") in ancestor_ids]
 
     # ┌── 函数 def get_conversation_root()
-    # │  作用：ROOT id of the lineage: the stable conversation id across compression segments and delegate
+    # │  作用：ROOT id 的 lineage: stable conversation id across compression segments 且委派给
     # │  参数：self, session_id: str
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -1530,7 +1530,7 @@ class SessionMessagesMixin:
         return chain[0] if chain and chain[0] else session_id
 
     # ┌── 函数 def _canonical_replayed_user_content()
-    # │  作用：Return canonical live content and whether *msg* is composite.
+    # │  作用：返回 canonical 当前活跃的内容且 whether *msg* 是 composite.。
     # │  参数：msg: Dict[str, Any]
     # │  返回：Tuple[Any, bool]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1547,7 +1547,7 @@ class SessionMessagesMixin:
         return live_view.get("content") if is_composite else msg.get("content"), is_composite
 
     # ┌── 函数 def _exact_replayed_user_clone_key()
-    # │  作用：Return a hashable key for a column-exact rotation clone.
+    # │  作用：返回 hashable 键用于 column-exact rotation clone.。
     # │  参数：timestamp: Any, content: Any
     # │  返回：Optional[Tuple[Any, str]]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1567,7 +1567,7 @@ class SessionMessagesMixin:
             return None
 
     # ┌── 函数 def _find_duplicate_replayed_user_message()
-    # │  作用：Adjacent replay duplicate ``(index, prefer_current)`` or None. Rotation may persist the current ask
+    # │  作用：Adjacent 重放 duplicate ``(index, prefer_current)`` 或 None. Rotation 可以持久化 current ask
     # │  参数：messages: List[Dict[str, Any]], msg: Dict[str, Any]
     # │  返回：Optional[Tuple[int, bool]]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1603,7 +1603,7 @@ class SessionMessagesMixin:
     # /rewind slash command + issue #21910
     # =========================================================================
     # ┌── 函数 def get_active_message_ids()
-    # │  作用：Ordered physical active ids for rewind CAS checks (includes legacy harness rows projections omit).
+    # │  作用：Ordered physical active ids 用于 rewind CAS 检查 (includes legacy 测试框架 rows projections omit).
     # │  参数：self, session_id: str
     # │  返回：List[int]
     # └──────────────────────────────────────────────────────────────
@@ -1613,7 +1613,7 @@ class SessionMessagesMixin:
         return [int(row[0]) for row in self._read_all(_ACTIVE_IDS_SQL, (session_id,))]
 
     # ┌── 函数 def _active_transcript_counts()
-    # │  作用：Return active message/tool-call counts inside the caller's txn.
+    # │  作用：返回 active 消息/工具调用 counts inside caller's txn.。
     # │  参数：conn, session_id: str
     # │  返回：tuple[int, int]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1626,7 +1626,7 @@ class SessionMessagesMixin:
         return len(rows), sum(_tool_calls_len(row[0], scalar=1) for row in rows)
 
     # ┌── 函数 def _split_rewind_target()
-    # │  作用：Validate an active rewind target; return its handoff scaffold (or None). ``ValueError``: inactive /
+    # │  作用：校验 active rewind target; 返回其 交接 scaffold (或 None). ``ValueError``: inactive /
     # │  参数：self, target_row: Dict[str, Any], expected_target_content: Any, preserve_compaction_handoff: bool
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1655,7 +1655,7 @@ class SessionMessagesMixin:
         return handoff if preserve_compaction_handoff else None
 
     # ┌── 函数 def rewind_to_message()
-    # │  作用：Soft-delete (``active=0``) every message with id >= *target_message_id*, target included (the caller
+    # │  作用：Soft-delete (``active=0``) 每个消息带 id >= *target_message_id*, target included ( caller
     # │  参数：self, session_id: str, target_message_id: int, preserve_compaction_handoff: bool = ..., expected_active_ids: Optional[List[int]] = ..., expected_target_content: Any = ...
     # │  返回：Dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -1713,7 +1713,7 @@ class SessionMessagesMixin:
                 **({"replacement_message_id": replacement_message_id} if preserve_compaction_handoff else {})}
 
     # ┌── 函数 def message_count()
-    # │  作用：Count messages, optionally for a specific session.
+    # │  作用：Count 消息, optionally 用于 specific 会话.
     # │  参数：self, session_id: str = None
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -1724,7 +1724,7 @@ class SessionMessagesMixin:
         return self._read_one(sql, (session_id,) if session_id else ())[0]
 
     # ┌── 函数 def has_gateway_input_owner()
-    # │  作用：Probe the accepted-input marker without allocating message bodies or archives.
+    # │  作用：Probe 已接受-输入 marker 不 allocating 消息 bodies 或 archives.
     # │  参数：self, session_id: str, owner: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1739,7 +1739,7 @@ class SessionMessagesMixin:
             (session_id, owner)) is not None
 
     # ┌── 函数 def has_platform_message_id()
-    # │  作用：True when *platform_message_id* exists (partial-index probe; the gateway's transient-failure dedupe).
+    # │  作用：当 *platform_message_id* exists (partial-index probe; gateway's transient-failure dedupe). 时返回 True。
     # │  参数：self, session_id: str, platform_message_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1756,7 +1756,7 @@ class SessionMessagesMixin:
             (session_id, platform_message_id)) is not None
 
     # ┌── 函数 def _is_explicit_fork_child_row()
-    # │  作用：True when *session* is a branch, delegate, or tool child of its parent. Markers only count when they
+    # │  作用：当 *会话* 是 branch, 委派给, 或工具 child 的其 parent. Markers 仅 count 当它们 时返回 True。
     # │  参数：self, session: Dict[str, Any]
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1784,7 +1784,7 @@ class SessionMessagesMixin:
         return parent_id in markers if parent_id else any(m is not None for m in markers)
 
     # ┌── 函数 def is_explicit_fork_child()
-    # │  作用：Read-only :meth:`_is_explicit_fork_child_row`; a missing row is not a fork (prompt_cache_scope keeps
+    # │  作用：读取-仅 :meth:`_is_explicit_fork_child_row`; missing row 是不 fork (prompt_cache_scope 保留
     # │  参数：self, session_id: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1796,7 +1796,7 @@ class SessionMessagesMixin:
         return bool(session and self._is_explicit_fork_child_row(session))
 
     # ┌── 函数 def latest_conversation_boundary()
-    # │  作用：Conversation boundaries (``_RESET_END_REASONS`` ends) this peer has crossed, or ``None`` if never
+    # │  作用：Conversation boundaries (``_RESET_END_REASONS`` ends) 这个 peer 有 crossed, 或 ``None`` 若 never
     # │  参数：self, session_key: str, source: str
     # │  返回：Optional[int]
     # └──────────────────────────────────────────────────────────────
@@ -1820,7 +1820,7 @@ class SessionMessagesMixin:
         return generation if generation > 0 else None
 
     # ┌── 函数 def clear_messages()
-    # │  作用：Delete all messages for a session and reset its counters.
+    # │  作用：Delete 全部消息用于会话且 reset 其 counters.
     # │  参数：self, session_id: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1832,7 +1832,7 @@ class SessionMessagesMixin:
         self._execute_write(_do)
 
     # ┌── 函数 def purge_stale_tool_call_markers()
-    # │  作用：Permanently clear bare tool-call marker content ("[memory]") left by pre-fix sessions
+    # │  作用：Permanently 清除 bare 工具调用 marker 内容 ("[内存]") left 由 pre-fix 会话
     # │  参数：self, dry_run: bool = ..., backup: bool = ...
     # │  返回：Dict[str, Any]
     # └──────────────────────────────────────────────────────────────

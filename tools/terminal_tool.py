@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 # ┌── 函数 def _redact_terminal_error_text()
-# │  作用：Force-redact text before serializing a terminal error envelope.
+# │  作用：Force-redact 文本在…之前 serializing 终端错误 envelope.
 # │  参数：value: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ from tools.tool_backend_helpers import coerce_modal_mode, managed_nous_tools_ena
 
 
 # ┌── 函数 def _safe_parse_import_env()
-# │  作用：Parse a module-level numeric env var; a malformed value must never make
+# │  作用：解析模块-级别 numeric 环境变量; 格式非法的值 必须 never make
 # │  参数：name: str, default: Any, converter, type_label: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ def _get_approval_callback():
 
 
 # ┌── 函数 def set_sudo_password_callback()
-# │  作用：Register the CLI's sudo password prompt callback (per-thread slot).
+# │  作用：Register CLI's sudo password 提示词回调 (per-线程 slot).
 # │  参数：cb
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ def set_sudo_password_callback(cb):
 
 
 # ┌── 函数 def set_approval_callback()
-# │  作用：Register the dangerous-command approval prompt callback (per-thread slot).
+# │  作用：Register dangerous-命令 approval 提示词回调 (per-线程 slot).
 # │  参数：cb
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -163,7 +163,7 @@ def set_approval_callback(cb):
 
 
 # ┌── 函数 def _current_session_key()
-# │  作用：Active gateway/WebUI session key, or "" outside sessions (ContextVar with
+# │  作用：Active gateway/WebUI 会话键, 或 "" outside 会话 (ContextVar 带
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ def _current_session_key() -> str:
 
 
 # ┌── 函数 def _current_session_profile()
-# │  作用：Active session's Hermes profile name, or "" (same lookup discipline as
+# │  作用：Active 会话's Hermes 配置档名称, 或 "" (same lookup discipline 作为
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ from tools.approval import (
 
 
 # ┌── 函数 def _docker_volume_uses_host_path()
-# │  作用：Return True when a docker volume spec bind-mounts a host path.
+# │  作用：当 Docker volume spec bind-mounts 宿主路径. 时返回 True。
 # │  参数：volume_spec: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -214,7 +214,7 @@ def _docker_volume_uses_host_path(volume_spec: str) -> bool:
 
 
 # ┌── 函数 def _docker_has_host_access()
-# │  作用：Return True when a Docker sandbox exposes host paths through bind mounts.
+# │  作用：当 Docker sandbox exposes 宿主路径 through bind mounts. 时返回 True。
 # │  参数：config: Dict[str, Any]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ def _docker_has_host_access(config: Dict[str, Any]) -> bool:
 
 
 # ┌── 函数 def _check_all_guards()
-# │  作用：Delegate to consolidated guard (tirith + dangerous cmd) with CLI callback.
+# │  作用：委派给 consolidated 护栏 (tirith + dangerous cmd) 带 CLI 回调.
 # │  参数：command: str, env_type: str, has_host_access: bool = False
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -274,7 +274,7 @@ _docker_orphan_reaper_lock = threading.Lock()
 
 
 # ┌── 函数 def _maybe_reap_docker_orphans()
-# │  作用：Run the docker orphan reaper once per process, if enabled.
+# │  作用：运行 Docker orphan reaper 一旦 per 进程, 若 enabled.
 # │  参数：container_config: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ _container_alias_lock = threading.Lock()
 
 
 # ┌── 函数 def record_session_cwd()
-# │  作用：Record *cwd* as *session_key*'s working directory (after a completed
+# │  作用：Record *cwd* 作为 *session_key*'s working directory (在…之后 completed
 # │  参数：session_key: Optional[str], cwd: Optional[str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -366,7 +366,7 @@ def record_session_cwd(session_key: Optional[str], cwd: Optional[str]) -> None:
 
 
 # ┌── 函数 def get_session_cwd()
-# │  作用：Recorded cwd for *session_key*, or None. No fallback chain on purpose:
+# │  作用：Recorded cwd 用于 *session_key*, 或 None. 无兜底 chain 在…上 purpose:
 # │  参数：session_key: Optional[str]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ def get_session_cwd(session_key: Optional[str]) -> Optional[str]:
 
 
 # ┌── 函数 def clear_session_cwd()
-# │  作用：Drop a session's cwd record (session teardown).
+# │  作用：丢弃会话's cwd record (会话 teardown).
 # │  参数：session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -390,7 +390,7 @@ def clear_session_cwd(session_key: str) -> None:
 
 
 # ┌── 函数 def register_task_env_overrides()
-# │  作用：Register per-task sandbox overrides (``docker_image``/``modal_image``/
+# │  作用：Register per-task sandbox 覆盖值 (``docker_image``/``modal_image``/
 # │  参数：task_id: str, overrides: Dict[str, Any]
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -420,7 +420,7 @@ def register_task_env_overrides(task_id: str, overrides: Dict[str, Any]):
 
 
 # ┌── 函数 def clear_task_env_overrides()
-# │  作用：Drop a task's overrides, cwd record and container alias (rollout cleanup).
+# │  作用：丢弃 task's 覆盖值, cwd record 且 container 别名 (rollout cleanup).
 # │  参数：task_id: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -433,7 +433,7 @@ def clear_task_env_overrides(task_id: str):
 
 
 # ┌── 函数 def register_container_alias()
-# │  作用：Make *child_task_id* resolve to *parent_task_id*'s container (called at
+# │  作用：Make *child_task_id* resolve *parent_task_id*'s container (called 在
 # │  参数：child_task_id: str, parent_task_id: Optional[str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -447,7 +447,7 @@ def register_container_alias(child_task_id: str, parent_task_id: Optional[str]) 
 
 
 # ┌── 函数 def _resolve_container_alias()
-# │  作用：Follow the child→parent alias chain (cycle-safe) for *task_id*.
+# │  作用：Follow child→parent 别名 chain (cycle-safe) 用于 *task_id*.
 # │  参数：task_id: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -470,7 +470,7 @@ _ISOLATION_OVERRIDE_KEYS = frozenset({
 
 
 # ┌── 函数 def _has_isolation_overrides()
-# │  作用：True when *task_id* registered image/env_type overrides — the single
+# │  作用：当 *task_id* registered image/env_type 覆盖值 — single 时返回 True。
 # │  参数：task_id: Optional[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -486,7 +486,7 @@ def _has_isolation_overrides(task_id: Optional[str]) -> bool:
 
 
 # ┌── 类 class _SessionScope
-# │  说明：Backend identity + scoping predicates for one call, read once.
+# │  说明：Backend 身份 + scoping predicates 用于 one call, 读取一旦.
 # │  成员：共 3 个方法；对外可用 3 个
 # └──────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -554,7 +554,7 @@ class _SessionScope:
 
 
 # ┌── 函数 def _session_scope()
-# │  作用：Bridge config → env once, then snapshot the backend scope for this call.
+# │  作用：Bridge 配置 → env 一旦, 然后 snapshot backend scope 用于这个 call.
 # │  参数：无
 # │  返回：_SessionScope
 # └──────────────────────────────────────────────────────────────
@@ -569,7 +569,7 @@ def _session_scope() -> _SessionScope:
 
 
 # ┌── 函数 def _docker_session_isolation_enabled()
-# │  作用：See :attr:`_SessionScope.docker_session_isolated` (used by the docker builder).
+# │  作用：See :attr:`_SessionScope.docker_session_isolated` (used 由 Docker builder).
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -580,7 +580,7 @@ def _docker_session_isolation_enabled() -> bool:
 
 
 # ┌── 函数 def _resolve_container_task_id()
-# │  作用：Map a tool-call ``task_id`` to the ``_active_environments`` key. Order matters —
+# │  作用：Map 工具调用 ``task_id`` ``_active_environments`` 键. Order matters —
 # │  参数：task_id: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -638,7 +638,7 @@ def _resolve_container_task_id(task_id: Optional[str]) -> str:
 
 
 # ┌── 函数 def resolve_task_overrides()
-# │  作用：Return the env overrides for *task_id*, raw key first then collapsed.
+# │  作用：返回 env 覆盖值用于 *task_id*, raw 键 first 然后 collapsed.。
 # │  参数：task_id: Optional[str]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -671,7 +671,7 @@ _IMAGE_KEY_BY_BACKEND = {
 
 
 # ┌── 函数 def _select_image()
-# │  作用：Image for *env_type*: per-task override first, then config; "" for imageless backends.
+# │  作用：Image 用于 *env_type*: per-task 覆盖值 first, 然后配置; "" 用于 imageless backends.
 # │  参数：env_type: str, overrides: Dict[str, Any], config: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -686,7 +686,7 @@ def _select_image(env_type: str, overrides: Dict[str, Any], config: Dict[str, An
 
 
 # ┌── 函数 def _lookup_active_env()
-# │  作用：Return the cached env for the collapsed id, else for the raw task_id, else None.
+# │  作用：返回 cached env 用于 collapsed id, 否则用于 raw task_id, 否则 None.。
 # │  参数：effective_task_id: str, task_id: Optional[str]
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -708,7 +708,7 @@ def _lookup_active_env(effective_task_id: str, task_id: Optional[str]):
 
 
 # ┌── 函数 def _resolve_task_host_cwd()
-# │  作用：Host directory to bind-mount at ``/workspace`` for *task_id*'s container.
+# │  作用：宿主 directory bind-mount 在 ``/workspace`` 用于 *task_id*'s container.
 # │  参数：config: Dict[str, Any], task_id: Optional[str]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -751,7 +751,7 @@ _terminal_config_bridge_attempted = False
 
 
 # ┌── 函数 def _ensure_terminal_env_bridged()
-# │  作用：Backfill TERMINAL_* env vars from config.yaml when no launcher did.
+# │  作用：Backfill TERMINAL_* env vars 从配置.YAML 当无 launcher .
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -809,7 +809,7 @@ _DEFAULT_CWD_BY_BACKEND = {"ssh": "~", "vercel_sandbox": _VERCEL_SANDBOX_DEFAULT
 
 
 # ┌── 函数 def _resolve_config_cwd()
-# │  作用：``(cwd, host_cwd)`` from TERMINAL_CWD for *env_type*.
+# │  作用：``(cwd, host_cwd)`` 从 TERMINAL_CWD 用于 *env_type*.
 # │  参数：env_type: str, mount_docker_cwd: bool
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────
@@ -844,7 +844,7 @@ def _resolve_config_cwd(env_type: str, mount_docker_cwd: bool) -> tuple:
 
 
 # ┌── 函数 def _get_env_config()
-# │  作用：Resolve the terminal configuration dict from TERMINAL_* env vars.
+# │  作用：Resolve 终端 configuration 字典从 TERMINAL_* env vars.
 # │  参数：无
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -923,7 +923,7 @@ def _get_env_config() -> Dict[str, Any]:
 
 
 # ┌── 函数 def _cleanup_thread_worker()
-# │  作用：Background thread worker that periodically cleans up inactive environments.
+# │  作用：Background 线程工作线程那个 periodically cleans up inactive environments.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -939,7 +939,7 @@ def _cleanup_thread_worker():
 
 
 # ┌── 函数 def _start_cleanup_thread()
-# │  作用：Start the background cleanup thread if not already running.
+# │  作用：Start background cleanup 线程若 不已 运行.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -956,7 +956,7 @@ def _start_cleanup_thread():
 
 
 # ┌── 函数 def _stop_cleanup_thread()
-# │  作用：Stop the background cleanup thread.
+# │  作用：Stop background cleanup 线程.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -974,7 +974,7 @@ def _stop_cleanup_thread():
 
 
 # ┌── 函数 def _atexit_cleanup()
-# │  作用：Stop the cleanup thread and shut down all remaining sandboxes on exit.
+# │  作用：Stop cleanup 线程且 shut down 全部 remaining sandboxes 在…上 exit.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1003,7 +1003,7 @@ atexit.register(_atexit_cleanup)
 
 
 # ┌── 函数 def _command_requires_pipe_stdin()
-# │  作用：True when PTY mode would break a stdin-driven command: `gh auth login
+# │  作用：当 PTY 模式会 break 标准输入-driven 命令: `gh auth login 时返回 True。
 # │  参数：command: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1025,7 +1025,7 @@ from tools.terminal_tool_result import finalize_foreground_result
 
 
 # ┌── 函数 def _resolve_notification_flag_conflict()
-# │  作用：Resolve notify_on_complete + watch_patterns both set: drop watch_patterns
+# │  作用：Resolve notify_on_complete + watch_patterns both 设置: 丢弃 watch_patterns
 # │  参数：notify_on_complete: bool, watch_patterns, background: bool
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────
@@ -1045,7 +1045,7 @@ def _resolve_notification_flag_conflict(*, notify_on_complete: bool, watch_patte
 
 
 # ┌── 函数 def _resolve_command_cwd()
-# │  作用：cwd for a command: explicit ``workdir`` > the session's own cwd record >
+# │  作用：cwd 用于命令: explicit ``workdir`` > 会话's 持有 cwd record >
 # │  参数：workdir: Optional[str], default_cwd: str, session_key: Optional[str] = ..., env_type: Optional[str] = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1084,7 +1084,7 @@ def _resolve_command_cwd(
 
 
 # ┌── 函数 def _error_json()
-# │  作用：The terminal error envelope: ``output``/``exit_code``/``error`` (+ ``status``, extras).
+# │  作用：终端错误 envelope: ``输出``/``exit_code``/``错误`` (+ ``status``, extras).
 # │  参数：error: str, exit_code: int = ..., status: Optional[str] = ..., **extra
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1099,7 +1099,7 @@ def _error_json(error: str, *, exit_code: int = -1, status: Optional[str] = None
 
 
 # ┌── 函数 def _fatal_error_json()
-# │  作用：Log the traceback and return the redacted error+traceback envelope.
+# │  作用：日志 traceback 且返回 redacted 错误+traceback envelope.
 # │  参数：e: BaseException
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1123,7 +1123,7 @@ def _fatal_error_json(e: BaseException) -> str:
 
 
 # ┌── 类 class _Rejected（继承自：Exception）
-# │  说明：Carries a finished tool-result JSON out of the planning/guard helpers, so
+# │  说明：Carries finished 工具-结果 JSON out 的 planning/护栏 helpers, 从而
 # │  成员：共 1 个方法；全部是下划线开头的内部方法；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _Rejected(Exception):
@@ -1142,7 +1142,7 @@ class _Rejected(Exception):
 
 
 # ┌── 类 class _ApprovalVerdict
-# │  说明：Outcome of the pre-exec guard pass.
+# │  说明：Outcome 的 pre-exec 护栏 pass.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1159,7 +1159,7 @@ class _ApprovalVerdict:
 
 
 # ┌── 函数 def _run_approval_guards()
-# │  作用：Run tirith + dangerous-command guards; ``force`` skips them entirely.
+# │  作用：运行 tirith + dangerous-命令护栏; ``force`` skips them entirely.
 # │  参数：command: str, env_type: str, config: Dict[str, Any], force: bool
 # │  返回：_ApprovalVerdict
 # └──────────────────────────────────────────────────────────────
@@ -1205,7 +1205,7 @@ def _run_approval_guards(command: str, env_type: str, config: Dict[str, Any], *,
 
 
 # ┌── 类 class _ExecPlan
-# │  说明：Per-call execution parameters resolved before any environment is touched.
+# │  说明：每次调用的 execution 参数 resolved 在…之前任意 environment 是 touched.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1232,7 +1232,7 @@ _PROMOTED_NOTE = (
 
 
 # ┌── 函数 def _plan_execution()
-# │  作用：Resolve backend, env-cache key, image, cwd and timeout for one call.
+# │  作用：Resolve backend, env-缓存键, image, cwd 且超时用于 one call.
 # │  参数：command: Any, task_id: Optional[str], timeout: Optional[int], background: bool, _host_local: bool
 # │  返回：_ExecPlan
 # └──────────────────────────────────────────────────────────────
@@ -1331,7 +1331,7 @@ _PROMOTED_NOTE_POLL_ONLY = (
 
 
 # ┌── 函数 def _with_promoted_note()
-# │  作用：Attach the foreground->background promotion note to a spawn result (unchanged on error). The
+# │  作用：Attach foreground->background promotion note spawn 结果 (unchanged 在…上错误).
 # │  参数：result_json: str, requested_timeout: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1355,7 +1355,7 @@ def _with_promoted_note(result_json: str, requested_timeout: int) -> str:
 
 
 # ┌── 函数 def _acquire_env()
-# │  作用：Cached env for the task, else create it under the per-task creation lock.
+# │  作用：Cached env 用于 task, 否则创建它 under per-task creation 锁.
 # │  参数：plan: _ExecPlan, task_id: Optional[str]
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1415,7 +1415,7 @@ def _acquire_env(plan: _ExecPlan, task_id: Optional[str]) -> Any:
 
 
 # ┌── 函数 def _yield_kwargs()
-# │  作用：``env.execute`` kwargs enabling yield-to-background (local backend only).
+# │  作用：``env.执行`` kwargs enabling yield--background (local backend 仅).
 # │  参数：command: str, **ctx
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1427,7 +1427,7 @@ def _yield_kwargs(command: str, **ctx) -> dict:
 
 
 # ┌── 函数 def _run_foreground()
-# │  作用：Execute in the foreground with retry on transient errors, then finalize.
+# │  作用：执行在 foreground 带重试在…上 transient 错误, 然后 finalize.
 # │  参数：command: str, env: Any, plan: _ExecPlan, task_id: Optional[str], session_id: Optional[str], session_key: str, workdir: Optional[str], approval_note: Optional[str]  …共 9 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1496,7 +1496,7 @@ def _run_foreground(
 
 
 # ┌── 函数 def _pre_exec_block()
-# │  作用：Raise :class:`_Rejected` with the blocked-result JSON when the command must not run.
+# │  作用：抛出 :类:`_Rejected` 带 blocked-结果 JSON 当命令必须不 运行.
 # │  参数：command: str, env: Any, env_type: str, cwd: str, workdir: Optional[str], session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1538,7 +1538,7 @@ _PTY_DISABLED_REASON = (
 
 
 # ┌── 函数 def _degraded_result()
-# │  作用：Infrastructure failure (SSH host down, Docker daemon unreachable), distinct
+# │  作用：Infrastructure failure (SSH 宿主 down, Docker daemon unreachable), distinct
 # │  参数：e: EnvironmentConnectionError, task_id: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1566,7 +1566,7 @@ def _degraded_result(e: EnvironmentConnectionError, task_id: Optional[str]) -> s
 
 
 # ┌── 函数 def terminal_tool()
-# │  作用：Execute *command* in the configured terminal environment; returns a JSON string.
+# │  作用：执行 *命令* 在 configured 终端 environment; 返回 JSON 字符串.
 # │  参数：command: str, background: bool = False, timeout: Optional[int] = None, task_id: Optional[str] = None, session_id: Optional[str] = None, force: bool = False, workdir: Optional[str] = None, pty: bool = False  …共 11 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1651,7 +1651,7 @@ def terminal_tool(
 
 
 # ┌── 函数 def check_terminal_requirements()
-# │  作用：Check if all requirements for the terminal tool are met.
+# │  作用：检查若 全部 requirements 用于终端工具是 met.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────

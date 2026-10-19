@@ -48,7 +48,7 @@ PROVIDER_STREAM_NON_JSON_ERROR_CODE = "provider_stream_non_json_data"
 # ── Error taxonomy ──────────────────────────────────────────────────────
 
 # ┌── 类 class FailoverReason（继承自：enum.Enum）
-# │  说明：Why an API call failed — determines recovery strategy.
+# │  说明：为何 API call failed — 判断 recovery strategy.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class FailoverReason(enum.Enum):
@@ -83,7 +83,7 @@ class FailoverReason(enum.Enum):
 
 
 # ┌── 类 class ClassifiedError
-# │  说明：Structured classification of an API error with recovery hints.
+# │  说明：结构化的 classification 的 API 错误带 recovery hints.
 # │  成员：共 2 个方法；对外可用 2 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -115,7 +115,7 @@ class ClassifiedError:
         return self.reason in {FailoverReason.auth, FailoverReason.auth_permanent}
 
     # ┌── 函数 def billing_unverified()
-    # │  作用：True when a ``billing`` verdict rests on an ambiguous body (#82154).
+    # │  作用：当 ``billing`` verdict rests 在…上 ambiguous body (#82154). 时返回 True。
     # │  参数：self
     # │  返回：bool
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -464,7 +464,7 @@ _REASONING_MANDATORY_PATTERN = "reasoning is mandatory"
 
 
 # ┌── 函数 def _billing_hints()
-# │  作用：Billing verdict carrying the #82154 ambiguity marker when applicable.
+# │  作用：Billing verdict carrying #82154 ambiguity marker 当 applicable.
 # │  参数：error_msg: str
 # │  返回：Verdict
 # └──────────────────────────────────────────────────────────────
@@ -478,7 +478,7 @@ def _billing_hints(error_msg: str) -> Verdict:
 
 
 # ┌── 函数 def _first_match()
-# │  作用：Verdict of the first rule whose pattern list hits ``error_msg``.
+# │  作用：Verdict 的 first rule whose pattern 列表 hits ``error_msg``.
 # │  参数：error_msg: str, rules: Sequence[tuple[Sequence[str], Any]]
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -557,7 +557,7 @@ _400_VALIDATION_PATTERNS = tuple(p for p in _REQUEST_VALIDATION_PATTERNS if p !=
 # ── Classification pipeline ─────────────────────────────────────────────
 
 # ┌── 类 class _Ctx
-# │  说明：Everything the classifier stages need about one failed call.
+# │  说明：Everything classifier 阶段 need about one failed call.
 # │  成员：共 2 个方法；对外可用 1 个；含魔术方法 __post_init__
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -588,7 +588,7 @@ class _Ctx:
         self.model_slug = (self.model or "").strip().lower()
 
     # ┌── 函数 def large_session()
-    # │  作用：Absolute thresholds only proxy for smaller context windows.
+    # │  作用：Absolute 阈值仅 proxy 用于 smaller 上下文 Windows.
     # │  参数：self, frac: float, tokens: int, messages: int
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -601,7 +601,7 @@ class _Ctx:
 
 
 # ┌── 函数 def _plugin_verdict()
-# │  作用：First valid plugin classification (runs before the built-in pipeline so a
+# │  作用：First valid plugin classification (运行在…之前已构建-在 pipeline 从而
 # │  参数：c: _Ctx
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -629,7 +629,7 @@ def _plugin_verdict(c: _Ctx) -> Optional[Verdict]:
 
 
 # ┌── 函数 def _nous_welcome_tier()
-# │  作用：The Nous inference gateway's welcome-tier (free tier) refusals, read from the structured body.
+# │  作用：Nous inference gateway's welcome-tier (free tier) refusals, 读取从 结构化的 body.
 # │  参数：c: _Ctx
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -672,7 +672,7 @@ def _nous_welcome_tier(c: _Ctx) -> Optional[Verdict]:
 
 
 # ┌── 函数 def _provider_special_cases()
-# │  作用：Highest-priority provider-specific shapes that a status code would misroute.
+# │  作用：Highest-priority 服务商-specific 形态那个 status code 会 misroute.
 # │  参数：c: _Ctx
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -743,7 +743,7 @@ def _moa_special_cases(c: _Ctx) -> Optional[Verdict]:
 
 
 # ┌── 函数 def _by_error_code()
-# │  作用：Structured error codes from the response body.
+# │  作用：结构化的错误 codes 从响应 body.
 # │  参数：c: _Ctx
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -759,7 +759,7 @@ def _by_error_code(c: _Ctx) -> Optional[Verdict]:
 
 
 # ┌── 函数 def _by_message()
-# │  作用：Message patterns when no status code settled it; status-less usage
+# │  作用：消息 patterns 当无 status code settled 它; status-less usage
 # │  参数：c: _Ctx
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -776,7 +776,7 @@ def _by_message(c: _Ctx) -> Optional[Verdict]:
 
 
 # ┌── 函数 def _by_transport()
-# │  作用：SSL, disconnect, circuit-breaker and transport-type heuristics, in that order.
+# │  作用：SSL, disconnect, circuit-breaker 且 transport-类型 heuristics, 在那个 order.
 # │  参数：c: _Ctx
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -820,7 +820,7 @@ def _by_transport(c: _Ctx) -> Optional[Verdict]:
 
 
 # ┌── 函数 def _by_status()
-# │  作用：HTTP status code with message-aware refinement (unlisted 4xx/5xx → generic).
+# │  作用：HTTP 状态码 code 带消息-aware refinement (unlisted 4xx/5xx → generic).
 # │  参数：c: _Ctx
 # │  返回：Optional[Verdict]
 # └──────────────────────────────────────────────────────────────
@@ -845,7 +845,7 @@ _STAGES: Sequence[Callable[[_Ctx], Optional[Verdict]]] = (
 
 
 # ┌── 函数 def classify_api_error()
-# │  作用：Classify an API error into a structured recovery recommendation (see ``_STAGES``).
+# │  作用：Classify API 错误进入结构化的 recovery recommendation (see ``_STAGES``).
 # │  参数：error: Exception, provider: str = ..., model: str = ..., approx_tokens: int = ..., context_length: int = ..., num_messages: int = ...
 # │  返回：ClassifiedError
 # └──────────────────────────────────────────────────────────────
@@ -956,7 +956,7 @@ def _status_5xx(c: _Ctx) -> Verdict:
 
 
 # ┌── 函数 def _classify_402()
-# │  作用：Disambiguate 402: "usage limit, try again in 5 minutes" is a periodic quota, not billing.
+# │  作用：Disambiguate 402: "usage 限制, try again 在 5 minutes" 是 periodic quota, 不 billing.
 # │  参数：error_msg: str, result_fn: Callable[..., Any]
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -970,7 +970,7 @@ def _classify_402(error_msg: str, result_fn: Callable[..., Any]) -> Any:
 
 
 # ┌── 函数 def _classify_400()
-# │  作用：400 Bad Request — image/tool shapes, request-shape rejections, overflow, or generic.
+# │  作用：400 Bad 请求 — image/工具形态, 请求-形态 rejections, overflow, 或 generic.
 # │  参数：c: _Ctx
 # │  返回：Verdict
 # └──────────────────────────────────────────────────────────────
@@ -1056,7 +1056,7 @@ _RESET_HEADERS = ("retry-after", "Retry-After", "x-ratelimit-reset", "X-RateLimi
 
 
 # ┌── 函数 def _has_usage_limit_transient_signal()
-# │  作用：Whether a usage-limit response identifies a reset window (message, body fields, or headers).
+# │  作用：是否 usage-限制响应 identifies reset window (消息, body 字段, 或 headers).。
 # │  参数：error_msg: str, body: dict, response_headers
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1077,7 +1077,7 @@ def _has_usage_limit_transient_signal(error_msg: str, body: dict, response_heade
 
 
 # ┌── 函数 def _model_id_missing_known_prefix()
-# │  作用：True when a bare model id is only known to the provider as ``vendor/id``.
+# │  作用：当 bare 模型 id 是仅 known 服务商作为 ``vendor/id``. 时返回 True。
 # │  参数：model: str, provider: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1102,7 +1102,7 @@ def _model_id_missing_known_prefix(model: str, provider: str) -> bool:
 
 
 # ┌── 函数 def _is_server_injected_param_rejection()
-# │  作用：True when a 400 blames a one-route-only parameter this route never sends.
+# │  作用：当 400 blames one-路由-仅参数这个路由 never sends. 时返回 True。
 # │  参数：error_msg: str, provider: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1125,7 +1125,7 @@ _CODEX_MASKED_REPLAY_MESSAGE = "request blocked."
 
 
 # ┌── 函数 def _is_codex_masked_replay_rejection()
-# │  作用：HTTP 400 / status-less ``{code: invalid_prompt, message: "Request blocked."}`` from
+# │  作用：HTTP 400 / status-less ``{code: invalid_prompt, 消息: "请求 blocked."}`` 从
 # │  参数：c: '_Ctx'
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1145,7 +1145,7 @@ def _is_codex_masked_replay_rejection(c: "_Ctx") -> bool:
 
 
 # ┌── 函数 def _error_obj()
-# │  作用：``body["error"]`` when it is a dict, else ``{}``.
+# │  作用：``body["错误"]`` 当它 是字典, 否则 ``{}``.
 # │  参数：body: Any
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1157,7 +1157,7 @@ def _error_obj(body: Any) -> dict:
 
 
 # ┌── 函数 def _json_dict()
-# │  作用：Parse a JSON object string; None for non-strings, blanks, invalid JSON or non-objects.
+# │  作用：解析 JSON 对象字符串; None 用于 non-strings, blanks, invalid JSON 或 non-对象.
 # │  参数：text: Any
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -1177,7 +1177,7 @@ def _json_dict(text: Any) -> Optional[dict]:
 
 
 # ┌── 函数 def _openrouter_wrapped_message()
-# │  作用：Lowercased inner message from OpenRouter's ``error.metadata.raw`` JSON wrapper.
+# │  作用：Lowercased inner 消息从 OpenRouter's ``错误.metadata.raw`` JSON 包装器.
 # │  参数：err_obj: dict
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1190,7 +1190,7 @@ def _openrouter_wrapped_message(err_obj: dict) -> str:
 
 
 # ┌── 函数 def _build_error_msg()
-# │  作用：Lowercased str(error) + body message + OpenRouter-wrapped upstream message
+# │  作用：Lowercased str(错误) + body 消息 + OpenRouter-wrapped upstream 消息
 # │  参数：error: Exception, body: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1213,7 +1213,7 @@ def _build_error_msg(error: Exception, body: Any) -> str:
 
 
 # ┌── 函数 def _body_message_candidates()
-# │  作用：Body message fields in priority order (OpenAI, flat, litellm/Bedrock proxy shapes).
+# │  作用：Body 消息字段在 priority order (OpenAI, flat, litellm/Bedrock proxy 形态).
 # │  参数：body: dict
 # │  返回：Iterator[Any]
 # └──────────────────────────────────────────────────────────────
@@ -1231,7 +1231,7 @@ def _body_message_candidates(body: dict) -> Iterator[Any]:
 
 
 # ┌── 函数 def _from_cause_chain()
-# │  作用：First non-None ``pick(exc)`` over the error and its __cause__/__context__ chain (max 5 deep).
+# │  作用：First non-None ``pick(exc)`` over 错误且 其 __cause__/__context__ chain (max 5 deep).
 # │  参数：error: Exception, pick: Callable[[Any], Any], default: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1299,7 +1299,7 @@ def _headers_of(exc: Any) -> Any:
 
 
 # ┌── 函数 def _extract_status_code()
-# │  作用：HTTP status code from the error or its cause chain.
+# │  作用：HTTP 状态码 code 从错误或 其 cause chain.
 # │  参数：error: Exception
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1310,7 +1310,7 @@ def _extract_status_code(error: Exception) -> Optional[int]:
 
 
 # ┌── 函数 def _extract_error_body()
-# │  作用：Structured error body from an SDK exception or its cause chain.
+# │  作用：结构化的错误 body 从 SDK 异常或 其 cause chain.
 # │  参数：error: Exception
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1321,7 +1321,7 @@ def _extract_error_body(error: Exception) -> dict:
 
 
 # ┌── 函数 def _code_from_payload()
-# │  作用：Code/type from ``payload.error`` or a top-level key; ``"400"`` is not a code.
+# │  作用：Code/类型从 ``payload.错误`` 或 top-级别键; ``"400"`` 是不 code.
 # │  参数：payload: Any, top_keys: Sequence[str], peek_message: bool
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1351,7 +1351,7 @@ def _code_from_payload(payload: Any, top_keys: Sequence[str], peek_message: bool
 
 
 # ┌── 函数 def _extract_error_code()
-# │  作用：Extract an error code string from the response body.
+# │  作用：Extract 错误 code 字符串从 响应 body.
 # │  参数：body: dict
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1362,7 +1362,7 @@ def _extract_error_code(body: dict) -> str:
 
 
 # ┌── 函数 def _extract_message()
-# │  作用：Extract the most informative error message (structured body first).
+# │  作用：Extract most informative 错误消息 (结构化的 body first).
 # │  参数：error: Exception, body: dict
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1374,7 +1374,7 @@ def _extract_message(error: Exception, body: dict) -> str:
 
 
 # ┌── 函数 def _is_openrouter_upstream_error()
-# │  作用：OpenRouter's "Provider returned error" wrapper: the key is healthy, the
+# │  作用：OpenRouter's "服务商 returned 错误" 包装器: 键是 healthy,
 # │  参数：body: Any, provider: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1395,7 +1395,7 @@ def _is_openrouter_upstream_error(body: Any, provider: str) -> bool:
 
 
 # ┌── 函数 def _extract_upstream_provider_name()
-# │  作用：Pull the upstream provider name out of OpenRouter's error metadata.
+# │  作用：Pull upstream 服务商名称 out 的 OpenRouter's 错误 metadata.
 # │  参数：body: Any
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────

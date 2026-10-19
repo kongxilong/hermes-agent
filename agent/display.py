@@ -48,7 +48,7 @@ _MAX_INLINE_DIFF_LINES = 80
 
 
 # ┌── 函数 def _display_url()
-# │  作用：Extract a display-only URL without assuming model argument types.
+# │  作用：Extract 展示-仅 URL 不 assuming 模型参数类型.
 # │  参数：value: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ def _display_url(value: Any) -> str:
 
 
 # ┌── 函数 def _http_url()
-# │  作用：``candidate`` when it parses as an absolute http(s) URL, else None.
+# │  作用：``candidate`` 当它 解析作为 absolute http(s) URL, 否则 None.
 # │  参数：candidate: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ def _hex_rgb(h: str) -> tuple[int, int, int]:
 
 
 # ┌── 函数 def _get_skin()
-# │  作用：Active skin config, or None when unavailable (lazy import avoids cycles).
+# │  作用：Active skin 配置, 或 None 当 unavailable (lazy 导入 avoids cycles).
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ def _tinted_bg(rgb: tuple[int, int, int], dominant: int) -> str:
 
 
 # ┌── 函数 def _diff_ansi()
-# │  作用：Return ANSI escapes for diff display, resolved from the active skin.
+# │  作用：返回 ANSI escapes 用于 diff 展示, resolved 从 active skin.。
 # │  参数：无
 # │  返回：dict[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -174,7 +174,7 @@ def _diff_ansi() -> dict[str, str]:
 
 
 # ┌── 类 class LocalEditSnapshot
-# │  说明：Pre-tool filesystem snapshot used to render diffs locally after writes.
+# │  说明：Pre-工具 filesystem snapshot used render diffs locally 在…之后写入.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -190,7 +190,7 @@ _friendly_tool_labels: bool = True
 
 
 # ┌── 函数 def set_tool_preview_max_len()
-# │  作用：Set the global max length for tool call previews. 0 = no limit.
+# │  作用：设置 global max length 用于工具 call previews. 0 = 无限制.
 # │  参数：n: int
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ def set_tool_preview_max_len(n: int) -> None:
 
 
 # ┌── 函数 def get_tool_preview_max_len()
-# │  作用：Return the configured max preview length (0 = unlimited).
+# │  作用：返回 configured max preview length (0 = unlimited).。
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -213,7 +213,7 @@ def get_tool_preview_max_len() -> int:
 
 
 # ┌── 函数 def set_friendly_tool_labels()
-# │  作用：Toggle friendly human-phrased tool labels (display.friendly_tool_labels).
+# │  作用：Toggle friendly human-phrased 工具 labels (展示.friendly_tool_labels).
 # │  参数：enabled: bool
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ def set_friendly_tool_labels(enabled: bool) -> None:
 
 
 # ┌── 函数 def get_skin_tool_prefix()
-# │  作用：Get tool output prefix character from active skin.
+# │  作用：获取工具输出 prefix character 从 active skin.
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ def get_skin_tool_prefix() -> str:
 
 
 # ┌── 函数 def get_tool_emoji()
-# │  作用：Display emoji for a tool: skin ``tool_emojis`` override, then registry, then *default*.
+# │  作用：展示 emoji 用于工具: skin ``tool_emojis`` 覆盖值, 然后 registry, 然后 *默认值*.
 # │  参数：tool_name: str, default: str = '⚡'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -261,7 +261,7 @@ def get_tool_emoji(tool_name: str, default: str = "⚡") -> str:
 # ── Tool preview (one-line summary of a tool call's primary argument) ─────
 
 # ┌── 函数 def _oneline()
-# │  作用：Collapse whitespace (including newlines) to single spaces.
+# │  作用：把空白字符（含换行）压缩为单个空格。
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ def _oneline(text: str) -> str:
 
 
 # ┌── 函数 def _tail_trunc()
-# │  作用：Tail-truncate to ``limit`` chars with ``...`` (0/None = unlimited). The result never
+# │  作用：Tail-truncate ``限制`` chars 带 ``...`` (0/None = unlimited). 结果 never
 # │  参数：text: str, limit: int | None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -288,7 +288,7 @@ def _tail_trunc(text: str, limit: int | None) -> str:
 
 
 # ┌── 函数 def _clip()
-# │  作用：``text[:n]`` plus ``...`` when longer (used inside quoted previews).
+# │  作用：``文本[:n]`` plus ``...`` 当 longer (used inside quoted previews).
 # │  参数：text: str, n: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ def _clip(text: str, n: int) -> str:
 
 
 # ┌── 类 class ToolPreview
-# │  说明：A compact tool preview plus presentation facts lost to truncation.
+# │  说明：compact 工具 preview plus presentation facts lost truncation.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -328,7 +328,7 @@ def _shell_basename(head: str) -> str:
 
 
 # ┌── 函数 def _scan_quoted()
-# │  作用：Yield ``(index, char, inside_quotes)``; a quote closes unless backslash-escaped.
+# │  作用：Yield ``(index, char, inside_quotes)``; quote 关闭 unless backslash-escaped.
 # │  参数：text: str
 # │  返回：Iterator[tuple[int, str, bool]]
 # └──────────────────────────────────────────────────────────────
@@ -367,7 +367,7 @@ def _split_shell_words(segment: str) -> list[str]:
 
 
 # ┌── 函数 def _strip_shell_pipe_tail()
-# │  作用：Drop a trailing ``| head/tail/wc/sort/uniq ...`` pipeline stage.
+# │  作用：丢弃 trailing ``| head/tail/wc/sort/uniq ...`` pipeline 阶段.
 # │  参数：segment: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -383,7 +383,7 @@ def _strip_shell_pipe_tail(segment: str) -> str:
 
 
 # ┌── 函数 def _split_shell_compound()
-# │  作用：Split on unquoted ``&&`` / ``||`` / ``;`` / newline, dropping pipe tails per segment.
+# │  作用：Split 在…上 unquoted ``&&`` / ``||`` / ``;`` / newline, 丢弃 pipe tails per segment.
 # │  参数：command: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -407,7 +407,7 @@ def _split_shell_compound(command: str) -> list[str]:
 
 
 # ┌── 函数 def _shell_head_word()
-# │  作用：Command name of a segment, skipping leading ``VAR=value`` assignments.
+# │  作用：命令名称的 segment, skipping leading ``VAR=值`` assignments.
 # │  参数：segment: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -421,7 +421,7 @@ def _shell_head_word(segment: str) -> str:
 
 
 # ┌── 函数 def _clean_shell_segment()
-# │  作用：Drop redirections (``> file``, ``2>&1``) from a segment.
+# │  作用：丢弃 redirections (``> 文件``, ``2>&1``) 从 segment.
 # │  参数：segment: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -458,7 +458,7 @@ def _is_shell_boundary_echo(segment: str) -> bool:
 
 
 # ┌── 函数 def summarize_shell_command()
-# │  作用：Compact shell wrapper/plumbing for display while preserving raw command elsewhere.
+# │  作用：Compact shell 包装器/plumbing 用于展示当 preserving raw 命令 elsewhere.
 # │  参数：command: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -500,7 +500,7 @@ def _read_file_line_label(args: dict) -> str:
 
 
 # ┌── 函数 def redact_browser_typed_text_for_display()
-# │  作用：Replace every occurrence of a secret-looking browser_type value with its redacted form.
+# │  作用：Replace 每个 occurrence 的 secret-looking browser_type 值带 其 redacted 形态.
 # │  参数：value: Any, typed_text: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -533,7 +533,7 @@ def redact_browser_typed_text_for_display(value: Any, typed_text: Any) -> Any:
 
 
 # ┌── 函数 def redact_tool_args_for_display()
-# │  作用：Return a copy of tool args safe for logs/progress UI (masks ``browser_type`` secrets).
+# │  作用：返回 复制的 工具 args safe 用于日志/progress UI (masks ``browser_type`` secrets).。
 # │  参数：tool_name: str, args: dict | None
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -550,7 +550,7 @@ def redact_tool_args_for_display(tool_name: str, args: dict | None) -> dict | No
 
 
 # ┌── 函数 def _delegate_task_goals()
-# │  作用：One truncated goal string per dict task (``?`` when missing).
+# │  作用：One truncated goal 字符串 per 字典 task (``?`` 当 missing).
 # │  参数：tasks: Any, per_goal_len: int
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ def _delegate_task_goals(tasks: Any, *, per_goal_len: int) -> list[str]:
 
 
 # ┌── 函数 def _browser_exec_step_label()
-# │  作用：User-friendly step label from browser_exec code's leading comment.
+# │  作用：User-friendly 步骤 label 从 browser_exec code's leading comment.
 # │  参数：args: dict, max_chars: int = 80
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -592,7 +592,7 @@ _FALLBACK_PREVIEW_KEYS = ("query", "text", "command", "path", "name", "prompt", 
 
 
 # ┌── 函数 def _delegate_action_preview()
-# │  作用：Shared ``list/steer/stop <id>`` preview for delegate_task, or None for spawn calls.
+# │  作用：Shared ``列表/steer/stop <id>`` preview 用于 delegate_task, 或 None 用于 spawn calls.
 # │  参数：args: dict
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -746,7 +746,7 @@ _PREVIEW_BUILDERS = {
 
 
 # ┌── 函数 def build_tool_preview()
-# │  作用：Build a short preview of a tool call's primary argument for display.
+# │  作用：构建 short preview 的工具 call's primary 参数用于展示.
 # │  参数：tool_name: str, args: dict, max_len: int | None = None
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -776,7 +776,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
 
 
 # ┌── 函数 def prepare_tool_preview()
-# │  作用：Compact preview plus explicit truncation/URL facts (the uncapped preview is
+# │  作用：Compact preview plus explicit truncation/URL facts ( uncapped preview 是
 # │  参数：tool_name: str, args: dict | None, fallback: str, max_len: int
 # │  返回：ToolPreview
 # └──────────────────────────────────────────────────────────────
@@ -813,7 +813,7 @@ _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({"skills_list", "session_sear
 _TOOL_VERBS_FOR_CONNECTOR: frozenset[str] = frozenset({"web_search", "search_files"})
 
 # ┌── 函数 def get_tool_verb()
-# │  作用：Friendly verb for a built-in tool, or None (labels disabled / no curated verb);
+# │  作用：Friendly verb 用于已构建-在工具, 或 None (labels disabled / 无 curated verb);
 # │  参数：tool_name: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -825,7 +825,7 @@ def get_tool_verb(tool_name: str) -> str | None:
 
 
 # ┌── 函数 def tool_verb_connector()
-# │  作用：Return the connector between a verb and its preview (" for " or " ").
+# │  作用：返回 connector between verb 且其 preview (" 用于 " 或 " ").。
 # │  参数：tool_name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -836,7 +836,7 @@ def tool_verb_connector(tool_name: str) -> str:
 
 
 # ┌── 函数 def verb_drops_preview()
-# │  作用：Whether the verb should render alone, without the argument preview.
+# │  作用：是否 verb 应当 render alone, 不参数 preview.。
 # │  参数：tool_name: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -847,7 +847,7 @@ def verb_drops_preview(tool_name: str) -> bool:
 
 
 # ┌── 函数 def build_status_phrase()
-# │  作用：Lowercase "is <verb> <preview>…" phrase following the bot's display name (Slack setStatus).
+# │  作用：Lowercase "是 <verb> <preview>…" phrase following 机器人's 展示名称 (Slack setStatus).
 # │  参数：tool_name: str, args: dict | None, max_len: int = 49
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -872,7 +872,7 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
 
 
 # ┌── 函数 def build_tool_label()
-# │  作用：Human-phrased label ("Searching the web for ...") for curated built-ins; other
+# │  作用：Human-phrased label ("Searching web 用于 ...") 用于 curated 已构建-ins; other
 # │  参数：tool_name: str, args: dict, max_len: int | None = None
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -894,7 +894,7 @@ def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> 
 # ── Inline diff previews for write actions ────────────────────────────────
 
 # ┌── 函数 def _resolved_path()
-# │  作用：Resolve a possibly-relative filesystem path against the current cwd.
+# │  作用：Resolve possibly-relative filesystem 路径 against current cwd.
 # │  参数：path: str
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -905,7 +905,7 @@ def _resolved_path(path: str) -> Path:
 
 
 # ┌── 函数 def _snapshot_text()
-# │  作用：Return UTF-8 file content, or None for missing/unreadable files.
+# │  作用：返回 UTF-8 文件内容, 或 None 用于 missing/unreadable 文件.。
 # │  参数：path: Path
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -921,7 +921,7 @@ def _snapshot_text(path: Path) -> str | None:
 
 
 # ┌── 函数 def _display_diff_path()
-# │  作用：Prefer cwd-relative paths in diffs when available.
+# │  作用：Prefer cwd-relative 路径在 diffs 当 available.
 # │  参数：path: Path
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -937,7 +937,7 @@ def _display_diff_path(path: Path) -> str:
 
 
 # ┌── 函数 def _resolve_skill_manage_paths()
-# │  作用：Resolve skill_manage write targets to filesystem paths.
+# │  作用：Resolve skill_manage 写入 targets filesystem 路径.
 # │  参数：args: dict
 # │  返回：list[Path]
 # └──────────────────────────────────────────────────────────────
@@ -970,7 +970,7 @@ def _resolve_skill_manage_paths(args: dict) -> list[Path]:
 
 
 # ┌── 函数 def _resolve_local_edit_paths()
-# │  作用：Resolve local filesystem targets for write-capable tools.
+# │  作用：Resolve local filesystem targets 用于写入-capable 工具.
 # │  参数：tool_name: str, function_args: dict | None
 # │  返回：list[Path]
 # └──────────────────────────────────────────────────────────────
@@ -988,7 +988,7 @@ def _resolve_local_edit_paths(tool_name: str, function_args: dict | None) -> lis
 
 
 # ┌── 函数 def capture_local_edit_snapshot()
-# │  作用：Capture before-state for local write previews.
+# │  作用：Capture 在…之前-状态用于 local 写入 previews.
 # │  参数：tool_name: str, function_args: dict | None
 # │  返回：LocalEditSnapshot | None
 # └──────────────────────────────────────────────────────────────
@@ -1003,7 +1003,7 @@ def capture_local_edit_snapshot(tool_name: str, function_args: dict | None) -> L
 
 
 # ┌── 函数 def _result_succeeded()
-# │  作用：Conservatively detect whether a tool result represents success.
+# │  作用：Conservatively 检测 whether 工具结果 represents success.
 # │  参数：result: str | None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1018,7 +1018,7 @@ def _result_succeeded(result: str | None) -> bool:
 
 
 # ┌── 函数 def _diff_from_snapshot()
-# │  作用：Generate unified diff text from a stored before-state and current files.
+# │  作用：Generate unified diff 文本从 stored 在…之前-状态且 current 文件.
 # │  参数：snapshot: LocalEditSnapshot | None
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -1044,7 +1044,7 @@ def _diff_from_snapshot(snapshot: LocalEditSnapshot | None) -> str | None:
 
 
 # ┌── 函数 def extract_edit_diff()
-# │  作用：Extract a unified diff from a file-edit tool result.
+# │  作用：Extract unified diff 从文件-edit 工具结果.
 # │  参数：tool_name: str, result: str | None, function_args: dict | None = ..., snapshot: LocalEditSnapshot | None = ...
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -1067,7 +1067,7 @@ def extract_edit_diff(
 
 
 # ┌── 函数 def _emit_inline_diff()
-# │  作用：Emit rendered diff text through the CLI's prompt_toolkit-safe printer.
+# │  作用：Emit rendered diff 文本 through CLI's prompt_toolkit-safe printer.
 # │  参数：diff_text: str, print_fn
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1092,7 +1092,7 @@ _DIFF_LINE_COLORS = (("@@", "hunk"), ("-", "minus"), ("+", "plus"), (" ", "dim")
 
 
 # ┌── 函数 def _render_inline_unified_diff()
-# │  作用：Render unified diff lines in Hermes' inline transcript style.
+# │  作用：Render unified diff lines 在 Hermes' inline transcript style.
 # │  参数：diff: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -1119,7 +1119,7 @@ def _render_inline_unified_diff(diff: str) -> list[str]:
 
 
 # ┌── 函数 def _split_unified_diff_sections()
-# │  作用：Split a unified diff into per-file sections.
+# │  作用：Split unified diff 进入 per-文件 sections.
 # │  参数：diff: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -1135,7 +1135,7 @@ def _split_unified_diff_sections(diff: str) -> list[str]:
 
 
 # ┌── 函数 def _summarize_rendered_diff_sections()
-# │  作用：Render diff sections while capping file count and total line count.
+# │  作用：Render diff sections 当 capping 文件 count 且 total line count.
 # │  参数：diff: str, max_files: int = ..., max_lines: int = ...
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -1172,7 +1172,7 @@ def _summarize_rendered_diff_sections(
 
 
 # ┌── 函数 def render_edit_diff_with_delta()
-# │  作用：Render an edit diff inline without taking over the terminal UI.
+# │  作用：Render edit diff inline 不 taking over 终端 UI.
 # │  参数：tool_name: str, result: str | None, function_args: dict | None = ..., snapshot: LocalEditSnapshot | None = ..., print_fn = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1199,7 +1199,7 @@ def render_edit_diff_with_delta(
 # ── KawaiiSpinner ─────────────────────────────────────────────────────────
 
 # ┌── 类 class KawaiiSpinner
-# │  说明：Animated spinner with kawaii faces for CLI feedback during tool execution.
+# │  说明：Animated spinner 带 kawaii faces 用于 CLI feedback 在…期间工具 execution.
 # │  成员：共 13 个方法；对外可用 4 个；含魔术方法 __init__, __enter__, __exit__
 # └──────────────────────────────────────────────────────────────
 class KawaiiSpinner:
@@ -1224,7 +1224,7 @@ class KawaiiSpinner:
     ]
 
     # ┌── 函数 def _skin_spinner_list()
-    # │  作用：Return the active skin's ``spinner[key]`` list, or *fallback* when absent/empty.
+    # │  作用：当 absent/empty. 时返回 active skin's ``spinner[键]`` 列表, 或 *兜底*。
     # │  参数：key: str, fallback: list
     # │  返回：list
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -1260,7 +1260,7 @@ class KawaiiSpinner:
         self._out = sys.stdout  # captured NOW, before any child redirect_stdout(devnull) replaces it
 
     # ┌── 函数 def _write()
-    # │  作用：Write via print_fn when supplied, else to the stdout captured at creation.
+    # │  作用：写入 via print_fn 当 supplied, 否则标准输出 captured 在 creation.
     # │  参数：self, text: str, end: str = '\n', flush: bool = False
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1282,7 +1282,7 @@ class KawaiiSpinner:
             pass
 
     # ┌── 函数 def _is_tty()
-    # │  作用：Check if output is a real terminal, safe against closed streams.
+    # │  作用：检查若 输出是 real 终端, safe against 已关闭 streams.
     # │  参数：self
     # │  返回：bool
     # │  【语法】@property 把方法伪装成属性：外面写 obj.x 而不是 obj.x()。
@@ -1299,7 +1299,7 @@ class KawaiiSpinner:
             return False
 
     # ┌── 函数 def _is_patch_stdout_proxy()
-    # │  作用：True for prompt_toolkit's StdoutProxy: it injects newlines around each flush so the
+    # │  作用：当 prompt_toolkit's StdoutProxy: 它注入 newlines around 每个冲刷从而 时返回 True。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1375,7 +1375,7 @@ class KawaiiSpinner:
         return ' ' * max(self.last_line_len + 5, 40)  # spaces, not \033[K: garbles under patch_stdout
 
     # ┌── 函数 def print_above()
-    # │  作用：Print a line above the spinner (next tick redraws it below). Works inside
+    # │  作用：打印 line above spinner (next tick redraws 它 below). Works inside
     # │  参数：self, text: str
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1427,7 +1427,7 @@ _ERROR_SUFFIX_MAX_LEN = 48
 
 
 # ┌── 函数 def _trim_error()
-# │  作用：Shrink an error message for inline display (long 'File not found' paths -> filename).
+# │  作用：Shrink 错误消息用于 inline 展示 (long '文件不 found' 路径 -> filename).
 # │  参数：msg: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1443,7 +1443,7 @@ def _trim_error(msg: str) -> str:
 
 
 # ┌── 函数 def _detect_tool_failure()
-# │  作用：Return ``(is_failure, suffix)`` for a tool result, e.g. ``(True, " [exit 1]")``.
+# │  作用：返回 ``(is_failure, suffix)`` 用于工具结果, e.g. ``(True, " [exit 1]")``.。
 # │  参数：tool_name: str, result: str | None
 # │  返回：tuple[bool, str]
 # └──────────────────────────────────────────────────────────────
@@ -1494,7 +1494,7 @@ def _domain(url: str) -> str:
 
 
 # ┌── 函数 def _cute_trunc()
-# │  作用：Tail-truncate to the configured preview cap (0 = unlimited).
+# │  作用：按配置的预览上限做尾部截断（0 表示不限）。
 # │  参数：s
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1505,7 +1505,7 @@ def _cute_trunc(s) -> str:
 
 
 # ┌── 函数 def _cute_path()
-# │  作用：Head-truncate a path to the configured preview cap, keeping the filename end.
+# │  作用：Head-truncate 路径 configured preview cap, 保留 filename end.
 # │  参数：p
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1697,7 +1697,7 @@ _CUTE_LINES = {
 
 
 # ┌── 函数 def _get_cute_tool_message()
-# │  作用：Tool completion line for CLI quiet mode: ``| {emoji} {verb:9} {detail} {duration}``, plus a
+# │  作用：工具 completion line 用于 CLI quiet 模式: ``| {emoji} {verb:9} {detail} {duration}``, plus
 # │  参数：tool_name: str, args: dict, duration: float, result: str | None = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1714,7 +1714,7 @@ def _get_cute_tool_message(tool_name: str, args: dict, duration: float, result: 
 
 
 # ┌── 函数 def get_cute_tool_message()
-# │  作用：Render a completion label without letting cosmetic failures escape.
+# │  作用：Render completion label 不 letting cosmetic failures escape.
 # │  参数：tool_name: str, args: dict, duration: float, result: str | None = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1738,7 +1738,7 @@ def get_cute_tool_message(tool_name: str, args: dict, duration: float, result: s
 # The whole block is removed by reverting the commit that added it.
 
 # ┌── 函数 def get_friendly_tool_labels()
-# │  作用：Return whether friendly tool labels are enabled.
+# │  作用：返回 是否 friendly 工具 labels 是 enabled.。。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────

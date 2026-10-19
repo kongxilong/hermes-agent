@@ -102,7 +102,7 @@ RUN_BUDGET_WRAPUP_NOTICE = (
 
 
 # ┌── 函数 def _midturn_request_pressure_tokens()
-# │  作用：Token figure the mid-turn pre-API compression guard compares: the pruned
+# │  作用：「轮次中段、调用 API 前的压缩护栏」所比较的令牌数（即被裁剪后剩余的……）。
 # │  参数：agent: Any, api_messages: List[Dict[str, Any]], effective_system: str, approx_tokens: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ def _midturn_request_pressure_tokens(
 
 
 # ┌── 函数 def _review_input_budget_exhausted()
-# │  作用：True when a detached review fork has replayed its aggregate input budget.
+# │  作用：当分离出来的复查分支已经重放过它的聚合输入预算时返回 True。
 # │  参数：agent: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ def _review_input_budget_exhausted(agent: Any) -> bool:
 
 
 # ┌── 函数 def _maybe_inject_run_budget_wrapup()
-# │  作用：Inject the one-time wall-clock wrap-up notice when past 80% of budget.
+# │  作用：当已用掉 80% 以上的预算时，注入一次性的「真实时钟」收尾提示。
 # │  参数：agent: Any, messages: List[Dict[str, Any]]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ def _maybe_inject_run_budget_wrapup(agent: Any, messages: List[Dict[str, Any]]) 
 
 
 # ┌── 函数 def _restore_user_after_reference_handoff()
-# │  作用：Re-append this turn's real user ask when compaction left only a handoff (#80622).
+# │  作用：当压缩后只剩下一条交接记录（handoff）时，把本轮用户真正的提问重新追加回去（#80622）。
 # │  参数：messages: List[Dict[str, Any]], user_message: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ def _restore_user_after_reference_handoff(
 
 
 # ┌── 函数 def _should_skip_model_call_for_reference_handoff()
-# │  作用：Guard post-compaction continues against sole-handoff active turns (#80622).
+# │  作用：压缩后的护栏：针对「仅剩交接、却仍是活跃轮次」的情况继续生效（#80622）。
 # │  参数：messages: List[Dict[str, Any]], user_message: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ INTERRUPT_WAITING_FOR_MODEL_PREFIX = "Operation interrupted: waiting for model r
 
 
 # ┌── 函数 def _should_rearm_compression_budget()
-# │  作用：True once a provider proves a completed compaction worked: rough estimates cannot
+# │  作用：一旦服务商证明一次已完成的压缩确实生效，就返回 True：粗略估算无法……
 # │  参数：compression_attempts: int, completed_compaction_pending: bool, prompt_tokens: int, threshold_tokens: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -305,7 +305,7 @@ _MAX_OUTER_LOOP_ERRORS = 8
 
 
 # ┌── 函数 def _is_interpreter_shutdown_error()
-# │  作用：True for a fatal interpreter-shutdown RuntimeError. The RuntimeError type gate
+# │  作用：当 RuntimeError 属于「解释器关闭」这类致命错误时返回 True。这里用 RuntimeError 类型来做判定……
 # │  参数：exc: Exception
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -327,7 +327,7 @@ def _is_interpreter_shutdown_error(exc: Exception) -> bool:
 
 
 # ┌── 函数 def _moa_client_consumes_prepared_request()
-# │  作用：True when ``client`` is the in-process MoA facade (only ``MoAChatCompletions`` exposes
+# │  作用：当 ``client`` 是进程内的 MoA 门面时返回 True（只有 ``MoAChatCompletions`` 会暴露……）。
 # │  参数：client: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -341,7 +341,7 @@ def _moa_client_consumes_prepared_request(client: Any) -> bool:
 
 
 # ┌── 函数 def _join_truncated_parts()
-# │  作用：Join continuation fragments, adding a newline where two would glue together (#78577).
+# │  作用：把续接片段拼接起来；若两段直接相接会粘连，就在中间补一个换行（#78577）。
 # │  参数：parts: List[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -357,7 +357,7 @@ def _join_truncated_parts(parts: List[str]) -> str:
 
 
 # ┌── 函数 def _moa_reference_metrics_for_hook()
-# │  作用：Per-advisor metrics for post_api_request, or None off the MoA path (a plugin only
+# │  作用：针对 post_api_request 的「每个顾问」指标；若不在 MoA 路径上则返回 None（仅插件……）。
 # │  参数：agent: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ def _moa_reference_metrics_for_hook(agent: Any) -> Any:
 
 
 # ┌── 函数 def _apply_active_turn_redirect()
-# │  作用：Append a provider-safe checkpoint and correction to the live turn so role alternation
+# │  作用：往当前活跃轮次追加一个「服务商安全」的检查点与修正，以保证角色交替……
 # │  参数：agent: Any, messages: List[Dict[str, Any]], text: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -426,7 +426,7 @@ def _apply_active_turn_redirect(agent: Any, messages: List[Dict[str, Any]], text
 
 
 # ┌── 函数 def _is_copilot_provider()
-# │  作用：Delegate to ``AIAgent._is_copilot_provider``; the fallback keeps the ``github-copilot`` /
+# │  作用：委派给 ``AIAgent._is_copilot_provider``；兜底逻辑保留 ``github-copilot`` / ……
 # │  参数：agent: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -447,7 +447,7 @@ def _is_copilot_provider(agent: Any) -> bool:
 
 
 # ┌── 函数 def _is_stale_copilot_credential_error()
-# │  作用：Detect a Copilot 400 that is really a STALE / DEGRADED credential (status 400 AND an
+# │  作用：识别一种 Copilot 的 400 错误：它其实是凭证过期/降级（状态码 400 且带一个……）。
 # │  参数：status_code: Optional[int], error_message: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -469,7 +469,7 @@ def _is_stale_copilot_credential_error(status_code: Optional[int], error_message
 
 
 # ┌── 函数 def _pressure_with_real_floor()
-# │  作用：Floor the ROUGH pre-API pressure estimate at the last REAL prompt size.
+# │  作用：把「调用 API 前的粗略压力估算」下取整到上一次真实提示词的大小。
 # │  参数：compressor: Any, rough_tokens: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -506,7 +506,7 @@ def _pressure_with_real_floor(compressor: Any, rough_tokens: int) -> int:
 
 
 # ┌── 函数 def _ollama_context_limit_error()
-# │  作用：Return a user-facing error when Ollama is loaded with too little context.
+# │  作用：当 Ollama 被加载时分配的上下文过小，返回一个面向用户的错误。
 # │  参数：agent: Any, request_tokens: int
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -543,7 +543,7 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> Optional[str
 
 
 # ┌── 函数 def _maybe_grow_local_window()
-# │  作用：Grow a managed local model's context window before compressing; returns the new
+# │  作用：在压缩之前，先扩大一个受管本地模型的上下文窗口；返回新的……
 # │  参数：agent: Any, compressor: Any, request_tokens: int
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -577,7 +577,7 @@ def _maybe_grow_local_window(agent: Any, compressor: Any,
 
 
 # ┌── 函数 def _ra()
-# │  作用：Lazy ``run_agent`` reference so patches on ``run_agent.*`` reach this code path.
+# │  作用：对 ``run_agent`` 的惰性引用，使得打在 ``run_agent.*`` 上的补丁能作用到这段代码路径。
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -611,7 +611,7 @@ def _nous_entitlement_message(capability: str) -> str:
 
 
 # ┌── 函数 def _print_guidance()
-# │  作用：Print each line of ``message`` as a 💡 hint; False when there is nothing to print.
+# │  作用：把 ``message`` 的每一行作为 💡 提示打印出来；若没有可打印内容则返回 False。
 # │  参数：agent, message: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -637,7 +637,7 @@ def _print_nous_entitlement_guidance(agent, capability: str) -> bool:
 
 
 # ┌── 函数 def _system_prompt_for_hooks()
-# │  作用：System prompt as sent to the provider (``system`` / ``instructions`` / ``messages[0]``)
+# │  作用：实际发送给服务商的系统提示词（对应 ``system`` / ``instructions`` / ``messages[0]``）。
 # │  参数：api_kwargs: Any, request_messages: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -734,7 +734,7 @@ def _billing_or_entitlement_message(
 
 
 # ┌── 函数 def _billing_block_dict()
-# │  作用：Best-effort structured billing descriptor (None if billing_links is unavailable).
+# │  作用：尽最大努力构造的结构化计费描述符（若 billing_links 不可用则为 None）。
 # │  参数：provider, base_url, model, message = '', unverified: bool = ...
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -756,7 +756,7 @@ def _billing_block_dict(provider, base_url, model, message="", *, unverified: bo
 
 
 # ┌── 函数 def _billing_terminal_label()
-# │  作用：Terminal-failure prefix for a billing-classified error; ``unverified`` (#82154) must
+# │  作用：计费类错误的「（不可恢复）终局失败」前缀；``unverified``（#82154）必须……
 # │  参数：summary: str, unverified: bool
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -774,7 +774,7 @@ def _billing_terminal_label(summary: str, unverified: bool) -> str:
 
 
 # ┌── 函数 def _billing_failure_result()
-# │  作用：Structured terminal result for a billing-classified failure — the single construction
+# │  作用：计费类失败的结构化终局结果——唯一的构造入口……
 # │  参数：classified, summary: str, messages, api_call_count: int, provider: str, base_url, model: str, guidance: Optional[str] = ...
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -819,7 +819,7 @@ def _print_billing_or_entitlement_guidance(
 
 
 # ┌── 函数 def _bot_chat_prompt_stale()
-# │  作用：Bot Chat capability epoch check for a stored prompt.
+# │  作用：针对已存储提示词的「机器人 Chat 能力纪元」检查。
 # │  参数：agent, stored_prompt: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -865,7 +865,7 @@ def _bot_chat_prompt_stale(agent, stored_prompt: str) -> bool:
 
 
 # ┌── 函数 def _persist_system_prompt()
-# │  作用：Persist ``agent._cached_system_prompt`` to the session row; failures log at WARNING
+# │  作用：把 ``agent._cached_system_prompt`` 持久化到会话行；失败仅以 WARNING 级别记日志……
 # │  参数：agent, failure_message: str, persist_tools: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -886,7 +886,7 @@ def _persist_system_prompt(agent, failure_message: str, *, persist_tools: bool =
 
 
 # ┌── 函数 def _restore_or_build_system_prompt()
-# │  作用：Restore the cached system prompt from the session DB or build it fresh.
+# │  作用：从会话数据库恢复缓存的系统提示词，若没有则重新构建一份。
 # │  参数：agent, system_message, conversation_history
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1033,7 +1033,7 @@ def _restore_or_build_system_prompt(agent, system_message, conversation_history)
 
 
 # ┌── 函数 def _stored_prompt_matches_runtime()
-# │  作用：Return False when the persisted runtime-identity lines are stale.
+# │  作用：当已持久化的运行时身份信息已过期时返回 False。
 # │  参数：agent, prompt: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1158,7 +1158,7 @@ _canon_args_cache_bytes = 0
 
 
 # ┌── 函数 def _canonicalize_tool_call_arguments()
-# │  作用：Canonical wire form of a tool-call arguments JSON string; raises on malformed input
+# │  作用：工具调用参数 JSON 字符串的「标准线格式」（wire form）；输入格式非法时抛出……
 # │  参数：arg_str: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1188,7 +1188,7 @@ def _canonicalize_tool_call_arguments(arg_str: str) -> str:
 
 
 # ┌── 函数 def _clone_message_for_send()
-# │  作用：Structural clone (dicts/lists recursively, immutable leaves shared) of a history
+# │  作用：对历史记录做结构性克隆（字典/列表递归克隆，不可变叶子共享）；……
 # │  参数：msg
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1207,7 +1207,7 @@ def _clone_message_for_send(msg):
 
 
 # ┌── 函数 def _canonicalize_api_tool_calls()
-# │  作用：Canonicalize tool-call argument JSON on the send-path copy (copy-on-write for the
+# │  作用：在发送路径的副本上对工具调用参数 JSON 做规范化（对……采用写时复制）。
 # │  参数：api_messages
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1236,7 +1236,7 @@ def _canonicalize_api_tool_calls(api_messages) -> None:
 
 
 # ┌── 函数 def _invalid_tool_name_error_content()
-# │  作用：Error content for an unknown tool name. A blank name is a model echoing tool-call
+# │  作用：未知工具名对应的错误内容。空白名字通常是模型在回显工具调用……
 # │  参数：name: str, valid_tool_names
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1257,7 +1257,7 @@ def _invalid_tool_name_error_content(name: str, valid_tool_names) -> str:
 
 
 # ┌── 函数 def _content_policy_blocked_result()
-# │  作用：Terminal turn result for a content-policy block (deterministic for the unchanged
+# │  作用：内容策略拦截对应的「终局轮次结果」（对未变更的……是确定性的）。
 # │  参数：messages: List[Dict], api_call_count: int, final_response: str, error_detail: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1274,7 +1274,7 @@ def _content_policy_blocked_result(
 
 
 # ┌── 函数 def _partial_turn_result()
-# │  作用：Incomplete-turn result whose ``error`` mirrors ``final_response``; ``flags`` add the
+# │  作用：「未完成轮次」的结果，其 ``error`` 镜像 ``final_response``；``flags`` 再补充……
 # │  参数：final_response: str, messages: List[Dict], api_call_count: int, **flags
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1291,7 +1291,7 @@ def _partial_turn_result(
 
 
 # ┌── 函数 def _compression_deferred_result()
-# │  作用：Soft turn result for a transiently-deferred compression. Both reasons must end as
+# │  作用：针对「被临时推迟的压缩」的柔性轮次结果。两种原因最终都必须以……结束。
 # │  参数：agent, messages: List[Dict], api_call_count: int, reason: str = 'lock'
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1333,7 +1333,7 @@ def _compression_deferred_result(agent, messages: List[Dict], api_call_count: in
 
 
 # ┌── 函数 def _provider_overflow_exhausted_result()
-# │  作用：Fail closed when a rebuilt request is still too large after recovery.
+# │  作用：当重建后的请求在恢复之后仍然过大时，按「fail closed（保守拒绝）」处理。
 # │  参数：agent, messages: List[Dict], conversation_history, api_call_count: int, request_pressure_tokens: int, max_compression_attempts: int
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1366,7 +1366,7 @@ def _provider_overflow_exhausted_result(
 
 
 # ┌── 函数 def _rewrite_system_content_blocks()
-# │  作用：Rewrite a cache-decorated system message in place, keeping its blocks (a bare string
+# │  作用：就地重写一条带缓存装饰的系统消息，保留它的各个块（裸字符串……）。
 # │  参数：system_message: dict, effective: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1395,7 +1395,7 @@ def _rewrite_system_content_blocks(system_message: dict, effective: str) -> bool
 
 
 # ┌── 函数 def _sync_failover_system_message()
-# │  作用：Refresh the in-flight system message after a provider failover: ``api_messages`` were
+# │  作用：在一次服务商故障切换（failover）之后刷新正在传输中的系统消息：``api_messages`` 已被……
 # │  参数：agent, api_messages, active_system_prompt
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1415,7 +1415,7 @@ def _sync_failover_system_message(agent, api_messages, active_system_prompt):
 
 
 # ┌── 函数 def _arm_fallback_restart()
-# │  作用：After a successful fallback activation: sync the system message and arm
+# │  作用：在兜底（fallback）激活成功之后：同步系统消息并准备好……
 # │  参数：agent, api_messages, active_system_prompt, _retry
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1432,7 +1432,7 @@ def _arm_fallback_restart(agent, api_messages, active_system_prompt, _retry):
 
 
 # ┌── 函数 def _ensure_cached_system_prompt_static()
-# │  作用：Rebuild ``_cached_system_prompt_static`` when caching becomes active (#72626): sessions
+# │  作用：当缓存变为启用时重建 ``_cached_system_prompt_static``（#72626）：会话……
 # │  参数：agent, system_message = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1445,7 +1445,7 @@ def _ensure_cached_system_prompt_static(agent, system_message=None) -> None:
 
 
 # ┌── 函数 def _peel_moa_guidance()
-# │  作用：Remove MoA reference guidance attached by ``_attach_reference_guidance``.
+# │  作用：移除由 ``_attach_reference_guidance`` 附加的 MoA 引用指引。
 # │  参数：messages: List[Dict[str, Any]], guidance: Any
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1457,7 +1457,7 @@ def _peel_moa_guidance(messages: List[Dict[str, Any]], guidance: Any) -> List[Di
 
 
 # ┌── 函数 def _redecorate_prompt_cache_for_provider()
-# │  作用：Strip and re-apply cache_control for the *current* provider policy — failover
+# │  作用：针对*当前*服务商策略，先剥离再重新施加 cache_control——这是故障切换……
 # │  参数：agent, api_messages: List[Dict[str, Any]], system_message = ..., moa_prepared: Optional[Dict[str, Any]] = ..., tools_for_api: Optional[List[Dict[str, Any]]] = ...
 # │  返回：tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]] | tuple[List[Dict[str, Any]], Optional[Dict[str, Any]], List[Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -1518,7 +1518,7 @@ def _redecorate_prompt_cache_for_provider(
 
 
 # ┌── 函数 def _engine_overrides_hook()
-# │  作用：True when ``engine`` implements ContextEngine hook ``name`` itself.
+# │  作用：当 ``engine`` 自身实现了 ContextEngine 的 ``name`` 钩子时返回 True。
 # │  参数：engine: Any, name: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1542,7 +1542,7 @@ def _engine_overrides_hook(engine: Any, name: str) -> bool:
 
 
 # ┌── 函数 def _apply_context_engine_selection()
-# │  作用：Run the optional per-turn ``ContextEngine.select_context()`` hook, fail-open: any
+# │  作用：运行可选的「每轮」``ContextEngine.select_context()`` 钩子，采用 fail-open（放开）策略：任何……
 # │  参数：agent: Any, api_messages: List[Dict[str, Any]], conversation_messages: List[Dict[str, Any]], incoming_message: Optional[Dict[str, Any]], logger: Any
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1599,7 +1599,7 @@ def _apply_context_engine_selection(
 
 
 # ┌── 函数 def _notify_context_engine_turn_complete()
-# │  作用：Notify the active context engine that a user turn has finished (fail-open; the engine
+# │  作用：通知活跃的上下文引擎：一轮用户对话已结束（fail-open；引擎……）。
 # │  参数：agent: Any, messages: List[Dict[str, Any]], usage: Optional[Dict[str, Any]] = ..., logger: Any, **meta
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1624,7 +1624,7 @@ def _notify_context_engine_turn_complete(
 
 
 # ┌── 函数 def _decode_inline_moa_turn()
-# │  作用：Decode a MoA preset encoded into ``user_message``; returns ``(user_message,
+# │  作用：解码嵌入在 ``user_message`` 里的 MoA 预设；返回 ``(user_message, ……)。
 # │  参数：user_message, persist_user_message
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1647,7 +1647,7 @@ def _decode_inline_moa_turn(user_message, persist_user_message):
 
 
 # ┌── 函数 def _preflight_timeout_result()
-# │  作用：Typed recovery result when turn-start preflight compression timed out (#98424): no
+# │  作用：带有类型的恢复结果：当「轮次开始前的预检压缩」超时（#98424）时返回；没有……
 # │  参数：agent, exc, conversation_history
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1671,7 +1671,7 @@ def _preflight_timeout_result(agent, exc, conversation_history) -> Dict[str, Any
 
 
 # ┌── 类 class _LoopState
-# │  说明：Every local the turn loop threads through the phase helpers in ``agent/turn_*.py``.
+# │  说明：主循环传递给 ``agent/turn_*.py`` 里各阶段辅助函数的全部局部变量。
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1771,7 +1771,7 @@ _LATCHED_VERDICT_FIELDS = {"handle_api_error": frozenset({"_provider_overflow_re
 
 
 # ┌── 函数 def _run_phase()
-# │  作用：Call phase helper ``fn`` with the loop locals it names, copy its verdict fields back.
+# │  作用：用循环里的局部变量去调用阶段辅助函数 ``fn``，并把它的判定字段拷贝回来。
 # │  参数：fn, agent, state: _LoopState, **extra
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1798,7 +1798,7 @@ def _run_phase(fn, agent, state: _LoopState, **extra):
 
 
 # ┌── 函数 def _run_api_retry_loop()
-# │  作用：One API call with its retry/recovery loop (guard → build → call → check, error handlers).
+# │  作用：一次 API 调用，附带其重试/恢复循环（护栏 → 构建 → 调用 → 检查，以及错误处理）。
 # │  参数：agent, s: _LoopState
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1841,7 +1841,7 @@ def _run_api_retry_loop(agent, s: _LoopState) -> Optional[Dict[str, Any]]:
 
 
 # ┌── 函数 def _run_conversation_turn()
-# │  作用：Run a complete conversation with tool calling until completion; returns the result dict.
+# │  作用：运行一次完整的、带工具调用的对话，直到结束；返回结果字典。
 # │  参数：agent, user_message: Any, system_message: str = None, conversation_history: List[Dict[str, Any]] = None, task_id: str = None, stream_callback: Optional[callable] = None, persist_user_message: Optional[Any] = None, persist_user_timestamp: Optional[float] = None  …共 13 个
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -2002,7 +2002,7 @@ def _run_conversation_turn(
 
 
 # ┌── 函数 def run_conversation()
-# │  作用：Run one turn (see ``_run_conversation_turn``) and export the current-turn boundary.
+# │  作用：运行一轮对话（参见 ``_run_conversation_turn``），并导出当前轮的边界。
 # │  参数：agent, user_message: Any, system_message: str = None, conversation_history: List[Dict[str, Any]] = None, task_id: str = None, stream_callback: Optional[callable] = None, persist_user_message: Optional[Any] = None, persist_user_timestamp: Optional[float] = None  …共 13 个
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────

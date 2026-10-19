@@ -71,7 +71,7 @@ _EXPECTED_WRITE_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS}
 # ~25-35K tokens across typical tokenisers. Configurable: file_read_max_chars.
 _DEFAULT_MAX_READ_CHARS = 100_000
 # ┌── 函数 def _get_max_read_chars()
-# │  作用：Return ``file_read_max_chars`` from config.yaml (default on missing/invalid). No module
+# │  作用：返回 ``file_read_max_chars`` 从配置.YAML (默认值在…上 missing/invalid). 无模块。
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ def _get_max_read_chars() -> int:
 
 
 # ┌── 函数 def _truncate_to_char_budget()
-# │  作用：Trim line-numbered ``read_file`` content to the last COMPLETE line within *max_chars*.
+# │  作用：Trim line-numbered ``read_file`` 内容 last COMPLETE line within *max_chars*.
 # │  参数：content: str, max_chars: int
 # │  返回：tuple[str, int, bool]
 # └──────────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ def _truncate_to_char_budget(content: str, max_chars: int) -> tuple[str, int, bo
 
 
 # ┌── 函数 def _apply_char_budget()
-# │  作用：Trim *content* to the char budget, annotate *result_dict* with the
+# │  作用：Trim *内容* char 预算, annotate *result_dict* 带
 # │  参数：result_dict: dict, content: str, offset: int, total_lines, max_chars: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ _BLOCKED_PROC_SUFFIXES = (
 
 
 # ┌── 函数 def _file_ops_uses_host_paths()
-# │  作用：True when *file_ops* targets the host filesystem (only then may we stat paths
+# │  作用：当 *file_ops* targets 宿主 filesystem (仅然后可以我们 stat 路径 时返回 True。
 # │  参数：file_ops
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -201,7 +201,7 @@ _V4A_MOVE_HEADER_RE = re.compile(r'^(\*\*\*\s*Move\s+File:\s*)(.+?)\s*->\s*(.+)$
 
 
 # ┌── 函数 def _rewrite_v4a_patch_paths_for_host()
-# │  作用：Rewrite V4A file headers to the resolved host paths (host backends only).
+# │  作用：Rewrite V4A 文件 headers resolved 宿主路径 (宿主 backends 仅).
 # │  参数：patch: str, path_to_resolved: dict, file_ops
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -227,7 +227,7 @@ def _rewrite_v4a_patch_paths_for_host(patch: str, path_to_resolved: dict, file_o
 
 
 # ┌── 函数 def _is_blocked_device_path()
-# │  作用：Return True for concrete device/fd/proc paths that can hang reads or leak process state.
+# │  作用：当 concrete device/fd/proc 路径那个可以 hang 读取或 leak 进程状态. 时返回 True。
 # │  参数：path: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ def _is_blocked_device_path(path: str) -> bool:
 
 
 # ┌── 函数 def _is_blocked_device()
-# │  作用：True if the path (literal, any symlink hop, or final realpath) is a blocked device.
+# │  作用：True 若路径 (literal, 任意 symlink hop, 或 final realpath) 是 blocked device.
 # │  参数：filepath: str, base_dir: str | Path | None = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -290,7 +290,7 @@ def _is_blocked_device(filepath: str, base_dir: str | Path | None = None) -> boo
 
 
 # ┌── 函数 def _filter_read_blocked_search_results()
-# │  作用：Remove credential/cache/env paths from a SearchResult in-place; return the omitted count.
+# │  作用：移除 credential/缓存/env 路径从 SearchResult 在-place; 返回 omitted count.
 # │  参数：result, task_id: str = 'default'
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -328,7 +328,7 @@ def _filter_read_blocked_search_results(result, task_id: str = "default") -> int
 
 
 # ┌── 函数 def _is_expected_write_exception()
-# │  作用：Return True for expected write denials that should not hit error logs.
+# │  作用：当 expected 写入 denials 那个应当不 hit 错误日志. 时返回 True。
 # │  参数：exc: Exception
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -345,7 +345,7 @@ _file_ops_cache: dict = {}
 
 
 # ┌── 函数 def _create_terminal_env_for_file_ops()
-# │  作用：Build the terminal environment for *task_id* via the shared ``_create_configured_env``,
+# │  作用：构建终端 environment 用于 *task_id* via shared ``_create_configured_env``,
 # │  参数：raw_task_id: str, task_id: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -394,7 +394,7 @@ def _create_terminal_env_for_file_ops(raw_task_id: str, task_id: str):
 
 
 # ┌── 函数 def _get_file_ops()
-# │  作用：Get or create ShellFileOperations for the task's terminal environment.
+# │  作用：获取或 创建 ShellFileOperations 用于 task's 终端 environment.
 # │  参数：task_id: str = 'default'
 # │  返回：ShellFileOperations
 # └──────────────────────────────────────────────────────────────
@@ -467,7 +467,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
 
 
 # ┌── 函数 def clear_file_ops_cache()
-# │  作用：Clear file-operation state for a finished task, or all tasks.
+# │  作用：清除文件-operation 状态用于 finished task, 或全部 tasks.
 # │  参数：task_id: str = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -505,7 +505,7 @@ _SPECIAL_FILE_KINDS = (
 
 
 # ┌── 函数 def _special_file_kind()
-# │  作用：Human name for a non-regular file type that would hang a read, else None.
+# │  作用：Human 名称用于 non-regular 文件类型那个会 hang 读取, 否则 None.
 # │  参数：path
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -531,7 +531,7 @@ def _special_file_kind(path) -> str | None:
 
 
 # ┌── 函数 def _read_extracted_document()
-# │  作用：Render an extractable document (.docx/.xlsx/.pdf/...) as paginated text.
+# │  作用：Render extractable document (.docx/.xlsx/.pdf/...) 作为 paginated 文本.
 # │  参数：path: str, _resolved, offset: int, limit: int, task_id: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -599,7 +599,7 @@ def _read_extracted_document(path: str, _resolved, offset: int, limit: int, task
 
 
 # ┌── 函数 def _dedup_stub_or_block()
-# │  作用：Return the "unchanged" stub for a repeated identical read, escalating to a
+# │  作用：返回 "unchanged" stub 用于 repeated identical 读取, escalating。
 # │  参数：task_data: dict, dedup_key: tuple, path: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -635,7 +635,7 @@ def _dedup_stub_or_block(task_data: dict, dedup_key: tuple, path: str) -> str:
 
 
 # ┌── 函数 def _record_successful_read()
-# │  作用：Bookkeeping after a real (non-stub) read; returns the consecutive-read count.
+# │  作用：Bookkeeping 在…之后 real (non-stub) 读取; 返回 consecutive-读取 count.
 # │  参数：task_data: dict, task_id: str, path: str, resolved_str: str, offset: int, limit: int, dedup_key: tuple, partial: bool
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -686,7 +686,7 @@ def _record_successful_read(task_data: dict, task_id: str, path: str, resolved_s
 
 
 # ┌── 函数 def read_file_tool()
-# │  作用：Read a file with pagination and line numbers.
+# │  作用：读取文件带 pagination 且 line numbers.
 # │  参数：path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, task_id: str = 'default'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -816,7 +816,7 @@ def read_file_tool(path: str, offset: int = 1, limit: int = DEFAULT_READ_LIMIT, 
 # ── Shared write/patch plumbing ──────────────────────────────────────────
 
 # ┌── 函数 def _resolve_or_none()
-# │  作用：Task-resolved path string, or None when resolution fails for any reason.
+# │  作用：Task-resolved 路径字符串, 或 None 当 resolution fails 用于任意 reason.
 # │  参数：filepath: str, task_id: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -832,7 +832,7 @@ def _resolve_or_none(filepath: str, task_id: str) -> str | None:
 
 
 # ┌── 函数 def _write_precheck_error()
-# │  作用：Run the shared write/patch guards in order; return the first error string.
+# │  作用：运行 shared 写入/patch 护栏在 order; 返回 first 错误字符串.
 # │  参数：paths: list[str], content_paths: list[str], task_id: str, cross_profile: bool
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -861,7 +861,7 @@ def _write_precheck_error(paths: list[str], content_paths: list[str], task_id: s
 
 
 # ┌── 函数 def _edit_warnings()
-# │  作用：One pre-edit warning per path, in priority order: cross-agent registry
+# │  作用：One pre-edit 警告 per 路径, 在 priority order: cross-Agent registry
 # │  参数：paths: list[str], path_to_resolved: dict, task_id: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -882,7 +882,7 @@ def _edit_warnings(paths: list[str], path_to_resolved: dict, task_id: str) -> li
 
 
 # ┌── 函数 def _note_edited()
-# │  作用：Post-success bookkeeping: verification-stale marker, then per path refresh
+# │  作用：Post-success bookkeeping: verification-卡死的 marker, 然后 per 路径 refresh
 # │  参数：task_id: str, paths: list[str], path_to_resolved: dict, session_id: str | None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -909,7 +909,7 @@ _REWRITE_HINT_MAX_CHARS = 400_000
 
 
 # ┌── 函数 def _whole_file_rewrite_hint()
-# │  作用：Return a hint when ``new_content`` mostly re-sends what is already at ``resolved``.
+# │  作用：当 ``new_content`` mostly re-sends 什么是 已在 ``resolved``. 时返回 hint。
 # │  参数：task_id: str, resolved: str | None, new_content: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -954,7 +954,7 @@ def _whole_file_rewrite_hint(task_id: str, resolved: str | None, new_content: st
 
 
 # ┌── 函数 def write_file_tool()
-# │  作用：Write content to a file.
+# │  作用：写入内容文件.
 # │  参数：path: str, content: str, task_id: str = 'default', cross_profile: bool = False, session_id: str | None = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1020,7 +1020,7 @@ def write_file_tool(path: str, content: str, task_id: str = "default",
 
 
 # ┌── 函数 def _collect_v4a_header_paths()
-# │  作用：Extract every path named in V4A headers, rejecting ``..`` traversal.
+# │  作用：Extract 每个路径 named 在 V4A headers, 拒绝 ``..`` traversal.
 # │  参数：patch: str
 # │  返回：tuple[list[str], list[str]] | str
 # └──────────────────────────────────────────────────────────────
@@ -1055,7 +1055,7 @@ def _collect_v4a_header_paths(patch: str) -> tuple[list[str], list[str]] | str:
 
 
 # ┌── 函数 def patch_tool()
-# │  作用：Patch a file using replace mode or V4A patch format.
+# │  作用：Patch 文件 using replace 模式或 V4A patch format.
 # │  参数：mode: str = 'replace', path: str = None, old_string: str = None, new_string: str = None, replace_all: bool = False, patch: str = None, task_id: str = 'default', cross_profile: bool = False  …共 9 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1151,7 +1151,7 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
 
 
 # ┌── 函数 def search_tool()
-# │  作用：Search for content or files.
+# │  作用：Search 用于内容或 文件.
 # │  参数：pattern: str, target: str = 'content', path: str = '.', file_glob: str = None, limit: int = 50, offset: int = 0, output_mode: str = 'content', context: int = 0  …共 10 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1248,7 +1248,7 @@ from tools.registry import registry, tool_error
 
 
 # ┌── 函数 def _check_file_reqs()
-# │  作用：Lazy wrapper to avoid circular import with tools/__init__.py.
+# │  作用：Lazy 包装器 avoid 循环导入带 工具/__init__.py.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1371,7 +1371,7 @@ _PATCH_V4A_PARAMS = {
 
 
 # ┌── 函数 def _is_openai_family_main()
-# │  作用：Whether the active main provider/model is the OpenAI/codex family —
+# │  作用：是否 active main 服务商/模型是 OpenAI/Codex family —。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1509,7 +1509,7 @@ def _handle_search_files(args, **kw):
 
 
 # ┌── 函数 def _read_file_schema_overrides()
-# │  作用：One-word capability upgrade: "PDF (text layer)" → "PDF (scanned or
+# │  作用：One-word capability 升级: "PDF (文本 layer)" → "PDF (scanned 或
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1540,7 +1540,7 @@ def _read_file_schema_overrides():
 registry.register(name="read_file", toolset="file", schema=READ_FILE_SCHEMA, handler=_handle_read_file, check_fn=_check_file_reqs, emoji="📖", max_result_size_chars=100_000, dynamic_schema_overrides=_read_file_schema_overrides)
 registry.register(name="write_file", toolset="file", schema=WRITE_FILE_SCHEMA, handler=_handle_write_file, check_fn=_check_file_reqs, emoji="✍️", max_result_size_chars=100_000)
 # ┌── 函数 def _patch_schema_overrides()
-# │  作用：Layer the V4A patch mode onto the base replace-only schema for
+# │  作用：Layer V4A patch 模式 onto base replace-仅结构定义用于
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

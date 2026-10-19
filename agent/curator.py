@@ -127,7 +127,7 @@ def is_paused() -> bool:
 # --- Config access ---
 
 # ┌── 函数 def _subdict()
-# │  作用：Walk nested dict keys; {} if any level is missing or not a dict.
+# │  作用：Walk nested 字典键; {} 若任意级别是 missing 或不 字典.
 # │  参数：node: Any, *keys
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ def _subdict(node: Any, *keys: str) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _read_config_section()
-# │  作用：Read a nested section of ~/.hermes/config.yaml. Tolerates missing file.
+# │  作用：读取 nested section 的 ~/.hermes/配置.YAML. Tolerates missing 文件.
 # │  参数：*path, label: str, log: logging.Logger = ...
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ def get_archive_after_days() -> int:
 
 
 # ┌── 函数 def get_prune_builtins()
-# │  作用：Bundled built-ins are curation candidates (ON by default); a suppression list keeps them archived across `hermes update` re-seeds. Hub skills are never pruned.
+# │  作用：Bundled 已构建-ins 是 curation candidates (在…上由 默认值); suppression 列表保留 them archived across `hermes 更新` re-seeds. Hub skills 是 never pruned.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -245,7 +245,7 @@ def get_prune_builtins() -> bool:
 
 
 # ┌── 函数 def get_consolidate()
-# │  作用：LLM consolidation pass — OFF by default (prune only, no aux-model fork); ``hermes curator run --consolidate`` overrides per invocation.
+# │  作用：LLM consolidation pass — OFF 由默认值 (prune 仅, 无 aux-模型 fork); ``hermes 策展器运行 --consolidate`` 覆盖值 per invocation.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -273,7 +273,7 @@ def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
 
 
 # ┌── 函数 def should_run_now()
-# │  作用：Gates: curator.enabled, not paused, ``last_run_at`` present AND older than interval_hours. First observation seeds
+# │  作用：Gates: 策展器.enabled, 不 paused, ``last_run_at`` present 且 older 比 interval_hours. First observation seeds
 # │  参数：now: Optional[datetime] = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -306,7 +306,7 @@ def should_run_now(now: Optional[datetime] = None) -> bool:
 # --- Automatic state transitions (pure function, no LLM) ---
 
 # ┌── 函数 def _cron_referenced_skills()
-# │  作用：Skill names referenced by any cron job (incl. paused/disabled). Best-effort: a cron import error or corrupt jobs store yields an empty set, never a crash.
+# │  作用：Skill 名称 referenced 由任意 cron job (incl. paused/disabled). 尽最大努力: cron 导入错误或 corrupt jobs store yields empty 设置, never crash.
 # │  参数：无
 # │  返回：Set[str]
 # └──────────────────────────────────────────────────────────────
@@ -324,7 +324,7 @@ def _cron_referenced_skills() -> Set[str]:
 
 
 # ┌── 函数 def _archive_as_curator()
-# │  作用：Archive via skill_usage with the ledger actor tagged 'curator', so the ledger entry reads as an autonomous transition, not a foreground call.
+# │  作用：Archive via skill_usage 带 ledger actor tagged '策展器', 从而 ledger entry 读取作为 autonomous transition, 不 foreground call.
 # │  参数：_u, name: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -347,7 +347,7 @@ def _archive_as_curator(_u, name: str) -> bool:
 
 
 # ┌── 函数 def apply_automatic_transitions()
-# │  作用：Move every curator-managed skill between active/stale/archived based on its latest real activity; pinned skills are
+# │  作用：Move 每个策展器-managed skill between active/卡死的/archived based 在…上其 latest real activity; pinned skills 是
 # │  参数：now: Optional[datetime] = None
 # │  返回：Dict[str, int]
 # └──────────────────────────────────────────────────────────────
@@ -617,7 +617,7 @@ CURATOR_PRUNE_BUILTINS_NOTE = (
 # --- Per-run reports — {YYYYMMDD-HHMMSS}/run.json + REPORT.md under logs/curator/ ---
 
 # ┌── 函数 def _reports_root()
-# │  作用：``~/.hermes/logs/curator/`` (telemetry next to agent.log, not under skills/). mkdir'd here too so gateway-only / bare-library entry paths work.
+# │  作用：``~/.hermes/日志/策展器/`` (telemetry next Agent.日志, 不 under skills/). mkdir'd 这里 too 从而 gateway-仅 / bare-library entry 路径 work.
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -634,7 +634,7 @@ def _reports_root() -> Path:
 
 
 # ┌── 函数 def _needle_in_path_component()
-# │  作用：True if *needle* equals a complete filename stem or directory name in *path* — so "api" does not match
+# │  作用：True 若 *needle* equals complete filename stem 或 directory 名称在 *路径* — 从而 "API" 不 match
 # │  参数：needle: str, path: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -647,7 +647,7 @@ def _needle_in_path_component(needle: str, path: str) -> bool:
 
 
 # ┌── 函数 def _skill_manage_args()
-# │  作用：Parsed arguments of a ``skill_manage`` tool call (JSON string or dict), or None to skip. With *raw_fallback*,
+# │  作用：已解析参数的 ``skill_manage`` 工具 call (JSON 字符串或 字典), 或 None skip. 带 *raw_fallback*,
 # │  参数：tc: Any, raw_fallback: bool
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -672,7 +672,7 @@ def _skill_manage_args(tc: Any, *, raw_fallback: bool) -> Optional[Dict[str, Any
 
 
 # ┌── 函数 def _find_reference()
-# │  作用：First argument value (file_path, file_content, content, new_string, _raw — in that order) that references one of
+# │  作用：First 参数值 (file_path, file_content, 内容, new_string, _raw — 在那个 order) 那个 references one 的
 # │  参数：args: Dict[str, Any], needles: Set[str]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -691,7 +691,7 @@ def _find_reference(args: Dict[str, Any], needles: Set[str]) -> Optional[str]:
 
 
 # ┌── 函数 def _classify_removed_skills()
-# │  作用：Split ``removed`` into consolidated vs pruned. Heuristic: a ``skill_manage`` call on a DIFFERENT, surviving-or-new
+# │  作用：Split ``已移除`` 进入 consolidated vs pruned. Heuristic: ``skill_manage`` call 在…上 DIFFERENT, surviving-或-new
 # │  参数：removed: List[str], added: List[str], after_names: Set[str], tool_calls: List[Dict[str, Any]]
 # │  返回：Dict[str, List[Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -724,7 +724,7 @@ def _classify_removed_skills(
 
 
 # ┌── 函数 def _parse_structured_summary()
-# │  作用：Extract the required fenced ```yaml block (``consolidations:`` / ``prunings:`` lists) from the curator's final
+# │  作用：Extract required fenced ```YAML block (``consolidations:`` / ``prunings:`` 列表) 从策展器's final
 # │  参数：llm_final: str
 # │  返回：Dict[str, List[Dict[str, str]]]
 # └──────────────────────────────────────────────────────────────
@@ -758,7 +758,7 @@ def _parse_structured_summary(llm_final: str) -> Dict[str, List[Dict[str, str]]]
 
 
 # ┌── 函数 def _extract_absorbed_into_declarations()
-# │  作用：Model-declared absorption targets from ``skill_manage(action='delete')`` calls — the authoritative classification
+# │  作用：模型-declared absorption targets 从 ``skill_manage(action='delete')`` calls — authoritative classification
 # │  参数：tool_calls: List[Dict[str, Any]]
 # │  返回：Dict[str, Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -777,7 +777,7 @@ def _extract_absorbed_into_declarations(tool_calls: List[Dict[str, Any]]) -> Dic
 
 
 # ┌── 函数 def _reconcile_classification()
-# │  作用：Merge heuristic (tool-call evidence) with the model's structured block.
+# │  作用：Merge heuristic (工具调用 evidence) 带模型's 结构化的 block.
 # │  参数：removed: List[str], heuristic: Dict[str, List[Dict[str, Any]]], model_block: Dict[str, List[Dict[str, str]]], destinations: Set[str], absorbed_declarations: Optional[Dict[str, Dict[str, Any]]] = None
 # │  返回：Dict[str, List[Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -840,7 +840,7 @@ class _RunDiff(NamedTuple):
 
 
 # ┌── 函数 def _diff_and_classify()
-# │  作用：Diff the before/after skill sets and classify every removal: the model's YAML block carries intent + rationale,
+# │  作用：Diff 在…之前/在…之后 skill 设置且 classify 每个 removal: 模型's YAML block carries intent + rationale,
 # │  参数：before_names: Set[str], after_names: Set[str], tool_calls: List[Dict[str, Any]], model_final: str
 # │  返回：_RunDiff
 # └──────────────────────────────────────────────────────────────
@@ -869,7 +869,7 @@ def _by_name(report: List[Dict[str, Any]]) -> Dict[Any, Dict[str, Any]]:
 
 
 # ┌── 函数 def _build_rename_summary()
-# │  作用：The "where did my skills go?" lines appended to the user-visible ``final_summary``; "" when nothing was archived.
+# │  作用："何处我的 skills go?" lines 已追加 user-visible ``final_summary``; "" 当 nothing 是 archived.
 # │  参数：before_names: Set[str], after_report: List[Dict[str, Any]], tool_calls: List[Dict[str, Any]], model_final: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -898,7 +898,7 @@ def _build_rename_summary(*, before_names: Set[str], after_report: List[Dict[str
 
 
 # ┌── 函数 def _rewrite_cron_refs()
-# │  作用：Point cron jobs at the umbrella when the curator consolidated a skill they list — otherwise the scheduler fails to
+# │  作用：Point cron jobs 在 umbrella 当策展器 consolidated skill 它们列表 — otherwise scheduler fails
 # │  参数：consolidated: List[Dict[str, Any]], pruned: List[Dict[str, Any]]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -922,7 +922,7 @@ def _rewrite_cron_refs(consolidated: List[Dict[str, Any]], pruned: List[Dict[str
 
 
 # ┌── 函数 def _write_file()
-# │  作用：Best-effort write of *render()* (or the JSON dump of a non-callable payload);
+# │  作用：尽最大努力写入的 *render()* (或 JSON dump 的 non-callable payload);
 # │  参数：path: Path, label: str, render: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -937,7 +937,7 @@ def _write_file(path: Path, label: str, render: Any) -> None:
 
 
 # ┌── 函数 def _write_run_report()
-# │  作用：Write run.json + REPORT.md under logs/curator/{YYYYMMDD-HHMMSS}[-N]/ (N disambiguates a crash-rerun in the same
+# │  作用：写入运行.JSON + REPORT.md under 日志/策展器/{YYYYMMDD-HHMMSS}[-N]/ (N disambiguates crash-rerun 在 same
 # │  参数：started_at: datetime, elapsed_seconds: float, auto_counts: Dict[str, int], auto_summary: str, before_report: List[Dict[str, Any]], before_names: Set[str], after_report: List[Dict[str, Any]], llm_meta: Dict[str, Any]
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1060,7 +1060,7 @@ _REPORT_SECTIONS = (
 
 
 # ┌── 函数 def _render_report_markdown()
-# │  作用：Render the human-readable REPORT.md.
+# │  作用：渲染一份人类可读的 REPORT.md。
 # │  参数：p: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1108,7 +1108,7 @@ def _render_report_markdown(p: Dict[str, Any]) -> str:
 # --- Orchestrator — spawn a forked AIAgent for the LLM review pass ---
 
 # ┌── 函数 def _render_candidate_list()
-# │  作用：Human/agent-readable list of curator-managed skills with usage stats.
+# │  作用：Human/Agent-readable 列表的 策展器-managed skills 带 usage stats.
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1130,7 +1130,7 @@ def _render_candidate_list() -> str:
 
 
 # ┌── 函数 def _llm_meta()
-# │  作用：Structured result of an LLM pass that did not run (skipped or failed).
+# │  作用：结构化的结果的 LLM pass 那个不 运行 (skipped 或 failed).
 # │  参数：summary: str, error: Optional[str] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1165,7 +1165,7 @@ def _safe_curated_report() -> List[Dict[str, Any]]:
 
 
 # ┌── 函数 def _consolidation_pass()
-# │  作用：The LLM half of a run: fork (unless no candidates), then append the rename map (`old-name → umbrella`) so users
+# │  作用：LLM half 的运行: fork (unless 无 candidates), 然后追加 rename map (`old-名称 → umbrella`) 从而 users
 # │  参数：prefix: str, auto_summary: str, dry_run: bool, before_names: Set[str]
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────
@@ -1204,7 +1204,7 @@ def _consolidation_pass(prefix: str, auto_summary: str, dry_run: bool, before_na
 
 
 # ┌── 函数 def run_curator_review()
-# │  作用：Execute a single curator review pass: (1) automatic state transitions (no LLM); (2) if *consolidate* and there are
+# │  作用：执行 single 策展器 review pass: (1) automatic 状态 transitions (无 LLM); (2) 若 *consolidate* 且那里是
 # │  参数：on_summary: Optional[Callable[[str], None]] = None, synchronous: bool = False, dry_run: bool = False, consolidate: Optional[bool] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1284,7 +1284,7 @@ def run_curator_review(
 # --- Provider/model resolution for the review fork ---
 
 # ┌── 类 class _ReviewRuntimeBinding（继承自：NamedTuple）
-# │  说明：Provider/model for the curator review fork plus per-slot overrides.
+# │  说明：服务商/模型用于策展器复查分支 plus per-slot 覆盖值.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _ReviewRuntimeBinding(NamedTuple):
@@ -1297,7 +1297,7 @@ class _ReviewRuntimeBinding(NamedTuple):
 
 
 # ┌── 函数 def _merge_request_overrides()
-# │  作用：Merge resolver metadata with task-local request body fields.
+# │  作用：Merge resolver metadata 带 task-local 请求 body 字段.
 # │  参数：runtime_overrides: Any, slot_extra_body: Any
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1311,7 +1311,7 @@ def _merge_request_overrides(runtime_overrides: Any, slot_extra_body: Any) -> Di
 
 
 # ┌── 函数 def _resolve_review_runtime()
-# │  作用：Curator is a regular auxiliary task slot (``auxiliary.curator.*``), so it rides the canonical aux-model plumbing. Precedence:
+# │  作用：策展器是 regular 辅助的 task slot (``辅助的.策展器.*``), 从而它 rides canonical aux-模型 plumbing. Precedence:
 # │  参数：cfg: Dict[str, Any]
 # │  返回：_ReviewRuntimeBinding
 # └──────────────────────────────────────────────────────────────
@@ -1343,7 +1343,7 @@ def _resolve_review_runtime(cfg: Dict[str, Any]) -> _ReviewRuntimeBinding:
 
 
 # ┌── 函数 def _resolve_review_provider()
-# │  作用：``(runtime_provider, model_name, provider_name, request_overrides)`` resolved the way the CLI does: AIAgent() without
+# │  作用：``(runtime_provider, model_name, provider_name, request_overrides)`` resolved way CLI : AIAgent() 不
 # │  参数：无
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────
@@ -1374,7 +1374,7 @@ def _resolve_review_provider() -> tuple:
 
 
 # ┌── 函数 def _run_llm_review()
-# │  作用：Spawn an AIAgent fork on the review prompt. Returns ``final`` (untruncated response), ``summary`` (240-char cap),
+# │  作用：Spawn AIAgent fork 在…上 review 提示词. 返回 ``final`` (untruncated 响应), ``摘要`` (240-char cap),
 # │  参数：prompt: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1445,7 +1445,7 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
 # --- Public entrypoint for the session-start hook ---
 
 # ┌── 函数 def maybe_run_curator()
-# │  作用：Best-effort: run a curator pass if all gates pass. Returns the result dict if a pass was started, else None. Never raises.
+# │  作用：尽最大努力: 运行策展器 pass 若全部 gates pass. 返回结果字典若 pass 是 started, 否则 None. Never 抛出.
 # │  参数：idle_for_seconds: Optional[float] = ..., on_summary: Optional[Callable[[str], None]] = ...
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────

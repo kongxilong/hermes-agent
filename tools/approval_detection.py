@@ -167,7 +167,7 @@ _SHELL_CARRIER_NAMES = frozenset({"eval", "sh", "bash", "zsh", "ksh", "dash", "s
 
 
 # ┌── 函数 def _contains_shell_carrier()
-# │  作用：Return whether any command-position word is a shell-carrying command.
+# │  作用：返回 是否 任意命令-position word 是 shell-carrying 命令.。。
 # │  参数：command: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ def _contains_shell_carrier(command: str) -> bool:
 
 
 # ┌── 函数 def _mask_quoted_prose()
-# │  作用：Blank out quoted string CONTENT for positionless hardline matching (detection-only).
+# │  作用：Blank out quoted 字符串内容用于 positionless hardline matching (detection-仅).
 # │  参数：command: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ _SUDO_STDIN_RE = re.compile(r'(?:^|[;&|`\n]|&&|\|\||\$\()\s*sudo\s+-S\b', re.IGN
 
 
 # ┌── 函数 def _check_sudo_stdin_guard()
-# │  作用：Detect ``sudo -S`` without configured SUDO_PASSWORD -> (is_blocked, description). When
+# │  作用：检测 ``sudo -S`` 不 configured SUDO_PASSWORD -> (is_blocked, description). 当
 # │  参数：command: str
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────
@@ -224,7 +224,7 @@ def _check_sudo_stdin_guard(command: str) -> tuple:
 
 
 # ┌── 函数 def detect_hardline_command()
-# │  作用：Check hardline patterns (NEVER bypassable, even in YOLO) -> (is_hardline, description).
+# │  作用：检查 hardline patterns (NEVER bypassable, even 在 YOLO 免审批) -> (is_hardline, description).
 # │  参数：command: str
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────
@@ -504,7 +504,7 @@ for _canonical_key, _legacy_key in [
 
 
 # ┌── 函数 def _approval_key_aliases()
-# │  作用：All approval keys for this pattern: the description plus the historical regex-derived key
+# │  作用：全部 approval 键用于这个 pattern: description plus historical regex-derived 键
 # │  参数：pattern_key: str
 # │  返回：set[str]
 # └──────────────────────────────────────────────────────────────
@@ -517,7 +517,7 @@ def _approval_key_aliases(pattern_key: str) -> set[str]:
 
 # ---- Detection ----------------------------------------------------------------------------
 # ┌── 函数 def _normalize_command_for_detection()
-# │  作用：Normalize a command before pattern matching so ANSI escapes, null bytes, Unicode fullwidth
+# │  作用：归一化命令在…之前 pattern matching 从而 ANSI escapes, 空 bytes, Unicode fullwidth
 # │  参数：command: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -551,7 +551,7 @@ _PATH_TAIL = r"(?P<tail>(?:[/\\][^/\\" + _PATH_TOKEN_STOP + r"]*)+)"
 
 
 # ┌── 函数 def _home_prefix_fold_regex()
-# │  作用：Compile a regex matching *path* as an absolute directory prefix.
+# │  作用：编译 regex matching *路径* 作为 absolute directory prefix.
 # │  参数：path: str
 # │  返回：（未标注类型）
 # │  【语法】@lru_cache 结果缓存：同样参数第二次调用直接返回上次结果，不重复计算。
@@ -573,7 +573,7 @@ def _home_prefix_fold_regex(path: str):
 
 
 # ┌── 函数 def _fold_home_prefixes()
-# │  作用：Fold each resolved home prefix in *command* to *replacement* (no trailing separator; the tail
+# │  作用：Fold 每个 resolved 主目录 prefix 在 *命令* *replacement* (无 trailing separator; tail
 # │  参数：command: str, paths, replacement: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -589,7 +589,7 @@ def _fold_home_prefixes(command: str, paths, replacement: str) -> str:
 
 
 # ┌── 函数 def _rewrite_resolved_user_home()
-# │  作用：User home (expanduser / realpath / $HOME) -> ``~/``; no-op when unset, degenerate, or unresolvable.
+# │  作用：User 主目录 (expanduser / realpath / $主目录) -> ``~/``; 无-op 当 unset, degenerate, 或 unresolvable.
 # │  参数：command: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -608,7 +608,7 @@ def _rewrite_resolved_user_home(command: str) -> str:
 
 
 # ┌── 函数 def _rewrite_resolved_hermes_home()
-# │  作用：Resolved HERMES_HOME (and its realpath) -> ``~/.hermes/`` so the _HERMES_CONFIG_PATH /
+# │  作用：Resolved HERMES_HOME (且其 realpath) -> ``~/.hermes/`` 从而 _HERMES_CONFIG_PATH /
 # │  参数：command: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -719,7 +719,7 @@ _GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION = "stop/restart hermes gateway via shell-s
 
 
 # ┌── 函数 def _command_parser_limit_exceeded()
-# │  作用：Bound all parser work before normalization/tokenization. Separator counting is deliberately
+# │  作用：Bound 全部 parser work 在…之前归一化/tokenization. Separator counting 是 deliberately
 # │  参数：command: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -739,7 +739,7 @@ def _command_parser_limit_exceeded(command: str) -> bool:
 
 
 # ┌── 函数 def _backtick_end_from()
-# │  作用：Index of the backtick closing the one opened at ``i``, or None when none follows.
+# │  作用：Index 的 backtick 关闭 one 已打开在 ``i``, 或 None 当 None follows.
 # │  参数：segment: str, i: int
 # │  返回：int | None
 # └──────────────────────────────────────────────────────────────
@@ -753,7 +753,7 @@ def _backtick_end_from(segment: str, i: int) -> int | None:
 
 
 # ┌── 函数 def _shell_tokens_with_spans()
-# │  作用：Return shell words as ``(value, start, end, quoted)`` or ``None`` on malformed quoting.
+# │  作用：返回 shell words 作为 ``(值, start, end, quoted)`` 或 ``None`` 在…上格式非法的 quoting.。
 # │  参数：segment: str, start: int
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -829,7 +829,7 @@ def _shell_tokens_with_spans(segment: str, start: int):
 
 
 # ┌── 函数 def _quoted_grep_pattern_spans()
-# │  作用：Structurally locate quoted grep PCRE operands -> (spans, malformed). On an ambiguous or
+# │  作用：Structurally locate quoted grep PCRE operands -> (spans, 格式非法的). 在…上 ambiguous 或
 # │  参数：command: str
 # │  返回：tuple[list[tuple[int, int]], bool]
 # └──────────────────────────────────────────────────────────────
@@ -901,7 +901,7 @@ def _quoted_grep_pattern_spans(command: str) -> tuple[list[tuple[int, int]], boo
 
 
 # ┌── 函数 def _splice()
-# │  作用：Apply sorted, non-overlapping ``(start, end, text)`` edits to *command* in one pass
+# │  作用：Apply sorted, non-overlapping ``(start, end, 文本)`` edits *命令* 在 one pass
 # │  参数：command: str, edits
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -942,7 +942,7 @@ def _interpreter_family(executable: str) -> str | None:
 
 
 # ┌── 函数 def _shell_segment_tokens()
-# │  作用：Tokenize an already-bounded command segment. ``None`` distinguishes malformed quoting from
+# │  作用：Tokenize 已-bounded 命令 segment. ``None`` distinguishes 格式非法的 quoting 从
 # │  参数：segment: str, start: int
 # │  返回：list[str] | None
 # └──────────────────────────────────────────────────────────────
@@ -962,7 +962,7 @@ def _shell_segment_tokens(segment: str, start: int) -> list[str] | None:
 
 
 # ┌── 函数 def _iter_top_level_shell_segments()
-# │  作用：Yield top-level command segments in one left-to-right pass.
+# │  作用：Yield top-级别命令 segments 在 one left--right pass.
 # │  参数：command: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -981,7 +981,7 @@ def _iter_top_level_shell_segments(command: str):
 
 
 # ┌── 函数 def _interpreter_exec_flag()
-# │  作用：Return an execution-bearing interpreter option, if present.
+# │  作用：返回 execution-bearing interpreter 选项, 若 present.。
 # │  参数：family: str, args: list[str]
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -1018,7 +1018,7 @@ def _interpreter_exec_flag(family: str, args: list[str]) -> str | None:
 
 
 # ┌── 函数 def _bash_exec_payload()
-# │  作用：Return whether Bash ``-c`` occurs and the command string it owns.
+# │  作用：返回 是否 Bash ``-c`` occurs 且命令字符串它 持有.。。
 # │  参数：args: list[str]
 # │  返回：tuple[bool, str | None]
 # └──────────────────────────────────────────────────────────────
@@ -1052,7 +1052,7 @@ def _bash_exec_payload(args: list[str]) -> tuple[bool, str | None]:
 
 
 # ┌── 函数 def _read_tool_exec_flag()
-# │  作用：Return (option, program) for a read-only tool's program-running flag.
+# │  作用：返回 (选项, program) 用于读取-仅工具's program-运行标志.。
 # │  参数：tool: str, args: list[str]
 # │  返回：tuple[str, str] | None
 # └──────────────────────────────────────────────────────────────
@@ -1093,7 +1093,7 @@ def _read_tool_exec_flag(tool: str, args: list[str]) -> tuple[str, str] | None:
 
 
 # ┌── 函数 def _execution_flag_findings()
-# │  作用：Yield scoped execution mechanisms and any executable payloads.
+# │  作用：Yield scoped execution mechanisms 且任意 executable payloads.
 # │  参数：command: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1145,7 +1145,7 @@ def _skip_shell_whitespace(command: str, pos: int) -> int:
 
 
 # ┌── 函数 def _scan_shell()
-# │  作用：Yield ``(kind, i, j, quote)`` lexical steps over ``text[start:end]`` without expanding.
+# │  作用：Yield ``(种类, i, j, quote)`` lexical 步骤 over ``文本[start:end]`` 不 expanding.
 # │  参数：text: str, start: int = 0, end: int | None = None, subst: str = ..., brace: bool = ..., stop_unterminated: bool = ..., naive_backtick: bool = ..., comments: bool = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1201,7 +1201,7 @@ def _scan_shell(text: str, start: int = 0, end: int | None = None, *, subst: str
 
 
 # ┌── 函数 def _scan_dollar_paren_end()
-# │  作用：Return the offset after a balanced ``$(...)`` command substitution.
+# │  作用：返回 offset 在…之后 balanced ``$(...)`` 命令 substitution.。
 # │  参数：command: str, start: int
 # │  返回：int | None
 # └──────────────────────────────────────────────────────────────
@@ -1231,7 +1231,7 @@ def _scan_backtick_end(command: str, start: int) -> int | None:
 
 
 # ┌── 函数 def _read_shell_word()
-# │  作用：Read one shell word without executing expansions.
+# │  作用：读取 one shell word 不执行 expansions.
 # │  参数：command: str, pos: int
 # │  返回：tuple[int, int, str]
 # └──────────────────────────────────────────────────────────────
@@ -1247,7 +1247,7 @@ def _read_shell_word(command: str, pos: int) -> tuple[int, int, str]:
 
 
 # ┌── 函数 def _literal_command_substitution_output()
-# │  作用：Resolve tiny literal command substitutions without executing a shell.
+# │  作用：Resolve tiny literal 命令 substitutions 不执行 shell.
 # │  参数：script: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -1324,7 +1324,7 @@ def _strip_shell_word_syntax(word: str) -> str:
 
 
 # ┌── 函数 def _deobfuscate_shell_word_for_detection()
-# │  作用：Approximate how shell syntax can spell a command word: collapses quoting/escaping plus
+# │  作用：Approximate 如何 shell syntax 可以 spell 命令 word: collapses quoting/escaping plus
 # │  参数：word: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1393,7 +1393,7 @@ def _iter_shell_command_starts(command: str):
 
 
 # ┌── 函数 def _mark_command_starts()
-# │  作用：Insert *marker* (a newline) before each real (quote-aware) command start.
+# │  作用：Insert *marker* ( newline) 在…之前每个 real (quote-aware) 命令 start.
 # │  参数：command: str, marker: str = '\n'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1409,7 +1409,7 @@ def _mark_command_starts(command: str, marker: str = "\n") -> str:
 
 
 # ┌── 函数 def _mask_quoted_newlines()
-# │  作用：Replace raw newlines inside single/double quotes with a space (detection-only).
+# │  作用：Replace raw newlines inside single/double quotes 带 space (detection-仅).
 # │  参数：command: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1429,7 +1429,7 @@ def _mask_quoted_newlines(command: str) -> str:
 
 
 # ┌── 函数 def _mask_quoted_newlines_span()
-# │  作用：``_mask_quoted_newlines`` over ``command[start:end]``. A ``$(...)`` / backtick substitution
+# │  作用：``_mask_quoted_newlines`` over ``命令[start:end]``. ``$(...)`` / backtick substitution
 # │  参数：command: str, start: int, end: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1457,7 +1457,7 @@ def _mask_quoted_newlines_span(command: str, start: int, end: int) -> str:
 
 
 # ┌── 函数 def _iter_shell_command_word_spans()
-# │  作用：Yield command-position words that may be executable names.
+# │  作用：Yield 命令-position words 那个可以是 executable 名称.
 # │  参数：command: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1509,7 +1509,7 @@ def _iter_shell_command_word_spans(command: str):
 
 
 # ┌── 函数 def _shell_command_segment()
-# │  作用：Bound a candidate to its command, preserving quoted argument bytes.
+# │  作用：Bound candidate 其命令, preserving quoted 参数 bytes.
 # │  参数：command: str, start: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1525,7 +1525,7 @@ def _shell_command_segment(command: str, start: int) -> str:
 
 
 # ┌── 函数 def _split_env_string()
-# │  作用：Project GNU env -S literal argv, not POSIX shell words.
+# │  作用：投射 GNU env -S literal argv, 不 POSIX shell words.
 # │  参数：payload: str
 # │  返回：list[str] | None
 # └──────────────────────────────────────────────────────────────
@@ -1623,7 +1623,7 @@ def _env_split_payload(tokens: list[str]) -> str | None:
 
 
 # ┌── 函数 def _deny_command_variants()
-# │  作用：Add executable projections without reparsing normalized argument data.
+# │  作用：添加 executable projections 不 reparsing 已归一化参数 data.
 # │  参数：command: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1748,7 +1748,7 @@ def _command_detection_variants(command: str):
 
 
 # ┌── 函数 def _is_verification_artifact_cleanup()
-# │  作用：Return whether *command* only removes one Hermes ad-hoc temp script.
+# │  作用：返回 是否 *命令* 仅移除 one Hermes ad-hoc temp script.。。
 # │  参数：command: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1775,7 +1775,7 @@ def _is_verification_artifact_cleanup(command: str) -> bool:
 
 
 # ┌── 函数 def _is_shell_token_spliced_gateway_lifecycle()
-# │  作用：Catch gateway-lifecycle verbs spelled with quote splicing.
+# │  作用：Catch gateway-lifecycle verbs spelled 带 quote splicing.
 # │  参数：command: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1803,7 +1803,7 @@ def _is_shell_token_spliced_gateway_lifecycle(command: str) -> bool:
 
 
 # ┌── 函数 def detect_dangerous_command()
-# │  作用：Check dangerous patterns -> (is_dangerous, pattern_key, description).
+# │  作用：检查 dangerous patterns -> (is_dangerous, pattern_key, description).
 # │  参数：command: str
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────

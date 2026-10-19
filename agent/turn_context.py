@@ -57,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 
 # ┌── 函数 def _str_attr()
-# │  作用：``getattr(agent, name, "") or ""`` — route facts read off partial agents/doubles.
+# │  作用：``getattr(Agent, 名称, "") 或 ""`` — 路由 facts 读取 off partial Agent/doubles.
 # │  参数：agent: Any, name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ def _str_attr(agent: Any, name: str) -> str:
 
 
 # ┌── 函数 def _preflight_request_tokens()
-# │  作用：Token estimate for automatic preflight compression: a valid provider usage anchor,
+# │  作用：令牌估算用于 automatic preflight compression: valid 服务商 usage anchor,
 # │  参数：agent: Any, messages: List[Dict[str, Any]], system_prompt: str
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ def _preflight_request_tokens(
 
 
 # ┌── 函数 def _agent_stale_thinking_on_wire()
-# │  作用：Whether the active route replays stale thinking text; ``True`` (conservative full
+# │  作用：是否 active 路由 replays 卡死的 thinking 文本; ``True`` (conservative full。
 # │  参数：agent: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -128,7 +128,7 @@ def _agent_stale_thinking_on_wire(agent: Any) -> bool:
 
 
 # ┌── 函数 def compose_user_api_content()
-# │  作用：Compose the API-bound content of the current turn's user message.
+# │  作用：Compose API-bound 内容的 current 轮次's user 消息.
 # │  参数：content: Any, ext_prefetch_cache: str, plugin_user_context: str
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ def compose_user_api_content(
 
 
 # ┌── 函数 def substitute_api_content()
-# │  作用：Pop the ``api_content`` sidecar and substitute it into ``content`` (keeps the
+# │  作用：Pop ``api_content`` sidecar 且 substitute 它进入 ``内容`` (保留
 # │  参数：api_msg: Dict[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ def substitute_api_content(api_msg: Dict[str, Any]) -> Optional[str]:
 
 
 # ┌── 函数 def drop_stale_api_content()
-# │  作用：Drop the ``api_content`` sidecar from a message whose content was rewritten
+# │  作用：丢弃 ``api_content`` sidecar 从消息 whose 内容是 rewritten
 # │  参数：msg: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ def drop_stale_api_content(msg: Dict[str, Any]) -> None:
 
 
 # ┌── 函数 def extract_api_content_sidecar()
-# │  作用：Extract the ``api_content`` sidecar; ``None`` when absent/non-string.
+# │  作用：Extract ``api_content`` sidecar; ``None`` 当 absent/non-字符串.
 # │  参数：msg: Mapping[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ def extract_api_content_sidecar(msg: Mapping[str, Any]) -> Optional[str]:
 
 
 # ┌── 函数 def _pop_turn_note()
-# │  作用：One-shot per-turn note: read and clear, so the system prompt stays byte-stable and a
+# │  作用：One-shot per-轮次 note: 读取且 清除, 从而 system 提示词 stays byte-stable 且
 # │  参数：agent: Any, attr: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ def _pop_turn_note(agent: Any, attr: str) -> str:
 
 
 # ┌── 函数 def consume_gateway_turn_context_notes()
-# │  作用：Pop the gateway's per-turn must-deliver notes.
+# │  作用：Pop gateway's per-轮次必须-deliver notes.
 # │  参数：agent: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ def consume_gateway_turn_context_notes(agent: Any) -> str:
 
 
 # ┌── 函数 def consume_surface_switch_note()
-# │  作用：Pop the surface-switch note staged by the system-prompt restore (#104414); rides the same
+# │  作用：Pop 上报-切换 note staged 由 system-提示词恢复 (#104414); rides same
 # │  参数：agent: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ def consume_surface_switch_note(agent: Any) -> str:
 
 
 # ┌── 函数 def append_notes_to_multimodal_content()
-# │  作用：Append must-deliver notes as a durable text part on a multimodal (list) user
+# │  作用：追加必须-deliver notes 作为 durable 文本 part 在…上 multimodal (列表) user
 # │  参数：content: Any, notes: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ _UNTITLED_PLATFORMS = frozenset({"cron", "subagent"})
 
 
 # ┌── 函数 def _maybe_title_session_at_turn_start()
-# │  作用：Kick off auto-titling for the session's first user message; never fatal.
+# │  作用：Kick off auto-titling 用于会话's first user 消息; never 致命的.
 # │  参数：agent: Any, messages: List[Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -313,7 +313,7 @@ def _maybe_title_session_at_turn_start(agent: Any, messages: List[Any]) -> None:
 
 
 # ┌── 函数 def reanchor_current_turn_user_idx()
-# │  作用：Locate this turn's user message after compaction rebuilt ``messages``.
+# │  作用：Locate 这个轮次's user 消息在…之后压缩 rebuilt ``消息``.
 # │  参数：messages: List[Any], user_message: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -360,7 +360,7 @@ def reanchor_current_turn_user_idx(messages: List[Any], user_message: Any) -> in
 
 
 # ┌── 函数 def export_current_turn_boundary()
-# │  作用：Stamp ``{turn_id, current_turn_user_idx}`` on a result envelope, proven against the
+# │  作用：Stamp ``{turn_id, current_turn_user_idx}`` 在…上结果 envelope, 已证明 against
 # │  参数：agent: Any, result: Any, user_message: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -409,7 +409,7 @@ def export_current_turn_boundary(agent: Any, result: Any, user_message: Any) -> 
 
 
 # ┌── 函数 def compression_made_progress()
-# │  作用：``True`` if a compression pass materially reduced the request: fewer rows, or a
+# │  作用：``True`` 若 compression pass materially reduced 请求: fewer rows, 或
 # │  参数：orig_len: int, new_len: int, orig_tokens: int, new_tokens: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -433,7 +433,7 @@ def compression_made_progress(
 
 
 # ┌── 类 class PreflightCompressionTimedOut（继承自：RuntimeError）
-# │  说明：Raised when an oversized turn cannot safely finish preflight.
+# │  说明：抛出当 oversized 轮次无法 safely finish preflight.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class PreflightCompressionTimedOut(RuntimeError):
@@ -441,7 +441,7 @@ class PreflightCompressionTimedOut(RuntimeError):
 
 
 # ┌── 函数 def _fail_closed_after_preflight_timeout()
-# │  作用：Stop an oversized turn instead of sending its unchanged provider payload.
+# │  作用：Stop oversized 轮次 instead 的 sending 其 unchanged 服务商 payload.
 # │  参数：agent, request_tokens: int
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -460,7 +460,7 @@ def _fail_closed_after_preflight_timeout(agent, request_tokens: int) -> None:
 
 
 # ┌── 函数 def _review_fork_first_request_pending()
-# │  作用：Whether a detached review fork has yet to send its first provider request: it
+# │  作用：是否 分离出来的复查分支有 yet send 其 first 服务商请求: 它。
 # │  参数：agent: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -476,7 +476,7 @@ def _review_fork_first_request_pending(agent: Any) -> bool:
 
 
 # ┌── 函数 def _compression_warrants_another_preflight_pass()
-# │  作用：Another immediate summary only if still over threshold AND the previous pass cut
+# │  作用：Another immediate 摘要仅 若仍 over 阈值且 previous pass cut
 # │  参数：orig_tokens: int, new_tokens: int, threshold_tokens: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -490,7 +490,7 @@ def _compression_warrants_another_preflight_pass(
 
 
 # ┌── 函数 def _should_run_preflight_estimate()
-# │  作用：Cheap gate for the (expensive) full preflight estimate: message count exceeds the
+# │  作用：Cheap gate 用于 (expensive) full preflight 估算: 消息 count exceeds
 # │  参数：messages: List[Dict[str, Any]], protect_first_n: int, protect_last_n: int, threshold_tokens: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -509,7 +509,7 @@ def _should_run_preflight_estimate(
 
 
 # ┌── 函数 def _should_idle_compact()
-# │  作用：Pure predicate: idle compaction fires after a wall-clock gap of
+# │  作用：Pure predicate: idle 压缩 fires 在…之后真实时钟的 gap 的
 # │  参数：enabled: bool, idle_after_seconds: int, idle_gap_seconds: float, tokens: int, floor_tokens: int, cooldown_active: bool, last_compaction_tokens: int = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -545,7 +545,7 @@ def _should_idle_compact(
 
 
 # ┌── 类 class TurnContext
-# │  说明：Values produced by the turn prologue and consumed by the turn loop.
+# │  说明：值 produced 由轮次 prologue 且已消费由 轮次循环.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -567,7 +567,7 @@ class TurnContext:
 
 
 # ┌── 函数 def _persist_under_lock()
-# │  作用：Run ``fn`` under the session persist lock (when the agent has one), log-and-swallow
+# │  作用：运行 ``fn`` under 会话持久化锁 (当 Agent 有 one), 日志-且-swallow
 # │  参数：agent: Any, fn, failure_msg: str, pending_cli_message: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -592,7 +592,7 @@ def _persist_under_lock(agent: Any, fn, failure_msg: str, pending_cli_message: A
 
 
 # ┌── 函数 def _publish_runtime_main()
-# │  作用：Tell auxiliary_client the live main provider/model for this turn (after primary
+# │  作用：Tell auxiliary_client 当前活跃的 main 服务商/模型用于这个轮次 (在…之后 primary
 # │  参数：agent: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -621,7 +621,7 @@ def _publish_runtime_main(agent: Any) -> None:
 
 
 # ┌── 函数 def _refresh_mcp_tools_between_turns()
-# │  作用：Late-connecting MCP servers land in THIS turn's snapshot, before the first API
+# │  作用：Late-connecting MCP 服务端 land 在这个轮次's snapshot, 在…之前 first API
 # │  参数：agent: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -643,7 +643,7 @@ def _refresh_mcp_tools_between_turns(agent: Any) -> None:
 
 
 # ┌── 函数 def _bind_turn_identity()
-# │  作用：Stage callback/persist overrides on the agent and bind this turn's task and turn
+# │  作用：阶段回调/持久化覆盖值在…上 Agent 且 bind 这个轮次's task 且轮次
 # │  参数：agent: Any, task_id: Optional[str], stream_callback, persist_user_message: Any, persist_user_timestamp: Optional[float], persist_user_platform_id: Optional[str]
 # │  返回：Tuple[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -692,7 +692,7 @@ _PER_TURN_RESET_STATE: Tuple[Tuple[str, Any], ...] = (
 
 
 # ┌── 函数 def _reset_per_turn_agent_state()
-# │  作用：Reset retry counters, guardrails, iteration and run budgets at turn start.
+# │  作用：Reset 重试 counters, guardrails, iteration 且运行预算在 轮次 start.
 # │  参数：agent: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -739,7 +739,7 @@ def _reset_per_turn_agent_state(agent: Any) -> None:
 
 
 # ┌── 函数 def _stage_turn_user_message()
-# │  作用：Build this turn's user dict, reusing CLI-staged input only when its clean text
+# │  作用：构建这个轮次's user 字典, reusing CLI-staged 输入仅 当其 clean 文本
 # │  参数：agent: Any, user_message: Any, persist_user_message: Any, persist_user_timestamp: Optional[float], persist_user_platform_id: Optional[str], persist_user_display_kind: Optional[str], persist_user_display_metadata: Optional[Dict[str, Any]]
 # │  返回：Tuple[Dict[str, Any], Any]
 # └──────────────────────────────────────────────────────────────
@@ -787,7 +787,7 @@ def _stage_turn_user_message(
 
 
 # ┌── 函数 def _hydrate_from_history()
-# │  作用：Hydrate process-local state from persisted history on the first resumed turn.
+# │  作用：Hydrate 进程-local 状态从 已持久化的 history 在…上 first resumed 轮次.
 # │  参数：agent: Any, conversation_history: Optional[List[Any]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -835,7 +835,7 @@ def _hydrate_from_history(agent: Any, conversation_history: Optional[List[Any]])
 
 
 # ┌── 函数 def _tick_memory_nudge()
-# │  作用：Advance the turn-based memory nudge counter; ``True`` when the review should fire.
+# │  作用：Advance 轮次-based 内存 nudge counter; ``True`` 当 review 应当 fire.
 # │  参数：agent: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -854,7 +854,7 @@ def _tick_memory_nudge(agent: Any) -> bool:
 
 
 # ┌── 函数 def _emit_reaction()
-# │  作用：Cosmetic side-signal: detect an affection reaction so the host can play hearts.
+# │  作用：Cosmetic side-信号: 检测 affection reaction 从而宿主可以 play hearts.
 # │  参数：agent: Any, original_user_message: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -873,7 +873,7 @@ def _emit_reaction(agent: Any, original_user_message: Any) -> None:
 
 
 # ┌── 函数 def _ensure_session_row()
-# │  作用：Create the DB row now (system prompt populated => non-NULL) and BEFORE preflight
+# │  作用：创建数据库 row now (system 提示词 populated => non-空) 且在…之前 preflight
 # │  参数：agent: Any, pending_cli_message: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -888,7 +888,7 @@ def _ensure_session_row(agent: Any, pending_cli_message: Any) -> None:
 
 
 # ┌── 函数 def _collect_pre_llm_call_context()
-# │  作用：Run ``pre_llm_call`` plugins; their context is injected into the user message
+# │  作用：运行 ``pre_llm_call`` plugins; 其上下文是 已注入进入 user 消息
 # │  参数：agent: Any, effective_task_id: str, turn_id: str, original_user_message: Any, messages: List[Any], conversation_history: Optional[List[Any]]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -956,7 +956,7 @@ def _collect_pre_llm_call_context(
 
 
 # ┌── 函数 def _merge_gateway_notes()
-# │  作用：Must-deliver per-turn notes ride the user-message injection channel (one-shot) so the
+# │  作用：必须-deliver per-轮次 notes ride user-消息 injection 通道 (one-shot) 从而
 # │  参数：agent: Any, messages: List[Any], current_turn_user_idx: int, plugin_user_context: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -991,7 +991,7 @@ def _merge_gateway_notes(
 
 
 # ┌── 函数 def _bind_interrupt_scope()
-# │  作用：Record the execution thread so interrupt()/clear_interrupt() scope the tool-level
+# │  作用：Record execution 线程从而 interrupt()/clear_interrupt() scope 工具-级别
 # │  参数：agent: Any, ra
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1011,7 +1011,7 @@ def _bind_interrupt_scope(agent: Any, ra) -> None:
 
 
 # ┌── 函数 def _memory_turn_start_and_prefetch()
-# │  作用：Notify memory providers of the new turn, then prefetch external memory once
+# │  作用：Notify 内存服务商的 new 轮次, 然后 prefetch external 内存一旦
 # │  参数：agent: Any, original_user_message: Any, turn_author: Optional[Dict[str, Any]] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1049,7 +1049,7 @@ def _memory_turn_start_and_prefetch(
 
 
 # ┌── 函数 def _stamp_api_content_sidecar()
-# │  作用：api_content sidecar — persist what you send: injected context lives only in the
+# │  作用：api_content sidecar — 持久化什么你 send: 已注入上下文 lives 仅在
 # │  参数：agent: Any, messages: List[Any], current_turn_user_idx: int, ext_prefetch_cache: str, plugin_user_context: str, preflight_compressed: bool
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1102,7 +1102,7 @@ def _stamp_api_content_sidecar(
 
 
 # ┌── 函数 def _persist_turn_start()
-# │  作用：Crash-resilience: persist the inbound user turn once, with final api_content,
+# │  作用：Crash-resilience: 持久化 inbound user 轮次一旦, 带 final api_content,
 # │  参数：agent: Any, messages: List[Any], conversation_history: Optional[List[Any]], pending_cli_message: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1124,7 +1124,7 @@ def _persist_turn_start(
 
 
 # ┌── 函数 def build_turn_context()
-# │  作用：Run the once-per-turn setup and return the loop's input context.
+# │  作用：运行一旦-per-轮次 setup 且返回循环's 输入上下文.
 # │  参数：agent, user_message: Any, system_message: Optional[str], conversation_history: Optional[List[Dict[str, Any]]], task_id: Optional[str], stream_callback, persist_user_message: Optional[Any], persist_user_timestamp: Optional[float] = None  …共 20 个
 # │  返回：TurnContext
 # └──────────────────────────────────────────────────────────────
@@ -1294,7 +1294,7 @@ def build_turn_context(
 
 
 # ┌── 函数 def _sanitize_model_for()
-# │  作用：Model name for strict-API tool-call sanitization. In MoA mode ``agent.model`` is
+# │  作用：模型名用于 strict-API 工具调用 sanitization. 在 MoA 模式 ``Agent.模型`` 是
 # │  参数：agent: Any, moa_config: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1319,7 +1319,7 @@ def _sanitize_model_for(agent: Any, moa_config: Any) -> Any:
 
 
 # ┌── 函数 def build_api_messages()
-# │  作用：Build the wire copy of ``messages`` for one API call plus the effective system
+# │  作用：构建 wire 复制的 ``消息`` 用于 one API call plus effective system
 # │  参数：agent: Any, messages: List[Dict[str, Any]], current_turn_user_idx: Any, ext_prefetch_cache: Any, plugin_user_context: Any, moa_config: Any, active_system_prompt: Any
 # │  返回：Tuple[List[Dict[str, Any]], str]
 # └──────────────────────────────────────────────────────────────

@@ -48,7 +48,7 @@ _codex_watchdog_state_var: contextvars.ContextVar[Any | None] = contextvars.Cont
 
 
 # ┌── 函数 def _call_guarded()
-# │  作用：Invoke an optional display/debug callback; a buggy hook must never tear down the turn.
+# │  作用：Invoke optional 展示/调试回调; buggy hook 必须 never tear down 轮次.
 # │  参数：fn: Callable | None, fail_msg: str, *fail_args, args: tuple = ..., kwargs: dict | None = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ def _call_guarded(fn: Callable | None, fail_msg: str, *fail_args: Any, args: tup
 
 
 # ┌── 函数 def _codex_request_failure_details()
-# │  作用：(serialized request bytes, exception class chain); the buffered ``httpx.Request`` content
+# │  作用：(serialized 请求 bytes, 异常类 chain); buffered ``httpx.请求`` 内容
 # │  参数：error: BaseException
 # │  返回：tuple[int | None, str]
 # └──────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ def _coerce_usage_int(value: Any) -> int:
 
 
 # ┌── 函数 def _queue_token_counts()
-# │  作用：Enqueue per-call accounting for the SessionDB background writer. ``counts`` is built
+# │  作用：Enqueue 每次调用的 accounting 用于会话数据库 background writer. ``counts`` 是已构建
 # │  参数：agent, fail_msg: str, *fail_extra, counts: Callable[[], dict]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ def _queue_token_counts(agent, fail_msg: str, *fail_extra: Any, counts: Callable
 
 
 # ┌── 函数 def _record_codex_app_server_usage()
-# │  作用：Translate Codex app-server token usage into Hermes accounting. Prompt bucket = uncached + cached
+# │  作用：Translate Codex app-服务端令牌 usage 进入 Hermes accounting. 提示词 bucket = uncached + cached
 # │  参数：agent, turn, messages = None
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ def _record_codex_app_server_usage(agent, turn, messages=None) -> dict[str, Any]
 
 
 # ┌── 函数 def _record_codex_app_server_compaction()
-# │  作用：Record a Codex-native compaction boundary: the app-server owns the compacted thread,
+# │  作用：Record Codex-native 压缩 boundary: app-服务端持有 compacted 线程,
 # │  参数：agent, turn, approx_tokens: int | None = ..., force: bool = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -282,7 +282,7 @@ def _item_changes(item: dict) -> list[dict]:
 
 
 # ┌── 函数 def _codex_item_to_tool_name()
-# │  作用：Synthetic Hermes tool name for a codex item (mirrors CodexEventProjector).
+# │  作用：Synthetic Hermes 工具名称用于 Codex item (镜像 CodexEventProjector).
 # │  参数：item: dict
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ def _codex_item_to_tool_name(item: dict) -> str:
 
 
 # ┌── 函数 def _codex_item_to_args()
-# │  作用：Args dict for tool_progress_callback("tool.started"); mirrors the projector shapes.
+# │  作用：Args 字典用于 tool_progress_callback("工具.started"); 镜像 projector 形态.
 # │  参数：item: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -324,7 +324,7 @@ def _codex_item_to_args(item: dict) -> dict:
 
 
 # ┌── 函数 def _codex_item_to_preview()
-# │  作用：Short preview for the tool.started bubble; None when nothing useful (UI tolerates None).
+# │  作用：Short preview 用于工具.started bubble; None 当 nothing useful (UI tolerates None).
 # │  参数：item: dict
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ def _codex_item_to_preview(item: dict) -> Any:
 
 
 # ┌── 函数 def _codex_item_completion_payload()
-# │  作用：(result_text, is_error) for a completed tool item; mirrors the projector's tool-result content.
+# │  作用：(result_text, is_error) 用于 completed 工具 item; 镜像 projector's 工具-结果内容.
 # │  参数：item: dict
 # │  返回：tuple[str, bool]
 # └──────────────────────────────────────────────────────────────
@@ -383,7 +383,7 @@ def _codex_item_completion_payload(item: dict) -> tuple[str, bool]:
 
 
 # ┌── 函数 def _stable_call_id()
-# │  作用：Deterministic tool_call id mirroring CodexEventProjector (live TUI card correlates with projected history).
+# │  作用：Deterministic tool_call id mirroring CodexEventProjector (当前活跃的 TUI card correlates 带已投射 history).
 # │  参数：item: dict, name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ def _stable_call_id(item: dict, name: str) -> str:
 
 
 # ┌── 函数 def make_codex_app_server_event_bridge()
-# │  作用：Build the ``on_event`` callback for ``CodexAppServerSession(on_event=...)``.
+# │  作用：构建 ``on_event`` 回调用于 ``CodexAppServerSession(on_event=...)``.
 # │  参数：agent
 # │  返回：Callable[[dict], None]
 # └──────────────────────────────────────────────────────────────
@@ -487,7 +487,7 @@ def make_codex_app_server_event_bridge(agent) -> Callable[[dict], None]:
 
 
 # ┌── 函数 def _close_codex_session()
-# │  作用：Drop the session so the next turn respawns codex instead of reusing a dead client.
+# │  作用：丢弃会话从而 next 轮次 respawns Codex instead 的 reusing dead 客户端.
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -499,7 +499,7 @@ def _close_codex_session(agent) -> None:
 
 
 # ┌── 函数 def _consume_user_interrupt()
-# │  作用：(user_interrupted, interrupt_message); clears the agent-level interrupt so a hard
+# │  作用：(user_interrupted, interrupt_message); 清除 Agent-级别 interrupt 从而 hard
 # │  参数：agent, active: bool = True
 # │  返回：tuple[bool, Any]
 # └──────────────────────────────────────────────────────────────
@@ -515,7 +515,7 @@ def _consume_user_interrupt(agent, active: bool = True) -> tuple[bool, Any]:
 
 
 # ┌── 函数 def _ensure_codex_session()
-# │  作用：Lazily spawn one CodexAppServerSession per AIAgent (reused across turns, closed by the _cleanup hook).
+# │  作用：Lazily spawn one CodexAppServerSession per AIAgent (reused across 轮次, 已关闭由 _cleanup hook).
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -552,7 +552,7 @@ def _ensure_codex_session(agent) -> None:
 
 
 # ┌── 函数 def _persist_projected_messages()
-# │  作用：Splice the projected messages into ``messages`` and flush them to the session DB.
+# │  作用：Splice 已投射消息进入 ``消息`` 且冲刷 them 会话数据库.
 # │  参数：agent, turn, messages: List[Dict[str, Any]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -590,7 +590,7 @@ def _persist_projected_messages(agent, turn, messages: List[Dict[str, Any]]) -> 
 
 
 # ┌── 函数 def _finish_codex_turn()
-# │  作用：Post-turn bookkeeping mirroring the chat_completions loop; returns usage fields.
+# │  作用：Post-轮次 bookkeeping mirroring chat_completions 循环; 返回 usage 字段.
 # │  参数：agent, turn, messages: List[Dict[str, Any]], original_user_message: Any, should_review_memory: bool
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -621,7 +621,7 @@ def _finish_codex_turn(agent, turn, messages: List[Dict[str, Any]], *, original_
 
 
 # ┌── 函数 def run_codex_app_server_turn()
-# │  作用：Hand the turn to a ``codex app-server`` subprocess and project its events into ``messages``.
+# │  作用：Hand 轮次 ``Codex app-服务端`` 子进程且 投射其 事件进入 ``消息``.
 # │  参数：agent, user_message: str, original_user_message: Any, messages: List[Dict[str, Any]], effective_task_id: str, should_review_memory: bool = ...
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -667,7 +667,7 @@ def run_codex_app_server_turn(agent, *, user_message: str, original_user_message
 
 
 # ┌── 函数 def _turn_result()
-# │  作用：Result shape shared with the chat_completions path (``partial`` == ``not completed``).
+# │  作用：结果形态 shared 带 chat_completions 路径 (``partial`` == ``不 completed``).
 # │  参数：interrupt: tuple[bool, Any], messages: List[Dict[str, Any]], api_calls: int, completed: bool, error: Any, final_response: Any, **extra
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -691,7 +691,7 @@ def _turn_result(interrupt: tuple[bool, Any], messages: List[Dict[str, Any]], *,
 
 
 # ┌── 函数 def _event_field()
-# │  作用：Field access for attr-style (SDK objects) and dict (raw JSON) events/items.
+# │  作用：字段 access 用于 attr-style (SDK 对象) 且字典 (raw JSON) 事件/items.
 # │  参数：event: Any, name: str, default: Any = None
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -711,7 +711,7 @@ _CODEX_PROGRESS_DELTA_TYPES = frozenset({
 
 
 # ┌── 函数 def _codex_event_has_content()
-# │  作用：Whether a Codex Responses event carries substantive forward progress.
+# │  作用：是否 Codex 响应事件 carries substantive forward progress.。
 # │  参数：event: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -735,7 +735,7 @@ def _codex_event_has_content(event: Any) -> bool:
 
 
 # ┌── 函数 def _raise_stream_error()
-# │  作用：Raise ``_StreamErrorEvent`` from a ``type=error`` SSE frame. The spec puts code/message/param at the
+# │  作用：抛出 ``_StreamErrorEvent`` 从 ``类型=错误`` SSE frame. spec puts code/消息/param 在
 # │  参数：event: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -767,7 +767,7 @@ def _message_phase(item: Any) -> str | None:
 
 
 # ┌── 函数 def _output_text_of()
-# │  作用：Concatenated ``output_text`` parts of a message item ("" if content is not a list).
+# │  作用：Concatenated ``output_text`` parts 的消息 item ("" 若内容是 不列表).
 # │  参数：item: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -782,7 +782,7 @@ def _output_text_of(item: Any) -> str:
 
 
 # ┌── 类 class _CodexResponseAssembler
-# │  说明：Assemble a Response-shaped ``SimpleNamespace`` from raw Responses SSE events.
+# │  说明：Assemble 响应-shaped ``SimpleNamespace`` 从 raw 响应 SSE 事件.
 # │  成员：共 11 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _CodexResponseAssembler:
@@ -976,7 +976,7 @@ class _CodexResponseAssembler:
     )
 
     # ┌── 函数 def feed()
-    # │  作用：Process one event; True when the stream hit a terminal frame.
+    # │  作用：进程 one 事件; True 当 stream hit 终端 frame.
     # │  参数：self, event: Any
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -989,7 +989,7 @@ class _CodexResponseAssembler:
         return bool(handler(self, event, event_type)) if handler is not None else False
 
     # ┌── 函数 def _settled_output()
-    # │  作用：Merge .done items with settled pending calls, keeping stream order.
+    # │  作用：Merge .done items 带 settled pending calls, 保留 stream order.
     # │  参数：self
     # │  返回：List[Any]
     # └──────────────────────────────────────────────────────────────
@@ -1041,7 +1041,7 @@ class _CodexResponseAssembler:
 
 
 # ┌── 函数 def _consume_codex_event_stream()
-# │  作用：Consume a Codex Responses SSE stream into a Response-shaped ``SimpleNamespace`` (see
+# │  作用：消费 Codex 响应 SSE stream 进入响应-shaped ``SimpleNamespace`` (see
 # │  参数：event_iter: Any, model: str, on_text_delta = ..., on_reasoning_delta = ..., on_commentary_message = ..., on_first_delta = ..., on_event = ..., interrupt_check = ...
 # │  返回：SimpleNamespace
 # └──────────────────────────────────────────────────────────────
@@ -1078,7 +1078,7 @@ def _consume_codex_event_stream(
 
 
 # ┌── 函数 def _sanitize_consumer_codex_request()
-# │  作用：Drop fields the ChatGPT OAuth Codex endpoint rejects, at the final wire boundary (after Relay /
+# │  作用：丢弃字段 ChatGPT OAuth Codex endpoint 拒绝, 在 final wire boundary (在…之后 Relay /
 # │  参数：agent: Any, request: dict[str, Any]
 # │  返回：dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1113,7 +1113,7 @@ _SDK_TRANSFORM_BYPASS_FIELDS = ("input", "tools")
 
 
 # ┌── 函数 def _is_plain_json_data()
-# │  作用：True when ``value`` is purely JSON wire types; pydantic models / generators must keep the typed SDK path.
+# │  作用：当 ``值`` 是 purely JSON wire 类型; pydantic 模型 / generators 必须保留 typed SDK 路径. 时返回 True。
 # │  参数：value: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1133,7 +1133,7 @@ def _is_plain_json_data(value: Any) -> bool:
 
 
 # ┌── 函数 def _bypass_sdk_request_transform()
-# │  作用：Route bulk payload fields around the SDK's ``maybe_transform``.
+# │  作用：路由 bulk payload 字段 around SDK's ``maybe_transform``.
 # │  参数：stream_kwargs: dict
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1162,7 +1162,7 @@ def _bypass_sdk_request_transform(stream_kwargs: dict) -> dict:
 
 
 # ┌── 函数 def run_codex_stream()
-# │  作用：One streaming Responses API request over raw ``responses.create(stream=True)`` events.
+# │  作用：One streaming 响应 API 请求 over raw ``响应.创建(stream=True)`` 事件.
 # │  参数：agent, api_kwargs: dict, client: Any = None, on_first_delta = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1360,7 +1360,7 @@ __all__ = [
 # The whole block is removed by reverting the commit that added it.
 
 # ┌── 函数 def run_codex_create_stream_fallback()
-# │  作用：Backward-compatible alias for the unified event-driven path.
+# │  作用：Backward-compatible 别名用于 unified 事件-driven 路径.
 # │  参数：agent, api_kwargs: dict, client: Any = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

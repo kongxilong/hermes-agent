@@ -40,7 +40,7 @@ TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
 
 
 # ┌── 函数 def is_truthy_value()
-# │  作用：Coerce bool-ish values using the project's shared truthy string set.
+# │  作用：Coerce 布尔值-ish 值 using 投射's shared truthy 字符串设置.
 # │  参数：value: Any, default: bool = False
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ def is_truthy_value(value: Any, default: bool = False) -> bool:
 
 
 # ┌── 函数 def env_var_enabled()
-# │  作用：Return True when an environment variable is set to a truthy value.
+# │  作用：当 environment variable 是设置 truthy 值. 时返回 True。
 # │  参数：name: str, default: str = ''
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ def env_var_enabled(name: str, default: str = "") -> bool:
 
 
 # ┌── 函数 def _preserve_file_mode()
-# │  作用：Permission bits of *path* if it exists, else ``None``.
+# │  作用：Permission bits 的 *路径* 若它 exists, 否则 ``None``.
 # │  参数：path: Path
 # │  返回：'int | None'
 # └──────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ def _preserve_file_mode(path: Path) -> "int | None":
 
 
 # ┌── 函数 def _preserve_file_owner()
-# │  作用：Owning ``(uid, gid)`` of *path* on POSIX, else ``None``.
+# │  作用：持有 ``(uid, gid)`` 的 *路径* 在…上 POSIX, 否则 ``None``.
 # │  参数：path: Path
 # │  返回：'tuple[int, int] | None'
 # └──────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ def _preserve_file_owner(path: Path) -> "tuple[int, int] | None":
 
 
 # ┌── 函数 def _restore_file_metadata()
-# │  作用：Best-effort re-apply of uid/gid and permission bits after an atomic replace.
+# │  作用：尽最大努力 re-apply 的 uid/gid 且 permission bits 在…之后 atomic replace.
 # │  参数：path: Path, owner: 'tuple[int, int] | None', mode: 'int | None'
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ def _restore_file_metadata(path: Path, owner: "tuple[int, int] | None", mode: "i
 
 
 # ┌── 函数 def default_new_file_mode()
-# │  作用：The mode ``open(path, "w")`` gives a file it has to create (``0o666 & ~umask``); ``None``
+# │  作用：模式 ``打开(路径, "w")`` gives 文件它 有创建 (``0o666 & ~umask``); ``None``
 # │  参数：无
 # │  返回：'int | None'
 # └──────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ _CROSS_DEVICE_ERRNOS = (errno.EXDEV, errno.EBUSY)
 
 
 # ┌── 函数 def _is_contended_windows_replace_error()
-# │  作用：Candidate-only: winerror 5 also covers a genuine ACL denial.
+# │  作用：Candidate-仅: winerror 5 也 covers genuine ACL denial.
 # │  参数：exc: OSError
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -198,7 +198,7 @@ def _is_contended_windows_replace_error(exc: OSError) -> bool:
 
 
 # ┌── 函数 def _rewrite_in_place()
-# │  作用：Overwrite *real_path* through the existing file — last resort for a still-held target.
+# │  作用：Overwrite *real_path* through existing 文件 — last resort 用于仍-held target.
 # │  参数：tmp_str: str, real_path: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -226,7 +226,7 @@ def _rewrite_in_place(tmp_str: str, real_path: str) -> None:
 
 
 # ┌── 函数 def _copy_fallback()
-# │  作用：Copy/fsync/unlink fallback for cross-device and bind-mount renames.
+# │  作用：复制/fsync/unlink 兜底用于 cross-device 且 bind-mount renames.
 # │  参数：tmp_str: str, real_path: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -241,7 +241,7 @@ def _copy_fallback(tmp_str: str, real_path: str) -> None:
 
 
 # ┌── 函数 def atomic_replace()
-# │  作用：Atomically move *tmp_path* onto *target*, preserving symlinks.
+# │  作用：把 *tmp_path* 原子地移动到 *target* 上，并保留符号链接。
 # │  参数：tmp_path: Union[str, Path], target: Union[str, Path]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ def atomic_replace(tmp_path: Union[str, Path], target: Union[str, Path]) -> str:
 
 
 # ┌── 函数 def fsync_directory()
-# │  作用：Best-effort fsync of a directory entry so a just-renamed file survives power loss.
+# │  作用：尽最大努力 fsync 的 directory entry 从而 just-renamed 文件 survives power loss.
 # │  参数：path: Union[str, Path]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -321,7 +321,7 @@ def fsync_directory(path: Union[str, Path]) -> None:
 
 
 # ┌── 函数 def _atomic_write()
-# │  作用：Temp file + fsync + :func:`atomic_replace`, then re-apply owner/mode.
+# │  作用：Temp 文件 + fsync + :func:`atomic_replace`, 然后 re-apply owner/模式.
 # │  参数：path: Path, write, prefix: str, encoding: str = ..., mode: 'int | None' = ..., preserve_owner: bool = ..., binary: bool = ..., fsync_dir: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -364,7 +364,7 @@ def _atomic_write(path: Path, write, *, prefix: str, encoding: str = "utf-8", mo
 
 
 # ┌── 函数 def _mode_for_write()
-# │  作用：Existing permission bits of *path* (when *preserve*), else *create_mode* for a new file.
+# │  作用：Existing permission bits 的 *路径* (当 *preserve*), 否则 *create_mode* 用于 new 文件.
 # │  参数：path: Path, create_mode: 'int | None', preserve: bool = True
 # │  返回：'int | None'
 # └──────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ def _mode_for_write(path: Path, create_mode: "int | None", preserve: bool = True
 
 
 # ┌── 函数 def atomic_write_text()
-# │  作用：Write *content* to *path* via temp file + fsync + atomic rename.
+# │  作用：写入 *内容* *路径* via temp 文件 + fsync + atomic rename.
 # │  参数：path: Union[str, Path], content: str, encoding: str = ..., tmp_prefix: str = ..., preserve_mode: bool = ..., create_mode: 'int | None' = ..., mode: 'int | None' = ..., fsync_dir: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -397,7 +397,7 @@ def atomic_write_text(path: Union[str, Path], content: str, *, encoding: str = "
 
 
 # ┌── 函数 def atomic_write_bytes()
-# │  作用：Bytes variant of :func:`atomic_write_text` (encrypted blobs, key material).
+# │  作用：Bytes variant 的 :func:`atomic_write_text` (encrypted blobs, 键 material).
 # │  参数：path: Union[str, Path], content: bytes, tmp_prefix: str = ..., mode: 'int | None' = ..., fsync_dir: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -410,7 +410,7 @@ def atomic_write_bytes(path: Union[str, Path], content: bytes, *, tmp_prefix: st
 
 
 # ┌── 函数 def _dump_json()
-# │  作用：``json.dump`` that survives surrogate-escaped strings.
+# │  作用：``JSON.dump`` 那个 survives surrogate-escaped strings.
 # │  参数：data: Any, f, indent: 'int | None', ensure_ascii: bool, dump_kwargs: dict
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -433,7 +433,7 @@ def _dump_json(data: Any, f, *, indent: "int | None", ensure_ascii: bool, dump_k
 
 
 # ┌── 函数 def atomic_json_write()
-# │  作用：Write JSON to *path* atomically (temp file + fsync + replace).
+# │  作用：写入 JSON *路径* atomically (temp 文件 + fsync + replace).
 # │  参数：path: Union[str, Path], data: Any, indent: int = ..., mode: int | None = ..., ensure_ascii: bool = ..., fsync_dir: bool = ..., **dump_kwargs
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -455,7 +455,7 @@ def atomic_json_write(
 
 
 # ┌── 函数 def read_json_or_empty()
-# │  作用：The JSON object at *path*, or ``{}`` when the file is missing, unreadable, malformed or
+# │  作用：JSON 对象在 *路径*, 或 ``{}`` 当文件是 missing, unreadable, 格式非法的或
 # │  参数：path: Union[str, Path]
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -475,7 +475,7 @@ def read_json_or_empty(path: Union[str, Path]) -> dict:
 
 
 # ┌── 函数 def warn_if_credential_file_broadly_readable()
-# │  作用：Warn when a credential file is group/world-readable; True when a warning was emitted.
+# │  作用：警告当 credential 文件是 group/world-readable; True 当警告是 emitted.
 # │  参数：path: Union[str, Path], label: str = ..., log: logging.Logger | None = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -504,7 +504,7 @@ def warn_if_credential_file_broadly_readable(path: Union[str, Path], *, label: s
 
 
 # ┌── 类 class IndentDumper（继承自：yaml.SafeDumper）
-# │  说明：PyYAML dumper that indents list items under mapping keys (2-space).
+# │  说明：PyYAML dumper 那个 indents 列表 items under mapping 键 (2-space).
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 class IndentDumper(yaml.SafeDumper):
@@ -529,7 +529,7 @@ class IndentDumper(yaml.SafeDumper):
 
 
 # ┌── 函数 def atomic_yaml_write()
-# │  作用：Write YAML to *path* atomically (temp file + fsync + replace).
+# │  作用：写入 YAML *路径* atomically (temp 文件 + fsync + replace).
 # │  参数：path: Union[str, Path], data: Any, default_flow_style: bool = ..., sort_keys: bool = ..., extra_content: str | None = ..., create_mode: 'int | None' = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -550,7 +550,7 @@ def atomic_yaml_write(path: Union[str, Path], data: Any, *, default_flow_style: 
 
 
 # ┌── 函数 def _roundtrip_load()
-# │  作用：``(yaml_rt, CommentedMap)``: a ruamel round-trip loader keeping quotes/Unicode with 2-space
+# │  作用：``(yaml_rt, CommentedMap)``: ruamel 轮-trip loader 保留 quotes/Unicode 带 2-space
 # │  参数：path: Path
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -580,7 +580,7 @@ def _roundtrip_dump(path: Path, yaml_rt, config) -> None:
 
 
 # ┌── 函数 def atomic_roundtrip_yaml_update()
-# │  作用：Update one dotted YAML key while preserving comments, ordering, quoting and Unicode.
+# │  作用：更新 one dotted YAML 键当 preserving comments, ordering, quoting 且 Unicode.
 # │  参数：path: Union[str, Path], key_path: str, value: Any
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -633,7 +633,7 @@ _YAML11_AMBIGUOUS_WORDS = frozenset({"y", "n", "yes", "no", "true", "false", "on
 
 
 # ┌── 函数 def atomic_roundtrip_yaml_save()
-# │  作用：Persist a full config-state dict while preserving comments and ordering.
+# │  作用：持久化 full 配置-状态字典当 preserving comments 且 ordering.
 # │  参数：path: Union[str, Path], new_state: dict
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -675,7 +675,7 @@ def atomic_roundtrip_yaml_save(path: Union[str, Path], new_state: dict) -> None:
 
 
 # ┌── 函数 def safe_json_loads()
-# │  作用：Parse JSON, returning *default* on any parse error.
+# │  作用：解析 JSON, 返回 *默认值* 在…上任意解析错误.
 # │  参数：text: str, default: Any = None
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -697,7 +697,7 @@ _fast_yaml_loader = getattr(yaml, "CSafeLoader", None) or yaml.SafeLoader
 
 
 # ┌── 函数 def fast_safe_load()
-# │  作用：``yaml.safe_load`` (same inputs, same result) using the libyaml C loader when available.
+# │  作用：``YAML.safe_load`` (same 输入, same 结果) using libyaml C loader 当 available.
 # │  参数：stream: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -724,7 +724,7 @@ def _env_number(key: str, default, cast):
 
 
 # ┌── 函数 def env_int()
-# │  作用：Read an environment variable as an integer, with fallback.
+# │  作用：读取 environment variable 作为整数, 带兜底.
 # │  参数：key: str, default: int = 0
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -735,7 +735,7 @@ def env_int(key: str, default: int = 0) -> int:
 
 
 # ┌── 函数 def env_float()
-# │  作用：Read an environment variable as a float, with fallback.
+# │  作用：读取 environment variable 作为浮点数, 带兜底.
 # │  参数：key: str, default: float = 0.0
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -746,7 +746,7 @@ def env_float(key: str, default: float = 0.0) -> float:
 
 
 # ┌── 函数 def env_bool()
-# │  作用：Read an environment variable as a boolean.
+# │  作用：读取 environment variable 作为布尔值.
 # │  参数：key: str, default: bool = False
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -760,7 +760,7 @@ _PROXY_ENV_KEYS = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "htt
 
 
 # ┌── 函数 def normalize_proxy_url()
-# │  作用：Normalize proxy URLs for httpx/aiohttp: WSL/Clash export ``socks://``, httpx needs ``socks5://``.
+# │  作用：归一化 proxy URLs 用于 httpx/aiohttp: WSL/Clash export ``socks://``, httpx needs ``socks5://``.
 # │  参数：proxy_url: str | None
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -775,7 +775,7 @@ def normalize_proxy_url(proxy_url: str | None) -> str | None:
 
 
 # ┌── 函数 def normalize_proxy_env_vars()
-# │  作用：Rewrite supported proxy env vars to canonical URL forms in-place.
+# │  作用：Rewrite supported proxy env vars canonical URL 形态在-place.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -789,7 +789,7 @@ def normalize_proxy_env_vars() -> None:
 
 
 # ┌── 函数 def _parse_base_url()
-# │  作用：``urlparse`` that tolerates a bare ``host[:port][/path]`` (no scheme).
+# │  作用：``urlparse`` 那个 tolerates bare ``宿主[:port][/路径]`` (无 scheme).
 # │  参数：base_url: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -811,7 +811,7 @@ def _hostname_of(parsed) -> str:
 
 
 # ┌── 函数 def base_url_hostname()
-# │  作用：Lowercased hostname for a base URL, or ``""`` if absent.
+# │  作用：Lowercased hostname 用于 base URL, 或 ``""`` 若 absent.
 # │  参数：base_url: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -827,7 +827,7 @@ def base_url_hostname(base_url: str) -> str:
 
 
 # ┌── 函数 def model_forces_max_completion_tokens()
-# │  作用：True for OpenAI families that reject ``max_tokens`` (HTTP 400 ``unsupported_parameter``).
+# │  作用：当 OpenAI families 那个拒绝 ``max_tokens`` (HTTP 400 ``unsupported_parameter``). 时返回 True。
 # │  参数：model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -839,7 +839,7 @@ def model_forces_max_completion_tokens(model: str) -> bool:
 
 
 # ┌── 函数 def base_url_origin()
-# │  作用：``(scheme, hostname, effective_port)`` for a base URL; ``("", "", 0)`` on no host/bad port.
+# │  作用：``(scheme, hostname, effective_port)`` 用于 base URL; ``("", "", 0)`` 在…上无 宿主/bad port.
 # │  参数：base_url: str
 # │  返回：tuple[str, str, int]
 # └──────────────────────────────────────────────────────────────
@@ -868,7 +868,7 @@ def base_url_origin(base_url: str) -> tuple[str, str, int]:
 
 
 # ┌── 函数 def base_url_host_matches()
-# │  作用：True when the base URL's hostname is ``domain`` or a subdomain.
+# │  作用：当 base URL's hostname 是 ``domain`` 或 subdomain. 时返回 True。
 # │  参数：base_url: str, domain: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────

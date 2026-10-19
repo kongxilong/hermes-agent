@@ -80,7 +80,7 @@ _warned_unavailable_providers: set[str] = set()
 
 
 # ┌── 函数 def _warn_memory_provider_unavailable()
-# │  作用：Warn once per provider that a configured memory provider is unavailable.
+# │  作用：对每个服务商，仅警告一次「配置的记忆提供方不可用」。
 # │  参数：name: str, reason: str = ''
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ def _warn_memory_provider_unavailable(name: str, reason: str = "") -> None:
 
 
 # ┌── 函数 def _provider_default_routes()
-# │  作用：Return known exact default routes for a canonical provider id.
+# │  作用：返回某个规范服务商 id 已知的、确定的默认路由。
 # │  参数：provider: str
 # │  返回：set[str]
 # └──────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ def _provider_default_routes(provider: str) -> set[str]:
 
 
 # ┌── 函数 def _context_route_mismatch()
-# │  作用：Return whether a context pin's configured route differs from runtime.
+# │  作用：返回一个上下文固定点（context pin）所配置的路由是否与运行时不一致。
 # │  参数：configured_base_url: Any, active_base_url: Any, configured_provider: Any, active_provider: Any, already_normalized: bool = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ def _context_route_mismatch(
 
 
 # ┌── 函数 def _normalize_custom_provider_name()
-# │  作用：Mirror runtime normalization for a requested custom-provider identity.
+# │  作用：对请求的自定义服务商身份，复刻运行时的归一化逻辑。
 # │  参数：value: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ def _normalize_custom_provider_name(value: Any) -> str:
 
 
 # ┌── 函数 def _custom_provider_runtime_ids()
-# │  作用：Return raw/menu identities that runtime accepts for a configured name.
+# │  作用：返回运行时针对某个已配置名称所接受的「原始/菜单」身份。
 # │  参数：value: Any
 # │  返回：set[str]
 # └──────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ def _custom_provider_runtime_ids(value: Any) -> set[str]:
 
 
 # ┌── 函数 def _build_codex_gpt5_autoraise_notice()
-# │  作用：One-time notice when Codex gpt-5.x raises compaction (``autoraise``: model/from/to).
+# │  作用：当 Codex 的 gpt-5.x 触发压缩时弹出的一次性提示（``autoraise``：model/from/to）。
 # │  参数：autoraise: Dict[str, Any], context_length: Optional[int] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -252,7 +252,7 @@ def _build_codex_gpt5_autoraise_notice(
 
 
 # ┌── 函数 def _resolve_compression_threshold()
-# │  作用：Global compaction threshold merged with a per-model override.
+# │  作用：全局压缩阈值与按模型的覆盖值合并后的结果。
 # │  参数：global_threshold: float, model_cthresh: Optional[float], model: Optional[str] = ..., is_codex_autoraise: bool
 # │  返回：tuple[float, Optional[Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -280,7 +280,7 @@ def _resolve_compression_threshold(
 
 
 # ┌── 函数 def _codex_gpt55_autoraise_notice_marker()
-# │  作用：Per-profile marker path (``$HERMES_HOME`` is profile-scoped; not a config key).
+# │  作用：按配置档的标记路径（``$HERMES_HOME`` 是配置档级别的，不是配置项）。
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ def _codex_gpt55_autoraise_notice_marker():
 
 
 # ┌── 函数 def _codex_gpt55_autoraise_notice_state()
-# │  作用：Notice identity keyed on what it displays (model + from→to percentages).
+# │  作用：提示的标识键，以其展示内容为准（模型 + from→to 的百分比）。
 # │  参数：autoraise: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -309,7 +309,7 @@ def _codex_gpt55_autoraise_notice_state(autoraise: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _codex_gpt55_autoraise_notice_seen()
-# │  作用：True if this exact notice was already shown for this profile (unreadable = unseen).
+# │  作用：若该提示已对这个配置档展示过则返回 True（读不到记录 = 视为未展示）。
 # │  参数：autoraise: Dict[str, Any]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -328,7 +328,7 @@ def _codex_gpt55_autoraise_notice_seen(autoraise: Dict[str, Any]) -> bool:
 
 
 # ┌── 函数 def _record_codex_gpt55_autoraise_notice()
-# │  作用：Persist that the notice was shown. Best-effort: a failure only re-shows it later.
+# │  作用：持久化「该提示已展示」这一事实。尽最大努力：失败只会导致之后再次展示。
 # │  参数：autoraise: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -438,7 +438,7 @@ def _merge_custom_provider_extra_body(agent, custom_providers: List[Dict[str, An
 
 
 # ┌── 函数 def _normalize_run_budget_seconds()
-# │  作用：Positive float or None (feature off). ``bool`` rejected: YAML ``true`` → 1s budget.
+# │  作用：正数浮点值或 None（None 表示功能关闭）。拒绝 ``bool``：YAML 里的 ``true`` 会被当成 1 秒预算。
 # │  参数：value
 # │  返回：Optional[float]
 # └──────────────────────────────────────────────────────────────
@@ -459,7 +459,7 @@ def _normalize_run_budget_seconds(value) -> Optional[float]:
 
 
 # ┌── 函数 def _refuse_checkpoint_required_on_codex_app_server()
-# │  作用：Fail closed at init: the codex app-server compacts its own thread without a truthful
+# │  作用：初始化时按 fail closed（保守拒绝）处理：codex app-server 会在没有真实……的情况下压缩自己的线程。
 # │  参数：checkpoint_required: bool, api_mode: Optional[str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -482,7 +482,7 @@ def _refuse_checkpoint_required_on_codex_app_server(
 
 
 # ┌── 函数 def _parse_config_int()
-# │  作用：Strict int coercion: rejects bool (YAML ``true`` → 1) and fractional floats.
+# │  作用：严格的整数强制转换：拒绝 ``bool``（YAML 的 ``true`` → 1）和带小数部分的浮点数。
 # │  参数：raw: Any, default: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -507,7 +507,7 @@ def _parse_config_int(raw: Any, default: int) -> int:
 
 
 # ┌── 函数 def _cfg_flag()
-# │  作用：Legacy string-set truthiness used by the ``compression`` section.
+# │  作用：``compression`` 段落使用的旧式「字符串集合真假值」判断。
 # │  参数：cfg: Dict[str, Any], key: str, default: bool
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -518,7 +518,7 @@ def _cfg_flag(cfg: Dict[str, Any], key: str, default: bool) -> bool:
 
 
 # ┌── 函数 def _cfg_dict()
-# │  作用：``cfg[key]`` if it is a mapping, else ``{}`` (malformed sections are ignored).
+# │  作用：若 ``cfg[key]`` 是一个映射则返回它，否则返回 ``{}``（格式错误的段落会被忽略）。
 # │  参数：cfg: Dict[str, Any], key: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -530,7 +530,7 @@ def _cfg_dict(cfg: Dict[str, Any], key: str) -> Dict[str, Any]:
 
 
 # ┌── 类 class CompressionSettings（继承自：SimpleNamespace）
-# │  说明：Parsed ``compression`` config section (see ``_parse_compression_config``).
+# │  说明：已解析的 ``compression`` 配置段落（参见 ``_parse_compression_config``）。
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class CompressionSettings(SimpleNamespace):
@@ -544,7 +544,7 @@ _EXPLICIT_API_MODES = {
 
 
 # ┌── 函数 def _resolve_api_mode()
-# │  作用：Set ``agent.api_mode`` (and provider rewrites) — ordered ladder, first match wins.
+# │  作用：设置 ``agent.api_mode``（以及服务商重写规则）——按序阶梯匹配，第一个命中者生效。
 # │  参数：agent, api_mode, provider_name, base_url
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -687,7 +687,7 @@ def _finalize_routing(agent, api_mode, credential_pool):
 
 
 # ┌── 函数 def _set_defaults()
-# │  作用：Assign each ``name -> value`` on ``agent``; callables are factories (fresh per agent).
+# │  作用：把每个 ``name -> value`` 赋到 ``agent`` 上；若是可调用对象则当作工厂（每个 agent 单独构造一份）。
 # │  参数：agent, table: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -897,7 +897,7 @@ def _setup_logging(agent):
 
 
 # ┌── 函数 def _print_key_banner()
-# │  作用：Masked credential line. ``key`` may be a callable Entra ID bearer provider (Azure
+# │  作用：被掩码处理的凭证行。``key`` 也可以是一个可调用对象（Azure 的 Entra ID bearer 提供方……）。
 # │  参数：key, label: str, warn_missing: bool = False
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -914,7 +914,7 @@ def _print_key_banner(key, label: str, warn_missing: bool = False) -> None:
 
 
 # ┌── 函数 def _init_anthropic_client()
-# │  作用：anthropic_messages: native Anthropic SDK (or AnthropicBedrock for Bedrock+Claude).
+# │  作用：anthropic_messages：原生 Anthropic SDK（在 Bedrock+Claude 场景下则用 AnthropicBedrock）。
 # │  参数：agent, api_key, base_url, _provider_timeout
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -970,7 +970,7 @@ def _init_anthropic_client(agent, api_key, base_url, _provider_timeout):
 
 
 # ┌── 函数 def _init_moa_client()
-# │  作用：provider == "moa": virtual Mixture-of-Agents facade, no real HTTP client.
+# │  作用：provider == "moa"：虚拟的「多 Agent 混合」（Mixture-of-Agents）门面，没有真正的 HTTP 客户端。
 # │  参数：agent, api_key
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -997,7 +997,7 @@ def _init_moa_client(agent, api_key):
 
 
 # ┌── 函数 def _init_bedrock_client()
-# │  作用：bedrock_converse: boto3 directly, no OpenAI client.
+# │  作用：bedrock_converse：直接走 boto3，不使用 OpenAI 客户端。
 # │  参数：agent, base_url
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1011,7 +1011,7 @@ def _init_bedrock_client(agent, base_url):
 
 
 # ┌── 函数 def _explicit_client_kwargs()
-# │  作用：OpenAI-client kwargs from explicit CLI/gateway credentials (auth already resolved).
+# │  作用：来自显式 CLI/网关凭证的 OpenAI 客户端参数（鉴权已解析）。
 # │  参数：agent, api_key, base_url, _provider_timeout
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1051,7 +1051,7 @@ def _explicit_client_kwargs(agent, api_key, base_url, _provider_timeout) -> Dict
 
 
 # ┌── 函数 def _routed_client_kwargs()
-# │  作用：OpenAI-client kwargs via the centralized provider router (no explicit creds).
+# │  作用：经由集中式服务商路由器得到的 OpenAI 客户端参数（无需显式凭证）。
 # │  参数：agent, fallback_model, _provider_timeout
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1120,7 +1120,7 @@ def _routed_client_kwargs(agent, fallback_model, _provider_timeout) -> Dict[str,
 
 
 # ┌── 函数 def _apply_openai_header_policy()
-# │  作用：Mutate ``client_kwargs`` (== ``agent._client_kwargs``) with header/TLS policy, in order:
+# │  作用：按指定顺序，用请求头/TLS 策略来修改 ``client_kwargs``（即 ``agent._client_kwargs``）：
 # │  参数：agent, client_kwargs: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1158,7 +1158,7 @@ def _apply_openai_header_policy(agent, client_kwargs: Dict[str, Any]) -> None:
 
 
 # ┌── 函数 def _init_openai_client()
-# │  作用：OpenAI-wire client: resolve kwargs, apply header/TLS policy, construct.
+# │  作用：OpenAI 线格式客户端：解析参数、施加请求头/TLS 策略，然后构造。
 # │  参数：agent, api_key, base_url, fallback_model, _provider_timeout
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1223,7 +1223,7 @@ def _build_client(agent, api_key, base_url, fallback_model):
 
 
 # ┌── 函数 def _lazy_headers()
-# │  作用：Header factory ``(api_key, base_url) -> dict`` importing ``module.name`` at call time.
+# │  作用：请求头工厂 ``(api_key, base_url) -> dict``，在调用时才导入 ``module.name``。
 # │  参数：module: str, name: str, pass_key: bool = False, pass_base: bool = False
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1272,7 +1272,7 @@ def _host_default_headers_factory(base_url: str):
 
 
 # ┌── 函数 def _client_kwargs_from_routed()
-# │  作用：OpenAI-client kwargs mirroring a router-resolved client, keeping its provider headers
+# │  作用：镜像一个路由器解析出的客户端的 OpenAI 客户端参数，保留其服务商请求头……
 # │  参数：client, timeout
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1294,7 +1294,7 @@ def _client_kwargs_from_routed(client, timeout) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _fallback_entries()
-# │  作用：Normalize legacy single-dict ``fallback_model`` / list ``fallback_providers``.
+# │  作用：把旧式的单字典 ``fallback_model`` / 列表 ``fallback_providers`` 归一化。
 # │  参数：fallback_model
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1402,7 +1402,7 @@ def _load_tools(agent, enabled_toolsets, disabled_toolsets):
 
 
 # ┌── 函数 def _publish_session_id()
-# │  作用：Expose the session ID to tools via ContextVar (+ legacy os.environ fallback).
+# │  作用：通过 ContextVar 把会话 ID 暴露给工具（并保留旧的 os.environ 兜底方式）。
 # │  参数：session_id: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1514,7 +1514,7 @@ def _apply_display_config(agent, _agent_cfg, platform):
 
 
 # ┌── 函数 def _memory_provider_init_kwargs()
-# │  作用：Scoping kwargs for ``MemoryManager.initialize_all`` (status_callback is CLI-only:
+# │  作用：传给 ``MemoryManager.initialize_all`` 的作用域相关参数（status_callback 仅 CLI 使用：……）。
 # │  参数：agent, platform
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1692,7 +1692,7 @@ def _apply_agent_section(agent, _agent_cfg):
 
 
 # ┌── 函数 def _positive_int()
-# │  作用：``int(raw)`` when positive, else None. ``reject`` lists types refused outright (bool, float).
+# │  作用：为正数时返回 ``int(raw)``，否则返回 None。``reject`` 列出被直接拒绝的类型（bool、float）。
 # │  参数：raw: Any, reject: tuple = ...
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -1712,7 +1712,7 @@ def _positive_int(raw: Any, *, reject: tuple = ()) -> Optional[int]:
 
 
 # ┌── 函数 def _compression_threshold()
-# │  作用：Global threshold merged with the per-model override; stashes the autoraise notice.
+# │  作用：全局阈值与按模型覆盖值合并；并存下 autoraise 提示。
 # │  参数：agent, cfg: Dict[str, Any]
 # │  返回：tuple[float, bool]
 # └──────────────────────────────────────────────────────────────
@@ -1749,7 +1749,7 @@ def _compression_threshold(agent, cfg: Dict[str, Any]) -> tuple[float, bool]:
 
 
 # ┌── 函数 def _compression_codex_settings()
-# │  作用：``codex_app_server_auto`` / ``codex_responses_native`` / ``codex_responses_compact_threshold``.
+# │  作用：``codex_app_server_auto`` / ``codex_responses_native`` / ``codex_responses_compact_threshold``（几个与 codex 压缩相关的配置项）。
 # │  参数：cfg: Dict[str, Any]
 # │  返回：tuple[str, bool, Optional[int]]
 # └──────────────────────────────────────────────────────────────
@@ -1781,7 +1781,7 @@ def _compression_codex_settings(cfg: Dict[str, Any]) -> tuple[str, bool, Optiona
 
 
 # ┌── 函数 def _parse_compression_config()
-# │  作用：Parse the ``compression`` section. Defaults here MUST match DEFAULT_CONFIG.
+# │  作用：解析 ``compression`` 段落。这里的默认值必须与 DEFAULT_CONFIG 保持一致。
 # │  参数：agent, _agent_cfg
 # │  返回：CompressionSettings
 # └──────────────────────────────────────────────────────────────
@@ -1865,7 +1865,7 @@ def _parse_compression_config(agent, _agent_cfg) -> CompressionSettings:
 
 
 # ┌── 函数 def _warn_invalid_config_int()
-# │  作用：Log + stderr-print an invalid integer config value (``print_fallback``: user-facing
+# │  作用：对一个非法的整数配置值同时写日志和打印到 stderr（``print_fallback``：面向用户的……）。
 # │  参数：what: str, value: Any, requirement: str, fallback: str, print_fallback: str = ''
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1886,7 +1886,7 @@ def _warn_invalid_config_int(
 
 
 # ┌── 函数 def _custom_provider_configured_base_url()
-# │  作用：Base URL of a named custom provider (``providers.<name>`` first, then
+# │  作用：某个具名自定义服务商的 Base URL（优先取 ``providers.<name>``，其次……）。
 # │  参数：_configured_provider: str, _agent_cfg, _custom_providers
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1938,7 +1938,7 @@ _RUNTIME_FIRST_PROVIDER_IDS = {
 
 
 # ┌── 函数 def _configured_default_base_url()
-# │  作用：Normalized route of the configured default model (``model.base_url``, else the named
+# │  作用：已配置默认模型的归一化路由（先取 ``model.base_url``，否则取具名……）。
 # │  参数：_agent_cfg, _model_cfg, _custom_providers
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1966,7 +1966,7 @@ def _configured_default_base_url(_agent_cfg, _model_cfg, _custom_providers) -> s
 
 
 # ┌── 函数 def _active_route_url()
-# │  作用：The runtime route, keeping the requested URL's query string when it is the same route.
+# │  作用：运行时的路由；当是同一路由时，保留请求 URL 上的查询字符串。
 # │  参数：agent, base_url
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1984,7 +1984,7 @@ def _active_route_url(agent, base_url) -> str:
 
 
 # ┌── 函数 def _scope_context_length_to_default_runtime()
-# │  作用：Return ``model.context_length`` only if it describes the active runtime.
+# │  作用：仅当 ``model.context_length`` 描述的是当前生效的运行时时才返回它。
 # │  参数：agent, _agent_cfg, _model_cfg, _custom_providers, _config_context_length, base_url
 # │  返回：Optional[int]
 # └──────────────────────────────────────────────────────────────
@@ -2041,7 +2041,7 @@ _CTX_LEN_REQUIREMENT = "must be a positive integer (e.g. 256000, not '256K')"
 
 
 # ┌── 函数 def _warn_invalid_custom_provider_context_length()
-# │  作用：Surface a context_length the helper silently skipped (not a positive int).
+# │  作用：把助手函数悄悄跳过的一个 context_length 暴露出来（因为它不是正整数）。
 # │  参数：agent, _custom_providers
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2150,7 +2150,7 @@ def _resolve_context_length(agent, _agent_cfg, base_url):
 
 
 # ┌── 函数 def _select_context_engine()
-# │  作用：Config-driven context engine: ``context.engine`` → plugins/context_engine/<name>/ →
+# │  作用：由配置驱动的上下文引擎：``context.engine`` → plugins/context_engine/<name>/ → ……
 # │  参数：_agent_cfg
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2210,7 +2210,7 @@ def _select_context_engine(_agent_cfg):
 
 
 # ┌── 函数 def _compressor_max_tokens()
-# │  作用：``agent.max_tokens``, or the native-Gemini adapter default when unset: generateContent
+# │  作用：``agent.max_tokens``；若未设置则取原生 Gemini 适配器的默认值：generateContent……
 # │  参数：agent
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2644,7 +2644,7 @@ _CALLBACK_PARAMS = (
 
 
 # ┌── 函数 def init_agent()
-# │  作用：Initialize the AI Agent (body of :meth:`AIAgent.__init__`).
+# │  作用：初始化 AI Agent（即 :meth:`AIAgent.__init__` 的方法体）。
 # │  参数：agent, base_url: str = None, api_key: str = None, provider: str = None, api_mode: str = None, acp_command: str = None, acp_args: list[str] | None = None, command: str = None  …共 80 个
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

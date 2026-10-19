@@ -79,7 +79,7 @@ _debug = DebugSession("vision_tools", env_var="VISION_TOOLS_DEBUG")
 
 
 # ┌── 函数 def _cfg_auxiliary()
-# │  作用：``auxiliary.<keys...>`` from config.yaml; ``default`` when config is unavailable.
+# │  作用：``辅助的.<键...>`` 从配置.YAML; ``默认值`` 当配置是 unavailable.
 # │  参数：*keys, default = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ def _cfg_auxiliary(*keys: str, default=None):
 
 
 # ┌── 函数 def _read_vision_setting()
-# │  作用：Env var → ``auxiliary.vision.<key>`` → None. Values that fail ``cast`` or fall below
+# │  作用：环境变量 → ``辅助的.vision.<键>`` → None. 值那个 fail ``cast`` 或 fall below
 # │  参数：env_var: str, key: str, cast, minimum = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ _VISION_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 # loop, so an asyncio semaphore cannot coordinate; the default executor is shared with the
 # gateway/web server and is deliberately NOT used.
 # ┌── 函数 def _detect_host_cpus()
-# │  作用：Usable CPU count (``sched_getaffinity`` honors cpuset pinning), at least 1.
+# │  作用：Usable CPU count (``sched_getaffinity`` honors cpuset pinning), 在 least 1.
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ def _detect_host_cpus() -> int:
 
 
 # ┌── 函数 def _resolve_vision_cpu_workers()
-# │  作用：HERMES_VISION_MAX_CONCURRENCY → ``auxiliary.vision.max_concurrency`` → host cores (< 1 ignored).
+# │  作用：HERMES_VISION_MAX_CONCURRENCY → ``辅助的.vision.max_concurrency`` → 宿主 cores (< 1 ignored).
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ _vision_cpu_executor = ThreadPoolExecutor(
 
 
 # ┌── 异步函数（协程） def _run_encode_on_cpu_executor()
-# │  作用：Run a sync encode/resize callable on the bounded vision CPU executor (never the LLM call).
+# │  作用：运行同步 encode/resize callable 在…上 bounded vision CPU executor (never LLM call).
 # │  参数：fn, *args, **kwargs
 # │  返回：（未标注类型）
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -183,7 +183,7 @@ async def _run_encode_on_cpu_executor(fn, *args, **kwargs):
 
 
 # ┌── 异步函数（协程） def _validate_image_url_async()
-# │  作用：HTTP(S) shape check (scheme, netloc; extension-less CDN URLs pass) + SSRF guard with DNS
+# │  作用：HTTP(S) 形态检查 (scheme, netloc; extension-less CDN URLs pass) + SSRF 护栏带 DNS
 # │  参数：url: str
 # │  返回：bool
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -201,7 +201,7 @@ async def _validate_image_url_async(url: str) -> bool:
 
 
 # ┌── 函数 def _is_retryable_download_error()
-# │  作用：Transient failures only: 429, 5xx, transport errors and anything unclassified. Fail-fast on
+# │  作用：Transient failures 仅: 429, 5xx, transport 错误且 anything unclassified. Fail-fast 在…上
 # │  参数：error: Exception
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -226,7 +226,7 @@ _DOWNLOAD_USER_AGENT = (
 
 
 # ┌── 异步函数（协程） def _ssrf_redirect_guard()
-# │  作用：Re-validate each redirect target (a public URL 302ing to 169.254.169.254 would otherwise
+# │  作用：Re-校验每个 redirect target ( public URL 302ing 169.254.169.254 会 otherwise
 # │  参数：response
 # │  返回：（未标注类型）
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -243,7 +243,7 @@ async def _ssrf_redirect_guard(response):
 
 
 # ┌── 异步函数（协程） def _download_media()
-# │  作用：SSRF-safe streaming download with exponential backoff (2s/4s/8s). ``retry_all=False`` (images)
+# │  作用：SSRF-safe streaming download 带 exponential backoff (2s/4s/8s). ``retry_all=False`` (images)
 # │  参数：url: str, destination: Path, max_retries: int, media_label: str, accept: str, max_bytes: int, timeout: float, retry_all: bool
 # │  返回：Path
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -335,7 +335,7 @@ async def _download_media(
 
 
 # ┌── 异步函数（协程） def _download_image()
-# │  作用：Download an image with SSRF protection and error-class-aware retry.
+# │  作用：Download image 带 SSRF protection 且错误-类-aware 重试.
 # │  参数：image_url: str, destination: Path, max_retries: int = 3
 # │  返回：Path
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -351,7 +351,7 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
 
 
 # ┌── 函数 def _image_to_base64_data_url()
-# │  作用：``data:<mime>;base64,...`` for a file (MIME from extension when not given).
+# │  作用：``data:<mime>;base64,...`` 用于文件 (MIME 从 extension 当不 given).
 # │  参数：image_path: Path, mime_type: Optional[str] = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -386,7 +386,7 @@ _SIZE_ERROR_HINTS = (
 
 
 # ┌── 函数 def _is_image_size_error()
-# │  作用：Detect if an API error is related to image or payload size.
+# │  作用：检测若 API 错误是 related image 或 payload size.
 # │  参数：error: Exception
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ def _is_image_size_error(error: Exception) -> bool:
 
 
 # ┌── 函数 def _build_scale_note()
-# │  作用：Coordinate-mapping disclosure for downscale and/or region crop; ``None`` when neither applied.
+# │  作用：Coordinate-mapping disclosure 用于 downscale 且/或 region crop; ``None`` 当 neither applied.
 # │  参数：scale_info: Optional[dict], crop_offset: Optional[dict]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -424,7 +424,7 @@ def _build_scale_note(scale_info: Optional[dict], crop_offset: Optional[dict]) -
 
 
 # ┌── 函数 def _import_pillow_for_resize()
-# │  作用：Return ``PIL.Image`` or None (Pillow is a lazy-installable soft dependency). ``prompt=False``:
+# │  作用：返回 ``PIL.Image`` 或 None (Pillow 是 lazy-installable soft dependency). ``提示词=False``:。
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -452,7 +452,7 @@ def _import_pillow_for_resize():
 
 
 # ┌── 函数 def _resize_image_for_vision()
-# │  作用：Base64 data URL, progressively downscaled with Pillow while over budget.
+# │  作用：Base64 data URL, progressively downscaled 带 Pillow 当 over 预算.
 # │  参数：image_path: Path, mime_type: Optional[str] = None, max_base64_bytes: int = _RESIZE_TARGET_BYTES, max_dimension: Optional[int] = None, scale_out: Optional[dict] = None, force_jpeg: bool = False
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ _GEMINI_PROVIDERS = frozenset({"google", "gemini", "google-gemini", "google-vert
 
 
 # ┌── 函数 def _profile_rejects_tool_media()
-# │  作用：Hard veto: the provider's ``ProviderProfile`` declares
+# │  作用：Hard veto: 服务商's ``ProviderProfile`` declares
 # │  参数：provider: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -589,7 +589,7 @@ def _profile_rejects_tool_media(provider: str) -> bool:
 
 
 # ┌── 函数 def _supports_media_in_tool_results()
-# │  作用：Whether provider+model accepts image content inside a tool-result message. Unknown
+# │  作用：是否 服务商+模型接受 image 内容 inside 工具-结果消息. Unknown。
 # │  参数：provider: str, model: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -620,7 +620,7 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
 
 
 # ┌── 函数 def _should_use_native_vision_fast_path()
-# │  作用：True when image routing resolves to ``native`` AND the provider accepts images in tool
+# │  作用：当 image routing resolves ``native`` 且服务商接受 images 在工具 时返回 True。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -656,7 +656,7 @@ def _should_use_native_vision_fast_path() -> bool:
 
 
 # ┌── 函数 def _build_native_vision_tool_result()
-# │  作用：Multimodal tool-result envelope. The text part is intentionally minimal (the model already
+# │  作用：Multimodal 工具-结果 envelope. 文本 part 是 intentionally minimal ( 模型已
 # │  参数：image_url: str, question: str, image_data_url: str, image_size_bytes: int, scale_note: Optional[str] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -700,7 +700,7 @@ def _unlink_quietly(path: Optional[Path]) -> None:
 
 
 # ┌── 类 class _ImagePrepError（继承自：ValueError）
-# │  说明：Raised by :func:`_prepare_image`; the message is user-facing.
+# │  说明：抛出由 :func:`_prepare_image`; 消息是 面向用户的.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _ImagePrepError(ValueError):
@@ -708,7 +708,7 @@ class _ImagePrepError(ValueError):
 
 
 # ┌── 类 class _PreparedImage（继承自：NamedTuple）
-# │  说明：Temp image ready to encode; ``path`` is owned by the caller (delete it).
+# │  说明：Temp image ready encode; ``路径`` 是持有的由 caller (delete 它).
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _PreparedImage(NamedTuple):
@@ -720,7 +720,7 @@ class _PreparedImage(NamedTuple):
 
 
 # ┌── 异步函数（协程） def _prepare_image()
-# │  作用：Resolve → materialize → normalize → (validate) → (crop). Raises ``_ImagePrepError``.
+# │  作用：Resolve → materialize → 归一化 → (校验) → (crop). 抛出 ``_ImagePrepError``.
 # │  参数：image_url: str, task_id: Optional[str], region: Optional[list], validate_decode: bool
 # │  返回：_PreparedImage
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -789,7 +789,7 @@ def _too_large_message(image_data_url: str) -> str:
 
 
 # ┌── 异步函数（协程） def _resize_prepared()
-# │  作用：Run :func:`_resize_image_for_vision` on the CPU executor for a prepared image.
+# │  作用：运行 :func:`_resize_image_for_vision` 在…上 CPU executor 用于 prepared image.
 # │  参数：prepared: _PreparedImage, scale_info: dict, **kwargs
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -804,7 +804,7 @@ async def _resize_prepared(prepared: _PreparedImage, scale_info: dict, **kwargs)
 
 
 # ┌── 异步函数（协程） def _vision_analyze_native()
-# │  作用：Fast path for vision-capable main models: a ``_multimodal`` envelope dict on success,
+# │  作用：Fast 路径用于 vision-capable main 模型: ``_multimodal`` envelope 字典在…上 success,
 # │  参数：image_url: str, question: str, task_id: Optional[str] = None, region: Optional[list] = None
 # │  返回：Any
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -862,7 +862,7 @@ async def _vision_analyze_native(
 
 
 # ┌── 函数 def _aux_call_kwargs()
-# │  作用：``async_call_llm`` kwargs with ``auxiliary.vision.timeout`` / ``.temperature`` from config.
+# │  作用：``async_call_llm`` kwargs 带 ``辅助的.vision.超时`` / ``.temperature`` 从配置.
 # │  参数：messages: list, model: Optional[str], default_timeout: float, min_timeout: Optional[float] = ...
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -887,7 +887,7 @@ def _aux_call_kwargs(messages: list, model: Optional[str], default_timeout: floa
 
 
 # ┌── 函数 def _media_messages()
-# │  作用：Single user message: text + one ``image_url``/``video_url`` data-URL part.
+# │  作用：Single user 消息: 文本 + one ``image_url``/``video_url`` data-URL part.
 # │  参数：user_prompt: str, part_type: str, data_url: str
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -945,7 +945,7 @@ def _debug_call_data(kind: str, source: str, user_prompt: str, model) -> dict:
 
 
 # ┌── 异步函数（协程） def _call_vision_llm()
-# │  作用：Aux vision LLM analysis text, retrying once on empty content (reasoning-only response).
+# │  作用：Aux vision LLM analysis 文本, retrying 一旦在…上 empty 内容 (reasoning-仅响应).
 # │  参数：call_kwargs: dict, empty_log: str, response = None
 # │  返回：（未标注类型）
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -967,7 +967,7 @@ async def _call_vision_llm(call_kwargs: dict, empty_log: str, response=None):
 
 
 # ┌── 异步函数（协程） def _run_analysis()
-# │  作用：Aux-LLM analysis skeleton for image/video: interrupt check → ``stage`` → JSON result.
+# │  作用：Aux-LLM analysis skeleton 用于 image/video: interrupt 检查 → ``阶段`` → JSON 结果.
 # │  参数：kind: str, source: str, user_prompt: str, model: Optional[str], stage: Callable[[str, dict, list], Awaitable[tuple]]
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1034,7 +1034,7 @@ async def _run_analysis(
 
 
 # ┌── 异步函数（协程） def vision_analyze_tool()
-# │  作用：Describe an image (URL, local path, data: URL) with the auxiliary vision LLM. ``user_prompt``
+# │  作用：描述 image (URL, local 路径, data: URL) 带辅助的 vision LLM. ``user_prompt``
 # │  参数：image_url: str, user_prompt: str, model: str = None, task_id: Optional[str] = None, region: Optional[list] = None
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1087,7 +1087,7 @@ async def vision_analyze_tool(
 
 
 # ┌── 函数 def check_video_requirements()
-# │  作用：True when ``call_llm(task="vision")`` could resolve a client.
+# │  作用：当 ``call_llm(task="vision")`` 可以 resolve 客户端. 时返回 True。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1111,7 +1111,7 @@ def check_video_requirements() -> bool:
 
 
 # ┌── 函数 def check_vision_requirements()
-# │  作用：Image gate (``vision_analyze``, ``browser_vision``): an aux vision client OR the native fast
+# │  作用：Image gate (``vision_analyze``, ``browser_vision``): aux vision 客户端或 native fast
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1171,7 +1171,7 @@ VISION_ANALYZE_SCHEMA = {
 
 
 # ┌── 函数 def _configured_aux_model()
-# │  作用：First non-empty ``auxiliary.<section>.model`` from config.yaml, else the first non-empty
+# │  作用：First non-empty ``辅助的.<section>.模型`` 从配置.YAML, 否则 first non-empty
 # │  参数：sections: tuple, env_vars: tuple
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1243,7 +1243,7 @@ _VIDEO_SIZE_WARN_BYTES = 20 * 1024 * 1024
 
 
 # ┌── 函数 def _detect_video_mime_type()
-# │  作用：Video MIME type from extension, or None if unsupported.
+# │  作用：Video MIME 类型从 extension, 或 None 若 unsupported.
 # │  参数：video_path: Path
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1275,7 +1275,7 @@ def _video_to_base64_data_url(video_path: Path, mime_type: Optional[str] = None)
 
 
 # ┌── 异步函数（协程） def _materialize_video()
-# │  作用：Local video path for a terminal-backend path, local file, or HTTP(S) URL. Only files created
+# │  作用：Local video 路径用于终端-backend 路径, local 文件, 或 HTTP(S) URL. 仅文件已创建
 # │  参数：video_url: str, task_id: Optional[str], temp_paths: list
 # │  返回：Path
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。
@@ -1334,7 +1334,7 @@ async def _materialize_video(video_url: str, task_id: Optional[str], temp_paths:
 
 
 # ┌── 异步函数（协程） def video_analyze_tool()
-# │  作用：Analyze a video via multimodal LLM. Returns JSON {success, analysis}.
+# │  作用：Analyze video via multimodal LLM. 返回 JSON {success, analysis}.
 # │  参数：video_url: str, user_prompt: str, model: str = None, task_id: Optional[str] = None
 # │  返回：str
 # │  【语法】async def 定义的是协程函数：调用它得到协程对象，必须 await 或交给事件循环才会真正执行。

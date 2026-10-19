@@ -99,7 +99,7 @@ def _tc_name(tool_call: Any) -> str:
 
 
 # ┌── 函数 def _record_persisted_path_for_stub()
-# │  作用：Record the spillover file path so a later result-reference stub can't dangle (best-effort).
+# │  作用：记录溢出文件的路径，使得后续的结果引用桩不会悬空（尽最大努力）。
 # │  参数：agent, tool_call_id: str, function_result
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ def _record_persisted_path_for_stub(agent, tool_call_id: str, function_result) -
 
 
 # ┌── 函数 def _ensure_file_checkpoint()
-# │  作用：Checkpoint the same workspace path that the file tool will mutate, resolved the way
+# │  作用：对文件工具将要修改的同一工作区路径做检查点（用与……相同的方式解析）。
 # │  参数：agent, function_name: str, function_args: dict, effective_task_id: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ def _ensure_file_checkpoint(agent, function_name: str, function_args: dict, effe
 
 
 # ┌── 函数 def _budget_for_agent()
-# │  作用：Tool-result BudgetConfig scaled to the agent's context window. Unknown length goes
+# │  作用：按 agent 的上下文窗口缩放后的「工具结果预算配置」。未知长度时……
 # │  参数：agent
 # │  返回：BudgetConfig
 # └──────────────────────────────────────────────────────────────
@@ -168,7 +168,7 @@ _AUTHORIZATION_GATE_LOCK_TIMEOUT_S = 360.0
 
 
 # ┌── 函数 def _authorization_gate_lock_timeout()
-# │  作用：Authorization-lock bound = ``tools.approval_human_wait.human_wait_ceiling`` (approval timeout +
+# │  作用：授权锁的上限 = ``tools.approval_human_wait.human_wait_ceiling``（审批超时 + ……）。
 # │  参数：无
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -201,7 +201,7 @@ def _authorization_gate_lock_timeout() -> float:
 
 
 # ┌── 类 class _BatchAbandoned（继承自：BaseException）
-# │  说明：Raised inside a worker when the batch was abandoned before dispatch; a BaseException
+# │  说明：在 worker 内部、且批次在派发前被放弃时抛出；这是一个 BaseException……
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _BatchAbandoned(BaseException):
@@ -210,7 +210,7 @@ class _BatchAbandoned(BaseException):
 
 
 # ┌── 函数 def _parse_tool_arguments()
-# │  作用：Parse model-emitted arguments without repairing or coercing them.
+# │  作用：解析模型给出的参数，不做修复、也不做强制类型转换。
 # │  参数：raw_arguments: Any
 # │  返回：tuple[dict, Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -232,7 +232,7 @@ def _parse_tool_arguments(raw_arguments: Any) -> tuple[dict, Optional[str]]:
 
 
 # ┌── 函数 def _resolve_concurrent_tool_timeout()
-# │  作用：Per-batch concurrent deadline: ``timeouts.tools.concurrent_batch`` wins,
+# │  作用：每个批次的并发截止时间：以 ``timeouts.tools.concurrent_batch`` 为准，……
 # │  参数：无
 # │  返回：float | None
 # └──────────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ def _resolve_concurrent_tool_timeout() -> float | None:
 
 
 # ┌── 函数 def _flush_session_db_after_tool_progress()
-# │  作用：Flush tool-call progress to the session DB before projecting it to any UI: tool side
+# │  作用：在把工具调用进度投射到任何 UI 之前，先冲刷到会话数据库：工具侧……
 # │  参数：agent, messages: list, stage: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -284,7 +284,7 @@ def _flush_session_db_after_tool_progress(agent, messages: list, *, stage: str) 
 
 
 # ┌── 函数 def _image_generate_parallel_limit()
-# │  作用：Configured image-generation parallelism cap (conservative: backend bursts hit rate limits).
+# │  作用：配置的图像生成并发上限（偏保守：后端突发请求会撞上速率限制）。
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -310,7 +310,7 @@ def _image_generate_parallel_limit() -> int:
 
 
 # ┌── 函数 def _max_workers_for_tool_batch()
-# │  作用：Return the worker cap for a concurrent tool batch.
+# │  作用：返回一个并发工具批次的 worker 上限。
 # │  参数：runnable_calls
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -327,7 +327,7 @@ def _max_workers_for_tool_batch(runnable_calls) -> int:
 
 
 # ┌── 函数 def _ra()
-# │  作用：Lazy reference to ``run_agent`` so patches like ``run_agent._set_interrupt`` work.
+# │  作用：对 ``run_agent`` 的惰性引用，使得 ``run_agent._set_interrupt`` 这类补丁能生效。
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -339,7 +339,7 @@ def _ra():
 
 
 # ┌── 函数 def _is_interpreter_shutdown_submit_error()
-# │  作用：Shutdown-race predicate; ``tools.interpreter_shutdown`` knows both CPython message variants.
+# │  作用：关闭竞态的判定条件；``tools.interpreter_shutdown`` 同时认识 CPython 的两种退出消息变体。
 # │  参数：exc: RuntimeError
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -360,7 +360,7 @@ _emit_terminal_post_tool_call = emit_terminal_post_tool_call
 
 
 # ┌── 类 class _ToolCallRef
-# │  说明：Identity of one tool call as every hook / result message sees it: the (possibly
+# │  说明：一次工具调用在「每个钩子 / 结果消息」视角下的身份：即（可能被……的）……
 # │  成员：共 4 个方法；对外可用 4 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -375,7 +375,7 @@ class _ToolCallRef:
     trace: list
 
     # ┌── 函数 def middleware_kwargs()
-    # │  作用：Keyword form ``_run_agent_tool_execution_middleware`` (and tests patching it) expect.
+    # │  作用：关键字形式的 ``_run_agent_tool_execution_middleware``（以及打在它上面的测试补丁）所期望的。
     # │  参数：self
     # │  返回：dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -388,7 +388,7 @@ class _ToolCallRef:
         }
 
     # ┌── 函数 def emit_post()
-    # │  作用：Emit the one terminal ``post_tool_call`` for this call (``outcome`` = status /
+    # │  作用：为这次调用发出唯一的终局 ``post_tool_call``（``outcome`` = status / ……）。
     # │  参数：self, agent, result, trace = ..., **outcome
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -408,7 +408,7 @@ class _ToolCallRef:
         )
 
     # ┌── 函数 def emit_cancelled()
-    # │  作用：Synthesize the ``cancelled`` result for a KeyboardInterrupt mid-tool and emit its hook.
+    # │  作用：为工具执行中途的 KeyboardInterrupt 合成 ``cancelled`` 结果，并发出它的钩子。
     # │  参数：self, agent, start_time: float
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -436,7 +436,7 @@ class _ToolCallRef:
 
 
 # ┌── 函数 def _append_skipped_tool_results()
-# │  作用：Append one ``tool`` result per unstarted call so the assistant tool-call turn never
+# │  作用：为每个尚未开始的调用追加一条 ``tool`` 结果，使得助手的工具调用轮次永不……
 # │  参数：agent, messages: list, tool_calls, effective_task_id: str, content: str, hook_error_type: Optional[str] = ..., hook_id: Optional[Callable[[Any], str]] = ..., flush_stage: Optional[str] = ...  …共 9 个
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -476,7 +476,7 @@ def _append_skipped_tool_results(
 
 
 # ┌── 函数 def _tool_search_scoped_names()
-# │  作用：Deferrable tool names the session may invoke via ``tool_call``; the unwrap bypasses
+# │  作用：会话可以通过 ``tool_call`` 调用的、可延迟的工具名；unwrap 会绕过……
 # │  参数：agent
 # │  返回：frozenset
 # └──────────────────────────────────────────────────────────────
@@ -519,7 +519,7 @@ def _tool_search_scoped_names(agent) -> frozenset:
 
 
 # ┌── 函数 def _canonical_tool_name()
-# │  作用：Map legacy tool-name aliases BEFORE agent-loop dispatch.
+# │  作用：在 agent 主循环派发之前，先把旧式的工具名别名做映射。
 # │  参数：function_name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -532,7 +532,7 @@ def _canonical_tool_name(function_name: str) -> str:
 
 
 # ┌── 函数 def _unwrap_tool_search_call()
-# │  作用：Peel the ``tool_call`` bridge so downstream hooks (checkpointing, guardrails, plugin
+# │  作用：剥开 ``tool_call`` 桥接层，使下游钩子（检查点、护栏、插件……）……
 # │  参数：agent, function_name: str, function_args: dict, flatten_probe: bool = ...
 # │  返回：tuple[str, dict, Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -589,7 +589,7 @@ def _unwrap_tool_search_call(
 
 
 # ┌── 类 class _ParsedCall
-# │  说明：One model tool call after alias canonicalization, arg parsing and bridge unwrap.
+# │  说明：经过别名归一化、参数解析、桥接 unwrap 之后的一条模型工具调用。
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -641,7 +641,7 @@ class _ManagedToolResult:
 
 
 # ┌── 类 class _ToolTimeoutResult（继承自：str）
-# │  说明：Marker for a synthesized sequential-tool timeout result.
+# │  说明：为合成的「顺序工具超时」结果所做的标记。
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _ToolTimeoutResult(str):
@@ -649,7 +649,7 @@ class _ToolTimeoutResult(str):
 
 
 # ┌── 类 class _ToolCancelledResult（继承自：str）
-# │  说明：Marker for a synthesized sequential-tool user-interrupt result; its terminal
+# │  说明：为合成的「顺序工具用户中断」结果所做的标记；其终局……
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 class _ToolCancelledResult(str):
@@ -658,7 +658,7 @@ class _ToolCancelledResult(str):
 
 
 # ┌── 类 class _ConcurrentToolAuthorizationGate
-# │  说明：Serialize policy prompts and exclude human approval waits from batch deadlines.
+# │  说明：序列化策略提示词，并把「人工审批等待」排除在批次截止时间之外。
 # │  成员：共 4 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _ConcurrentToolAuthorizationGate:
@@ -752,7 +752,7 @@ class _ConcurrentToolAuthorizationGate:
             self._serialization_lock.release()
 
     # ┌── 函数 def excluded_seconds()
-    # │  作用：Return human-approval wait seconds accrued since the batch started.
+    # │  作用：返回自批次开始以来累计的「人工审批等待」秒数。
     # │  参数：self
     # │  返回：float
     # └──────────────────────────────────────────────────────────────
@@ -763,7 +763,7 @@ class _ConcurrentToolAuthorizationGate:
 
 
 # ┌── 函数 def _registered_tool_worker()
-# │  作用：Track this worker tid for interrupt fan-out (``AIAgent.interrupt()``); on ANY exit
+# │  作用：记录这个 worker 的线程 id，用于中断的扇出（``AIAgent.interrupt()``）；在任何退出……
 # │  参数：agent
 # │  返回：（未标注类型）
 # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -790,7 +790,7 @@ _NO_REASON = object()
 
 
 # ┌── 函数 def _interrupt_worker_tids()
-# │  作用：Raise the interrupt bit on each worker tid (best-effort, via ``run_agent``).
+# │  作用：在每个 worker 线程 id 上置位中断标志（尽最大努力，经由 ``run_agent``）。
 # │  参数：agent, tids, reason = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -803,7 +803,7 @@ def _interrupt_worker_tids(agent, tids, *, reason=_NO_REASON) -> None:
 
 
 # ┌── 函数 def _set_worker_activity_callback()
-# │  作用：The activity callback is thread-local: bind it on THIS thread so tool-layer heartbeats fire.
+# │  作用：活跃度回调是线程局部的：必须在「当前线程」上绑定，工具层的活跃心跳才会触发。
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -820,7 +820,7 @@ _TOOL_ACTIVITY_HEARTBEAT_INTERVAL_S = 30.0
 
 
 # ┌── 函数 def _run_tool_activity_heartbeat()
-# │  作用：Daemon thread stamping ``agent._touch_activity`` every ``interval`` seconds until
+# │  作用：守护线程，每隔 ``interval`` 秒打一次 ``agent._touch_activity`` 时间戳，直到……
 # │  参数：agent, stop_event: threading.Event, label: str, interval: float = _TOOL_ACTIVITY_HEARTBEAT_INTERVAL_S
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -842,7 +842,7 @@ def _run_tool_activity_heartbeat(
 
 
 # ┌── 函数 def _run_with_activity_heartbeat()
-# │  作用：Run ``fn()`` under the activity heartbeat; covers both executor paths.
+# │  作用：在活跃心跳的保护下运行 ``fn()``；覆盖两条执行器路径。
 # │  参数：agent, function_name: str, fn
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -871,7 +871,7 @@ def _run_with_activity_heartbeat(agent, function_name: str, fn):
 
 
 # ┌── 函数 def _blocked_tool_result()
-# │  作用：Synthesize the result for a call blocked by scope/plugin (``block_message``) or by
+# │  作用：为被 scope/插件（``block_message``）或……挡住的一次调用合成结果。
 # │  参数：agent, ref: _ToolCallRef, block_message: Optional[str], block_error_type: str, guardrail_decision
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -890,7 +890,7 @@ def _blocked_tool_result(agent, ref: _ToolCallRef, *, block_message: Optional[st
 
 
 # ┌── 函数 def _pre_tool_block()
-# │  作用：Run ``pre_tool_call`` plugin hooks; returns ``(block_message, final_args)`` with any
+# │  作用：运行 ``pre_tool_call`` 插件钩子；返回 ``(block_message, final_args)``，附带任何……
 # │  参数：agent, ref: _ToolCallRef
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -915,7 +915,7 @@ def _pre_tool_block(agent, ref: _ToolCallRef):
 
 
 # ┌── 函数 def _dispatch_authorized_once()
-# │  作用：Hermes policy (scope → plugin pre-hooks → guardrails) then the one real dispatch.
+# │  作用：Hermes 的策略链（scope → 插件 pre-hooks → 护栏），其后才是真正的一次派发。
 # │  参数：agent, state: _ManagedToolResult, ref: _ToolCallRef, execute, scope_block: str | None, display_index: int | None, begin_execution, authorization_gate: _ConcurrentToolAuthorizationGate | None
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -975,7 +975,7 @@ def _dispatch_authorized_once(
 
 
 # ┌── 函数 def _run_agent_tool_execution_middleware()
-# │  作用：Run Relay rewrites before Hermes policy and dispatch exactly once.
+# │  作用：在 Hermes 策略和派发之前，恰好运行一次 Relay 重写。
 # │  参数：agent, function_name: str, function_args: dict, effective_task_id: str, tool_call_id: str, execute, scope_block: str | None = ..., display_index: int | None = ...  …共 11 个
 # │  返回：_ManagedToolResult
 # └──────────────────────────────────────────────────────────────
@@ -1065,7 +1065,7 @@ _SEQUENTIAL_INTERRUPT_POLL_SECONDS = 1.0
 
 
 # ┌── 函数 def _resolve_sequential_tool_timeout()
-# │  作用：Deadline for one sequential call: ``timeouts.tools.sequential_call``, else the
+# │  作用：单次顺序调用的截止时间：以 ``timeouts.tools.sequential_call`` 为准，否则取……
 # │  参数：无
 # │  返回：float | None
 # └──────────────────────────────────────────────────────────────
@@ -1092,7 +1092,7 @@ _SEQUENTIAL_DEADLINE_EXEMPT_TOOLS = frozenset({"delegate_task", "manage_connecti
 
 
 # ┌── 函数 def _abandoned_sequential_result()
-# │  作用：Emit the terminal post_tool_call for a worker the sequential runner gave up on
+# │  作用：为顺序执行器已经放弃的那个 worker 发出终局 post_tool_call……
 # │  参数：agent, ref: _ToolCallRef, message: str, result_cls, **outcome
 # │  返回：_ManagedToolResult
 # └──────────────────────────────────────────────────────────────
@@ -1105,7 +1105,7 @@ def _abandoned_sequential_result(agent, ref: _ToolCallRef, message: str, result_
 
 
 # ┌── 函数 def _poll_sequential_future()
-# │  作用：Wait for the worker in interrupt-poll slices, extending the deadline by human approval
+# │  作用：以「中断轮询」的切片方式等待 worker，并按人工审批……来延长截止时间。
 # │  参数：agent, future, function_name: str, deadline: float | None, started: float, authorization_gate
 # │  返回：tuple[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1138,7 +1138,7 @@ def _poll_sequential_future(agent, future, function_name: str, deadline: float |
 
 
 # ┌── 函数 def _run_sequential_tool_execution_middleware()
-# │  作用：Run one sequential call on a worker thread under the concurrent executor's deadline.
+# │  作用：在并发执行器的截止时间约束下，于一个 worker 线程上运行一次顺序调用。
 # │  参数：agent, function_name: str, function_args: dict, effective_task_id: str, tool_call_id: str, execute, scope_block: str | None = ..., display_index: int | None = ...  …共 9 个
 # │  返回：_ManagedToolResult
 # └──────────────────────────────────────────────────────────────
@@ -1225,7 +1225,7 @@ def _run_sequential_tool_execution_middleware(
 
 
 # ┌── 函数 def _safe_callback()
-# │  作用：Invoke a UI/bridge callback if set; a failing callback is logged, never fatal.
+# │  作用：若设置了 UI/桥接回调则调用它；回调失败只记日志，绝不会致命。
 # │  参数：callback, label: str, *args, **kwargs
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1241,7 +1241,7 @@ def _safe_callback(callback, label: str, *args, **kwargs) -> None:
 
 
 # ┌── 函数 def _begin_tool_execution()
-# │  作用：Run user-visible and checkpoint preflight on final tool arguments.
+# │  作用：对最终的工具参数，运行「面向用户」与检查点相关的预检。
 # │  参数：agent, ref: _ToolCallRef, display_index: int | None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1285,7 +1285,7 @@ def _begin_tool_execution(agent, ref: _ToolCallRef, display_index: int | None) -
 
 
 # ┌── 函数 def _emit_tool_complete_and_risk()
-# │  作用：Fire ``tool_complete_callback`` (unless blocked) then the ``tool.output_risk`` projection.
+# │  作用：触发 ``tool_complete_callback``（除非被挡住），随后做 ``tool.output_risk`` 的风险投射。
 # │  参数：agent, ref: _ToolCallRef, result, risk_metadata, blocked: bool
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1307,7 +1307,7 @@ def _emit_tool_complete_and_risk(agent, ref: _ToolCallRef, result, risk_metadata
 
 
 # ┌── 函数 def _commit_tool_result()
-# │  作用：Observe (``observed`` results only) and log the outcome; mark the tool done; persist/
+# │  作用：观察（仅 ``observed`` 结果）并记录结果；标记工具为已完成；持久化/……
 # │  参数：agent, messages: list, ref: _ToolCallRef, function_result, budget: BudgetConfig, tool_duration: float, is_error: bool, blocked: bool  …共 13 个
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1400,7 +1400,7 @@ def _commit_tool_result(
 
 
 # ┌── 函数 def _finalize_tool_batch()
-# │  作用：Per-turn aggregate budget enforcement, then /steer injection — in that order, so the
+# │  作用：先执行「每轮聚合预算」的强制，再做 /steer 注入——顺序固定，以便……
 # │  参数：agent, messages: list, effective_task_id: str, num_tools: int, budget: BudgetConfig
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1434,7 +1434,7 @@ def _preview(text: str, limit: int) -> str:
 
 
 # ┌── 函数 def _print_tool_completed()
-# │  作用：Non-quiet ``✅ Tool N completed`` line (full result under verbose logging).
+# │  作用：非安静模式下打印的 ``✅ Tool N completed`` 行（详细日志下显示完整结果）。
 # │  参数：agent, index: int, tool_duration: float, result
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1451,7 +1451,7 @@ def _print_tool_completed(agent, index: int, tool_duration: float, result) -> No
 
 
 # ┌── 类 class _ToolOutcome
-# │  说明：One finished worker slot of a concurrent batch (``ref`` holds the final name/args/trace).
+# │  说明：一个并发批次里已完成的 worker 槽位（``ref`` 持有最终的名字/参数/调用链）。
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -1466,7 +1466,7 @@ class _ToolOutcome:
 
 
 # ┌── 函数 def _start_order_gate_timeout()
-# │  作用：The gate bound must sit UNDER the batch deadline, else parked workers are falsely
+# │  作用：门限值必须低于批次截止时间，否则 parked 的 worker 会被错误地……
 # │  参数：batch_timeout: float | None
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -1481,7 +1481,7 @@ def _start_order_gate_timeout(batch_timeout: float | None) -> float:
 
 
 # ┌── 类 class _StartOrderGate
-# │  说明：Serialize worker dispatch by submit order (prompts appear in call order); ``abandon()``
+# │  说明：按提交顺序串行化 worker 派发（提示按调用顺序出现）；``abandon()``……
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _StartOrderGate:
@@ -1510,7 +1510,7 @@ class _StartOrderGate:
             self._condition.notify_all()
 
     # ┌── 函数 def begin_in_order()
-    # │  作用：Wait for ``order``, run ``callback``, advance. Returns False if abandoned.
+    # │  作用：等待 ``order``，运行 ``callback``，然后推进。若已被放弃则返回 False。
     # │  参数：self, order: int, callback = None, tool_name: str = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1543,7 +1543,7 @@ class _StartOrderGate:
 
 
 # ┌── 类 class _WorkerStartOnce
-# │  说明：One worker's handle on the start-order gate: advances at most once, raising
+# │  说明：一个 worker 对「启动顺序门」的句柄：最多推进一次，若……则抛出……
 # │  成员：共 2 个方法；对外可用 1 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _WorkerStartOnce:
@@ -1573,7 +1573,7 @@ class _WorkerStartOnce:
 
 
 # ┌── 类 class _ConcurrentBatch
-# │  说明：Shared state of one concurrent tool batch: per-slot results, the start-order and
+# │  说明：一个并发工具批次的共享状态：各槽位结果、启动顺序以及……
 # │  成员：共 7 个方法；对外可用 4 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _ConcurrentBatch:
@@ -1600,7 +1600,7 @@ class _ConcurrentBatch:
         self.timed_out_indices: set[int] = set()
 
     # ┌── 函数 def _dispatch_worker()
-    # │  作用：Run one call through the middleware and synthesize its slot outcome; ``None`` when
+    # │  作用：让一次调用经过中间件并合成它的槽位结果；当……时为 ``None``。
     # │  参数：self, index: int, ref: _ToolCallRef, scope_block, start_gate: _WorkerStartOnce
     # │  返回：Optional[_ToolOutcome]
     # └──────────────────────────────────────────────────────────────
@@ -1660,7 +1660,7 @@ class _ConcurrentBatch:
         return _ToolOutcome(ref, result, duration, is_error, blocked)
 
     # ┌── 函数 def run_worker()
-    # │  作用：Worker function executed in a thread.
+    # │  作用：在线程中执行的 worker 函数。
     # │  参数：self, index: int, start_order: int
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1683,7 +1683,7 @@ class _ConcurrentBatch:
                     start_gate.advance()  # keep later-ordered workers moving
 
     # ┌── 函数 def submit_all()
-    # │  作用：Submit every runnable slot; on interpreter shutdown, synthesize error results
+    # │  作用：提交每一个可运行的槽位；在解释器关闭时，合成错误结果……
     # │  参数：self, executor, runnable: list[int]
     # │  返回：tuple[list, dict]
     # └──────────────────────────────────────────────────────────────
@@ -1726,7 +1726,7 @@ class _ConcurrentBatch:
         return [self.parsed_calls[future_to_index[f]].name for f in not_done if f in future_to_index]
 
     # ┌── 函数 def await_completion()
-    # │  作用：Wait with periodic heartbeats and interrupt checks; True when the batch was
+    # │  作用：以周期性心跳和中断检查来等待；当批次被……时返回 True。
     # │  参数：self, futures, future_to_index, deadline: float | None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1791,7 +1791,7 @@ class _ConcurrentBatch:
             return True
 
     # ┌── 函数 def run()
-    # │  作用：Dispatch the runnable calls on a daemon pool and wait for the batch.
+    # │  作用：在守护线程池上派发可运行的调用，并等待整个批次完成。
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1819,7 +1819,7 @@ class _ConcurrentBatch:
 
 
 # ┌── 函数 def _unfinished_tool_result()
-# │  作用：Synthesize the result for a slot no worker filled (deadline, interrupt, or a thread
+# │  作用：为没有任何 worker 填充的槽位合成结果（因截止时间、中断，或线程……）。
 # │  参数：agent, ref: _ToolCallRef, timed_out: bool, timeout_s: float | None
 # │  返回：tuple[str, float, Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -1846,7 +1846,7 @@ def _unfinished_tool_result(agent, ref: _ToolCallRef, *, timed_out: bool, timeou
 
 
 # ┌── 函数 def _append_batch_results()
-# │  作用：Append every slot's result in original call order; returns False at the first
+# │  作用：按原始调用顺序追加每个槽位的结果；在遇到第一个……时返回 False。
 # │  参数：agent, messages: list, effective_task_id: str, batch: _ConcurrentBatch, budget: BudgetConfig
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1890,7 +1890,7 @@ def _append_batch_results(agent, messages: list, effective_task_id: str, batch: 
 
 
 # ┌── 函数 def execute_tool_calls_concurrent()
-# │  作用：Execute tool calls concurrently; results are appended in original call order.
+# │  作用：并发执行工具调用；结果按原始调用顺序追加。
 # │  参数：agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, finalize: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1944,7 +1944,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
 
 
 # ┌── 函数 def _start_quiet_tool_spinner()
-# │  作用：Start the quiet-mode kawaii spinner for one tool call, or return None; ``gate=False``
+# │  作用：为一个工具调用启动安静模式下的可爱转圈动画，或返回 None；``gate=False``……
 # │  参数：agent, function_name: str, function_args: dict, gate: bool = ..., label: Optional[str] = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1965,7 +1965,7 @@ def _start_quiet_tool_spinner(agent, function_name: str, function_args: dict, *,
 
 
 # ┌── 函数 def _finish_quiet_tool_spinner()
-# │  作用：Stop the spinner with the cute completion line, or print it when no spinner ran.
+# │  作用：用可爱的完成行停下转圈动画，或在没有动画时直接打印它。
 # │  参数：agent, spinner, function_name: str, function_args: dict, tool_duration: float, result
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1996,7 +1996,7 @@ def _delegate_spinner_label(function_args: dict) -> str:
 
 
 # ┌── 类 class _SequentialDispatch
-# │  说明：How one sequential call executes: the callable plus its spinner/error policy.
+# │  说明：一次顺序调用如何执行：可调用对象，加上它的转圈动画/错误策略。
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -2015,7 +2015,7 @@ class _SequentialDispatch:
 
 
 # ┌── 函数 def _resolve_sequential_dispatch()
-# │  作用：Pick the execute callable for one sequential call and start its spinner. Precedence:
+# │  作用：为一次顺序调用挑选执行可调用对象并启动其转圈动画。优先级：……
 # │  参数：agent, ref: _ToolCallRef, messages: list
 # │  返回：_SequentialDispatch
 # └──────────────────────────────────────────────────────────────
@@ -2091,7 +2091,7 @@ def _resolve_sequential_dispatch(agent, ref: _ToolCallRef, messages: list) -> _S
 
 
 # ┌── 函数 def _skip_remaining_sequential()
-# │  作用：Announce an interrupt and append one skipped result per unstarted call; False when
+# │  作用：宣布一次中断，并为每个未开始的调用追加一条「已跳过」结果；当……时返回 False。
 # │  参数：agent, messages: list, remaining, effective_task_id: str, notice: str, **skip_kwargs
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2104,7 +2104,7 @@ def _skip_remaining_sequential(agent, messages: list, remaining, effective_task_
 
 
 # ┌── 函数 def _append_invalid_arguments_result()
-# │  作用：Emit + append the parse-error result for a call whose arguments were not a JSON object.
+# │  作用：为参数不是 JSON 对象的调用发出并追加「解析错误」结果。
 # │  参数：agent, messages: list, ref: _ToolCallRef, parse_error: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2117,7 +2117,7 @@ def _append_invalid_arguments_result(agent, messages: list, ref: _ToolCallRef, p
 
 
 # ┌── 函数 def _run_sequential_call()
-# │  作用：Run one sequential call with its spinner/error policy; returns ``(managed, duration)``.
+# │  作用：运行一次顺序调用（含其转圈动画/错误策略）；返回 ``(managed, duration)``。
 # │  参数：agent, dispatch: _SequentialDispatch, ref: _ToolCallRef, scope_block: Optional[str], messages: list, remaining_calls, display_index: int, tool_start_time: float
 # │  返回：tuple[_ManagedToolResult, float]
 # └──────────────────────────────────────────────────────────────
@@ -2180,7 +2180,7 @@ def _run_sequential_call(
 
 
 # ┌── 函数 def _publish_sequential_result()
-# │  作用：Terminal hook → observe → commit → completion callbacks/print for one sequential
+# │  作用：对一次顺序调用依次执行：终局钩子 → 观察 → 提交 → 完成回调/打印……
 # │  参数：agent, messages: list, ref: _ToolCallRef, managed: _ManagedToolResult, tool_duration: float, index: int, budget: BudgetConfig
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2218,7 +2218,7 @@ def _publish_sequential_result(agent, messages: list, ref: _ToolCallRef, managed
 
 
 # ┌── 函数 def execute_tool_calls_sequential()
-# │  作用：Execute tool calls sequentially (single calls or interactive tools). ``finalize=False``
+# │  作用：顺序执行工具调用（用于单次调用或交互式工具）。``finalize=False``……
 # │  参数：agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, finalize: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2280,7 +2280,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
 
 
 # ┌── 函数 def execute_tool_calls_segmented()
-# │  作用：Execute a mixed batch as ordered parallel/sequential segments (the ``(kind, calls)``
+# │  作用：把一个混合批次按「有序的并行/顺序」分段来执行（即 ``(kind, calls)``……）。
 # │  参数：agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0, segments = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────

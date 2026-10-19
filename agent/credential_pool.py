@@ -76,7 +76,7 @@ logger = logging.getLogger(__name__)
 
 
 # ┌── 函数 def _load_config_safe()
-# │  作用：Load config.yaml read-only, returning None on any error.
+# │  作用：加载配置.YAML 读取-仅, 返回 None 在…上任意错误.
 # │  参数：无
 # │  返回：Optional[dict]
 # └──────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ def _load_config_safe() -> Optional[dict]:
 
 
 # ┌── 函数 def _is_source_suppressed_fn()
-# │  作用：``hermes_cli.auth.is_source_suppressed`` (late-bound), or an always-False stub.
+# │  作用：``hermes_cli.auth.is_source_suppressed`` (late-bound), 或 always-False stub.
 # │  参数：无
 # │  返回：Callable[[str, str], bool]
 # └──────────────────────────────────────────────────────────────
@@ -238,7 +238,7 @@ _MARK_OK: Dict[str, Any] = {**_CLEAR_STATUS, "last_status": STATUS_OK}
 
 
 # ┌── 函数 def _normalize_pool_auth_type()
-# │  作用：Infer pool auth metadata for token formats with one unambiguous meaning.
+# │  作用：Infer pool auth metadata 用于令牌 formats 带 one unambiguous meaning.
 # │  参数：provider: str, token: Any, auth_type: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -426,7 +426,7 @@ def _is_manual_source(source: str) -> bool:
 
 
 # ┌── 函数 def _exhausted_ttl()
-# │  作用：Return cooldown seconds based on the HTTP status that caused exhaustion.
+# │  作用：返回 冷却 seconds based 在…上 HTTP 状态码那个 caused exhaustion.。
 # │  参数：error_code: Optional[int], sole_credential: bool = ..., failure_reason: Optional[str] = ...
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -465,7 +465,7 @@ def _exhausted_ttl(
 
 
 # ┌── 函数 def _parse_absolute_timestamp()
-# │  作用：Best-effort parse of epoch seconds / epoch ms / ISO-8601 into epoch seconds.
+# │  作用：尽最大努力解析的 纪元/版本 seconds / 纪元/版本 ms / ISO-8601 进入纪元/版本 seconds.
 # │  参数：value: Any
 # │  返回：Optional[float]
 # └──────────────────────────────────────────────────────────────
@@ -559,7 +559,7 @@ def _exhausted_until(entry: PooledCredential, *, sole_credential: bool = False) 
 
 
 # ┌── 函数 def _normalize_custom_pool_name()
-# │  作用：Normalize a custom provider name for use as a pool key suffix.
+# │  作用：归一化 custom 服务商名称用于 use 作为 pool 键 suffix.
 # │  参数：name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -580,7 +580,7 @@ def _norm_url(url: Any) -> str:
 
 
 # ┌── 函数 def _iter_custom_providers()
-# │  作用：Yield ``(normalized_name, entry)`` from the merged custom-provider config view.
+# │  作用：Yield ``(normalized_name, entry)`` 从 merged 自定义服务商配置 view.
 # │  参数：config: Optional[dict] = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -634,7 +634,7 @@ def _requested_custom_name_aliases(provider_name: str) -> set:
 
 
 # ┌── 函数 def _pool_keys_for_custom_entry()
-# │  作用：Durable ``providers.<key>`` slug first, then legacy ``custom:<name>``.
+# │  作用：Durable ``服务商.<键>`` slug first, 然后 legacy ``custom:<名称>``.
 # │  参数：norm_name: str, entry: Dict[str, Any]
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -651,7 +651,7 @@ def _pool_keys_for_custom_entry(norm_name: str, entry: Dict[str, Any]) -> List[s
 
 
 # ┌── 函数 def custom_provider_pool_key_candidates()
-# │  作用：Return pool keys to try for a custom endpoint.
+# │  作用：返回 pool 键 try 用于 custom endpoint.。
 # │  参数：base_url: Optional[str], provider_name: Optional[str] = None
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -689,7 +689,7 @@ def custom_provider_pool_key_candidates(
 
 
 # ┌── 函数 def get_custom_provider_pool_key()
-# │  作用：Preferred pool key for a custom provider: durable slug, else ``custom:<name>``.
+# │  作用：Preferred pool 键用于 custom 服务商: durable slug, 否则 ``custom:<名称>``.
 # │  参数：base_url: Optional[str], provider_name: Optional[str] = None
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -705,7 +705,7 @@ def get_custom_provider_pool_key(base_url: Optional[str], provider_name: Optiona
 
 
 # ┌── 函数 def list_custom_pool_providers()
-# │  作用：Return all 'custom:*' pool keys that have entries in auth.json.
+# │  作用：返回 全部 'custom:*' pool 键那个有 entries 在 auth.JSON.。
 # │  参数：无
 # │  返回：List[str]
 # └──────────────────────────────────────────────────────────────
@@ -722,7 +722,7 @@ def list_custom_pool_providers() -> List[str]:
 
 
 # ┌── 函数 def _get_custom_provider_config()
-# │  作用：Return the custom_providers config entry matching a pool key like 'custom:together.ai'.
+# │  作用：返回 custom_providers 配置 entry matching pool 键 like 'custom:together.ai'.。
 # │  参数：pool_key: str
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -737,7 +737,7 @@ def _get_custom_provider_config(pool_key: str) -> Optional[Dict[str, Any]]:
 
 
 # ┌── 函数 def get_pool_strategy()
-# │  作用：Return the configured selection strategy for a provider.
+# │  作用：返回 configured selection strategy 用于服务商.。
 # │  参数：provider: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -754,7 +754,7 @@ def get_pool_strategy(provider: str) -> str:
 
 
 # ┌── 函数 def _keyed_custom_pool_matches()
-# │  作用：Match a durable ``providers.<key>`` pool against runtime identities.
+# │  作用：Match durable ``服务商.<键>`` pool against 运行时身份.
 # │  参数：pool_provider: str, provider_norm: str, base_url: Optional[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -793,7 +793,7 @@ def _keyed_custom_pool_matches(
 
 
 # ┌── 函数 def _legacy_custom_pool_matches()
-# │  作用：Match a legacy ``custom:<name>`` pool against a named runtime identity.
+# │  作用：Match legacy ``custom:<名称>`` pool against named 运行时身份.
 # │  参数：pool_provider: str, provider_norm: str, runtime_url: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -829,7 +829,7 @@ def _legacy_custom_pool_matches(
 
 
 # ┌── 函数 def credential_pool_matches_provider()
-# │  作用：Return whether a pool belongs to the requested runtime provider.
+# │  作用：返回 是否 pool belongs requested 运行时服务商.。。
 # │  参数：pool_or_provider: Any, provider: Optional[str], base_url: Optional[str] = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -887,7 +887,7 @@ def credential_pool_matches_provider(
 
 
 # ┌── 函数 def resolve_runtime_pool_key()
-# │  作用：Resolve the credential-pool key for a runtime provider identity.
+# │  作用：Resolve credential-pool 键用于运行时服务商身份.
 # │  参数：provider: Optional[str], base_url: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -938,7 +938,7 @@ DEFAULT_MAX_CONCURRENT_PER_CREDENTIAL = 1
 
 
 # ┌── 函数 def _guarded_global_root()
-# │  作用：Apply the pytest seat belt to a resolved global-root auth.json path.
+# │  作用：Apply pytest seat belt resolved global-root auth.JSON 路径.
 # │  参数：global_path: Optional[Path]
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -971,7 +971,7 @@ def _guarded_global_root(global_path: Optional[Path]) -> Optional[Path]:
 
 
 # ┌── 函数 def _write_through_provider_state_to_global_root()
-# │  作用：Persist a rotated OAuth ``state`` into the global-root auth.json.
+# │  作用：持久化 rotated OAuth ``状态`` 进入 global-root auth.JSON.
 # │  参数：provider_id: str, state: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1010,7 +1010,7 @@ def _write_through_provider_state_to_global_root(
 
 
 # ┌── 函数 def _singleton_target_for_entry()
-# │  作用：Root ``.anthropic_oauth.json`` when *entry* is a borrowed hermes_pkce row, else None.
+# │  作用：Root ``.anthropic_oauth.JSON`` 当 *entry* 是 borrowed hermes_pkce row, 否则 None.
 # │  参数：pool: 'CredentialPool', entry: 'PooledCredential'
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1030,7 +1030,7 @@ def _singleton_target_for_entry(pool: "CredentialPool", entry: "PooledCredential
 
 
 # ┌── 函数 def _profile_owns_pool_provider()
-# │  作用：True when the ACTIVE auth.json has its own rows for *provider*.
+# │  作用：当 ACTIVE auth.JSON 有其 持有 rows 用于 *服务商*. 时返回 True。
 # │  参数：provider: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1052,7 +1052,7 @@ def _profile_owns_pool_provider(provider: str) -> bool:
 
 
 # ┌── 函数 def _borrowed_single_use_pool_root()
-# │  作用：Global-root auth.json when persisting a BORROWED single-use pool, else None.
+# │  作用：Global-root auth.JSON 当持久化 BORROWED single-use pool, 否则 None.
 # │  参数：无
 # │  返回：Optional[Path]
 # └──────────────────────────────────────────────────────────────
@@ -1072,7 +1072,7 @@ def _borrowed_single_use_pool_root() -> Optional[Path]:
 
 
 # ┌── 函数 def _update_root_pool_rows()
-# │  作用：UPDATE-ONLY merge of *payloads* into the root store's rows for *provider*.
+# │  作用：更新-仅 merge 的 *payloads* 进入 root store's rows 用于 *服务商*.
 # │  参数：provider: str, payloads: List[Dict[str, Any]], global_path: Path, status_cleared_ids: Optional[Iterable[str]] = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1118,7 +1118,7 @@ def _update_root_pool_rows(
 
 
 # ┌── 函数 def persist_pool_entries()
-# │  作用：Persist a provider's pool rows to the store that OWNS them.
+# │  作用：持久化服务商's pool rows store 那个持有 them.
 # │  参数：provider: str, payloads: List[Dict[str, Any]], removed_ids: Optional[Iterable[str]] = ..., status_cleared_ids: Optional[Iterable[str]] = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1198,7 +1198,7 @@ _RESYNC_SOURCE = {
 
 
 # ┌── 类 class _RefreshDone（继承自：Exception）
-# │  说明：Raised inside a provider refresher to short-circuit ``_refresh_entry_impl`` with ``result``.
+# │  说明：抛出 inside 服务商 refresher short-circuit ``_refresh_entry_impl`` 带 ``结果``.
 # │  成员：共 1 个方法；全部是下划线开头的内部方法；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _RefreshDone(Exception):
@@ -1263,7 +1263,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return bool(self._entries)
 
     # ┌── 函数 def has_available()
-    # │  作用：True if at least one entry is not currently in exhaustion cooldown.
+    # │  作用：True 若在 least one entry 是不 currently 在 exhaustion 冷却.
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1280,7 +1280,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return bool(available)
 
     # ┌── 函数 def next_available_at()
-    # │  作用：Earliest epoch time (seconds) any entry re-enters rotation.
+    # │  作用：Earliest 纪元/版本 time (seconds) 任意 entry re-enters rotation.
     # │  参数：self
     # │  返回：Optional[float]
     # └──────────────────────────────────────────────────────────────
@@ -1324,7 +1324,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return list(self._entries)
 
     # ┌── 函数 def _is_sole_credential()
-    # │  作用：DEAD entries never re-enter rotation, so <=1 non-DEAD entry means nothing to rotate to.
+    # │  作用：DEAD entries never re-enter rotation, 从而 <=1 non-DEAD entry means nothing rotate .
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1365,7 +1365,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return self._current_unlocked()
 
     # ┌── 函数 def entry_id_for_api_key()
-    # │  作用：Stable id for the runtime credential in use.
+    # │  作用：Stable id 用于运行时 credential 在 use.
     # │  参数：self, api_key_hint: Any = None
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -1390,7 +1390,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     # ---- mutation primitives (self-locking) --------------------------------
 
     # ┌── 函数 def _replace_entry()
-    # │  作用：Swap an entry in-place by id, preserving sort order.
+    # │  作用：Swap entry 在-place 由 id, preserving sort order.
     # │  参数：self, old: PooledCredential, new: PooledCredential
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1428,7 +1428,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             )
 
     # ┌── 函数 def _adopt()
-    # │  作用：``replace(entry, **updates)``, swap it into the pool, optionally persist.
+    # │  作用：``replace(entry, **updates)``, swap 它进入 pool, optionally 持久化.
     # │  参数：self, entry: PooledCredential, persist: bool = ..., **updates
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -1442,7 +1442,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return updated
 
     # ┌── 函数 def _quarantine_sources()
-    # │  作用：Drop every entry seeded from *sources* and persist the removal.
+    # │  作用：丢弃每个 entry seeded 从 *sources* 且持久化 removal.
     # │  参数：self, entry: PooledCredential, sources: Set[str]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1463,7 +1463,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     # ---- exhaustion --------------------------------------------------------
 
     # ┌── 函数 def _is_terminal_auth_failure()
-    # │  作用：Detect upstream-permanent OAuth failures that won't recover on TTL.
+    # │  作用：检测 upstream-permanent OAuth failures 那个 won't recover 在…上 TTL.
     # │  参数：self, status_code: Optional[int], normalized_error: Dict[str, Any]
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1537,7 +1537,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     # provider's token authority lives, clearing stale exhaustion state.
 
     # ┌── 函数 def _sync_anthropic_entry_from_credentials_file()
-    # │  作用：Sync a claude_code entry from ~/.claude/.credentials.json if tokens differ.
+    # │  作用：同步 claude_code entry 从 ~/.claude/.credentials.JSON 若令牌 differ.
     # │  参数：self, entry: PooledCredential
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -1577,7 +1577,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return entry
 
     # ┌── 函数 def _sync_entry_from_pool_store()
-    # │  作用：Adopt a token pair rotated by another pool instance (anthropic, xai-oauth).
+    # │  作用：Adopt 令牌 pair rotated 由 another pool instance (anthropic, xai-oauth).
     # │  参数：self, entry: PooledCredential
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -1634,7 +1634,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     _sync_anthropic_entry_from_pool_store = _sync_entry_from_pool_store
 
     # ┌── 函数 def _sync_entry_from_auth_store()
-    # │  作用：Sync a Codex / xAI device_code entry from auth.json ``providers.<id>.tokens``.
+    # │  作用：同步 Codex / xAI device_code entry 从 auth.JSON ``服务商.<id>.令牌``.
     # │  参数：self, entry: PooledCredential
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -1706,7 +1706,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return entry
 
     # ┌── 函数 def _sync_nous_entry_from_auth_store()
-    # │  作用：Sync a Nous device_code entry from auth.json ``providers.nous`` if state differs.
+    # │  作用：同步 Nous device_code entry 从 auth.JSON ``服务商.nous`` 若状态 differs.
     # │  参数：self, entry: PooledCredential
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -1752,7 +1752,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return entry
 
     # ┌── 函数 def _sync_device_code_entry_to_auth_store()
-    # │  作用：Write refreshed pool entry tokens back to auth.json ``providers.<id>``.
+    # │  作用：写入 refreshed pool entry 令牌 back auth.JSON ``服务商.<id>``.
     # │  参数：self, entry: PooledCredential
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1801,7 +1801,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             logger.debug("Failed to sync %s pool entry back to auth store: %s", self.provider, exc)
 
     # ┌── 函数 def _apply_entry_to_singleton_state()
-    # │  作用：Copy *entry*'s tokens into the provider's auth.json ``state`` in place.
+    # │  作用：复制 *entry*'s 令牌进入服务商's auth.JSON ``状态`` 在 place.
     # │  参数：self, entry: PooledCredential, state: Dict[str, Any]
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1887,7 +1887,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return self._refresh_entry_impl(synced, force=force)
 
     # ┌── 函数 def _claude_code_credentials_lock()
-    # │  作用：Cross-process lock keyed to the shared claude_code credentials file.
+    # │  作用：Cross-进程锁 keyed shared claude_code credentials 文件.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1906,7 +1906,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         )
 
     # ┌── 函数 def _fail_closed_unpersisted_rotation()
-    # │  作用：Quarantine an entry whose rotated pair never reached its store.
+    # │  作用：Quarantine entry whose rotated pair never reached 其 store.
     # │  参数：self, entry: PooledCredential, exc: BaseException, store: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1965,7 +1965,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return None
 
     # ┌── 函数 def _single_use_refresh_lock_timeout()
-    # │  作用：Configured refresh POST timeout plus margin, so a slow token endpoint cannot starve the flock.
+    # │  作用：Configured refresh POST 超时 plus margin, 从而 slow 令牌 endpoint 无法 starve flock.
     # │  参数：self
     # │  返回：float
     # └──────────────────────────────────────────────────────────────
@@ -1977,7 +1977,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return max(float(auth_mod.AUTH_LOCK_TIMEOUT_SECONDS), float(refresh_timeout_seconds) + 5.0)
 
     # ┌── 函数 def _commit_anthropic_rotation()
-    # │  作用：Write a rotated Anthropic pair to its authoritative singleton, or fail closed.
+    # │  作用：写入 rotated Anthropic pair 其 authoritative singleton, 或 fail 已关闭.
     # │  参数：self, entry: PooledCredential, refreshed: Dict[str, Any]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2015,7 +2015,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             raise _RefreshDone(self._fail_closed_unpersisted_rotation(entry, wexc, store=store))
 
     # ┌── 函数 def _refresh_anthropic()
-    # │  作用：POST the Anthropic refresh, commit to the singleton, return the rotated (unpersisted) entry.
+    # │  作用：POST Anthropic refresh, commit singleton, 返回 rotated (unpersisted) entry.
     # │  参数：self, entry: PooledCredential
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -2054,7 +2054,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return updated
 
     # ┌── 函数 def _post_tokens_refresh()
-    # │  作用：Codex / xAI: POST the refresh and return the rotated (unpersisted) entry.
+    # │  作用：Codex / xAI: POST refresh 且返回 rotated (unpersisted) entry.
     # │  参数：self, entry: PooledCredential
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -2123,7 +2123,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return updated
 
     # ┌── 函数 def _recover_failed_refresh()
-    # │  作用：After a failed refresh POST: adopt a peer's rotation, quarantine a dead grant, or bench.
+    # │  作用：在…之后 failed refresh POST: adopt peer's rotation, quarantine dead grant, 或 bench.
     # │  参数：self, entry: PooledCredential, exc: Exception
     # │  返回：Optional[PooledCredential]
     # └──────────────────────────────────────────────────────────────
@@ -2218,7 +2218,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return None
 
     # ┌── 函数 def _clear_terminal_tokens_state()
-    # │  作用：Drop the dead Codex/xAI token pair from auth.json unless a peer already rotated it.
+    # │  作用：丢弃 dead Codex/xAI 令牌 pair 从 auth.JSON unless peer 已 rotated 它.
     # │  参数：self, entry: PooledCredential, exc: Exception
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2278,7 +2278,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             logger.debug("Failed to clear terminal Nous OAuth state: %s", clear_exc)
 
     # ┌── 函数 def _codex_quota_restored_upstream()
-    # │  作用：Live-check whether an exhausted Codex entry's quota reset early.
+    # │  作用：当前活跃的-检查 whether exhausted Codex entry's quota reset early.
     # │  参数：self, entry: PooledCredential
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2370,7 +2370,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return self._select_unlocked()
 
     # ┌── 函数 def _refresh_pending_entries()
-    # │  作用：Refresh deferred single-use-token entries OUTSIDE the pool lock.
+    # │  作用：Refresh deferred single-use-令牌 entries OUTSIDE pool 锁.
     # │  参数：self, pending: List[PooledCredential]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2385,7 +2385,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             self._refresh_entry(entry, force=False)
 
     # ┌── 函数 def _resync_stale_entry()
-    # │  作用：Re-read an exhausted/DEAD singleton-seeded entry from its token authority.
+    # │  作用：Re-读取 exhausted/DEAD singleton-seeded entry 从其 令牌 authority.
     # │  参数：self, entry: PooledCredential
     # │  返回：PooledCredential
     # └──────────────────────────────────────────────────────────────
@@ -2409,7 +2409,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return self._sync_entry_from_auth_store(entry)
 
     # ┌── 函数 def _available_entries()
-    # │  作用：Return (available, pending_refresh) for entries not in cooldown.
+    # │  作用：返回 (available, pending_refresh) 用于 entries 不在 冷却.。
     # │  参数：self, clear_expired: bool = ..., refresh: bool = ...
     # │  返回：Tuple[List[PooledCredential], List[PooledCredential]]
     # └──────────────────────────────────────────────────────────────
@@ -2496,7 +2496,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return available, pending_refresh
 
     # ┌── 函数 def _log_no_available_entries()
-    # │  作用：Emit the empty-pool INFO line at most once per throttle window.
+    # │  作用：Emit empty-pool 信息 line 在 most 一旦 per throttle window.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2510,7 +2510,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         logger.info("credential pool: no available entries (all exhausted or empty)")
 
     # ┌── 函数 def _select_unlocked()
-    # │  作用：Select the best available entry; returns ``(entry, pending_refresh)``.
+    # │  作用：Select best available entry; 返回 ``(entry, pending_refresh)``.
     # │  参数：self, refresh: bool = ..., count: bool = ...
     # │  返回：Tuple[Optional[PooledCredential], List[PooledCredential]]
     # └──────────────────────────────────────────────────────────────
@@ -2572,7 +2572,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     # ---- rotation ----------------------------------------------------------
 
     # ┌── 函数 def _identify_failed_entry()
-    # │  作用：Resolve the entry that issued a failed request from its supplied identity.
+    # │  作用：Resolve entry 那个 issued failed 请求从 其 supplied 身份.
     # │  参数：self, credential_id: Optional[str], api_key_hint: Optional[str]
     # │  返回：Optional[PooledCredential]
     # └──────────────────────────────────────────────────────────────
@@ -2609,7 +2609,7 @@ class CredentialPool(CredentialPoolAdminMixin):
         return entry
 
     # ┌── 函数 def _rotate_unmatched()
-    # │  作用：Rotate without marking anything when the failed identity matches no entry.
+    # │  作用：Rotate 不 marking anything 当 failed 身份 matches 无 entry.
     # │  参数：self
     # │  返回：Optional[PooledCredential]
     # └──────────────────────────────────────────────────────────────
@@ -2721,7 +2721,7 @@ class CredentialPool(CredentialPoolAdminMixin):
     # ---- leases ------------------------------------------------------------
 
     # ┌── 函数 def acquire_lease()
-    # │  作用：Acquire a soft lease on a credential.
+    # │  作用：Acquire soft lease 在…上 credential.
     # │  参数：self, credential_id: Optional[str] = None
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -2800,7 +2800,7 @@ class CredentialPool(CredentialPoolAdminMixin):
             return self._try_refresh_current_unlocked()
 
     # ┌── 函数 def try_refresh_matching()
-    # │  作用：Force-refresh the entry that supplied the failed request.
+    # │  作用：Force-refresh entry 那个 supplied failed 请求.
     # │  参数：self, api_key_hint: Optional[str] = None, credential_id: Optional[str] = None
     # │  返回：Optional[PooledCredential]
     # └──────────────────────────────────────────────────────────────
@@ -2952,7 +2952,7 @@ def _normalize_pool_priorities(provider: str, entries: List[PooledCredential]) -
 
 
 # ┌── 函数 def _retain_sources_not_in()
-# │  作用：Remove entries whose source is in *drop*; True if anything was removed.
+# │  作用：移除 entries whose source 是在 *丢弃*; True 若 anything 是已移除.
 # │  参数：entries: List[PooledCredential], drop: Set[str]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2968,7 +2968,7 @@ def _retain_sources_not_in(entries: List[PooledCredential], drop: Set[str]) -> b
 
 
 # ┌── 类 class _Seeder
-# │  说明：Accumulates ``_upsert_entry`` results for one ``load_pool`` seeding pass.
+# │  说明：Accumulates ``_upsert_entry`` 结果用于 one ``load_pool`` seeding pass.
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class _Seeder:
@@ -2987,7 +2987,7 @@ class _Seeder:
         self.is_suppressed = _is_source_suppressed_fn()
 
     # ┌── 函数 def upsert()
-    # │  作用：Upsert unless suppressed (``hermes auth remove`` must stay stable across loads).
+    # │  作用：Upsert unless suppressed (``hermes auth 移除`` 必须 stay stable across 加载).
     # │  参数：self, source: str, payload: Dict[str, Any]
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3223,7 +3223,7 @@ def _seed_minimax_singleton(seed: _Seeder) -> None:
 
 
 # ┌── 函数 def _seed_tokens_singleton()
-# │  作用：Codex / xAI: surface the auth.json ``providers.<id>.tokens`` singleton as ``device_code``.
+# │  作用：Codex / xAI: 上报 auth.JSON ``服务商.<id>.令牌`` singleton 作为 ``device_code``.
 # │  参数：seed: _Seeder, auth_store: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3285,7 +3285,7 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
 
 
 # ┌── 函数 def get_env_prefer_dotenv()
-# │  作用：Resolve a credential env var, preferring ~/.hermes/.env over os.environ.
+# │  作用：Resolve credential 环境变量, preferring ~/.hermes/.env over os.environ.
 # │  参数：key: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3315,7 +3315,7 @@ _ENV_INGESTION_WARNED: Set[str] = set()
 
 
 # ┌── 函数 def _warn_env_ingestion_once()
-# │  作用：WARN once per process per provider when an env credential is ingested into a paid pool.
+# │  作用：警告一旦 per 进程 per 服务商当 env credential 是 ingested 进入 paid pool.
 # │  参数：provider: str, env_var: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -3461,7 +3461,7 @@ def _prune_stale_seeded_entries(
 
 
 # ┌── 函数 def _seed_custom_pool()
-# │  作用：Seed a custom endpoint pool from custom_providers config and model config.
+# │  作用：Seed custom endpoint pool 从 custom_providers 配置且 模型配置.
 # │  参数：pool_key: str, entries: List[PooledCredential]
 # │  返回：Tuple[bool, Set[str]]
 # └──────────────────────────────────────────────────────────────

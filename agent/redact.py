@@ -67,7 +67,7 @@ def _vault_scope() -> str:
 
 
 # ┌── 函数 def register_vault_redaction_value()
-# │  作用：Register an exact vault secret value for model-facing redaction.
+# │  作用：Register exact vault secret 值用于模型-facing redaction.
 # │  参数：value
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ def register_vault_redaction_value(value) -> None:
 
 
 # ┌── 函数 def clear_vault_redaction_values()
-# │  作用：Drop the current profile's registered values (profile teardown / explicit lock).
+# │  作用：丢弃 current 配置档's registered 值 (配置档 teardown / explicit 锁).
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ def clear_vault_redaction_values() -> None:
 
 
 # ┌── 函数 def redact_registered_vault_values()
-# │  作用：Exact-substring scrub of every vault secret value registered for the current profile.
+# │  作用：Exact-substring scrub 的每个 vault secret 值 registered 用于 current 配置档.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ _REDACT_ENABLED_LOCK = threading.Lock()
 
 
 # ┌── 函数 def _redact_enabled()
-# │  作用：Effective redaction switch for the active profile (launch snapshot when no override).
+# │  作用：Effective redaction 切换用于 active 配置档 (launch snapshot 当无 覆盖值).
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -357,7 +357,7 @@ _STRONG_KEY_KEYWORD_RE = re.compile(
 
 
 # ┌── 函数 def _is_word_start()
-# │  作用：True if position ``i`` in ``s`` begins a word (edge, non-letter before, camelCase/acronym boundary).
+# │  作用：True 若 position ``i`` 在 ``s`` begins word (edge, non-letter 在…之前, camelCase/acronym boundary).
 # │  参数：s: str, i: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ def _is_word_start(s: str, i: int) -> bool:
 
 
 # ┌── 函数 def _is_word_end()
-# │  作用：True if position ``j`` (exclusive end) in ``s`` ends a word; one trailing ``s`` is absorbed.
+# │  作用：True 若 position ``j`` (exclusive end) 在 ``s`` ends word; one trailing ``s`` 是 absorbed.
 # │  参数：s: str, j: int, allow_plural: bool = ...
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -393,7 +393,7 @@ def _is_word_end(s: str, j: int, *, allow_plural: bool = True) -> bool:
 
 
 # ┌── 函数 def _has_word_bounded_keyword()
-# │  作用：True if ``keyword_re`` matches ``key`` at a word boundary (see _KEY_KEYWORD_RE).
+# │  作用：True 若 ``keyword_re`` matches ``键`` 在 word boundary (see _KEY_KEYWORD_RE).
 # │  参数：key: str, keyword_re: 're.Pattern[str]'
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -404,7 +404,7 @@ def _has_word_bounded_keyword(key: str, keyword_re: "re.Pattern[str]") -> bool:
 
 
 # ┌── 函数 def _key_has_secret_keyword()
-# │  作用：Post-match key validator: ``API_KEY``/``DB_PW`` count, ``KEYBOARD``/``secretary`` do not.
+# │  作用：Post-match 键 validator: ``API_KEY``/``DB_PW`` count, ``KEYBOARD``/``secretary`` 不.
 # │  参数：key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -415,7 +415,7 @@ def _key_has_secret_keyword(key: str) -> bool:
 
 
 # ┌── 函数 def _looks_like_opaque_credential()
-# │  作用：Credential-like shape test for ambiguous ``token``/``key`` values, so short
+# │  作用：Credential-like 形态测试用于 ambiguous ``令牌``/``键`` 值, 从而 short
 # │  参数：value: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -439,7 +439,7 @@ def _looks_like_opaque_credential(value: str) -> bool:
 
 
 # ┌── 函数 def _should_redact_assignment()
-# │  作用：Shared gate for the ENV / JSON / YAML assignment passes: skip programmatic env
+# │  作用：Shared gate 用于 ENV / JSON / YAML assignment passes: skip programmatic env
 # │  参数：key: str, value: str, check_keyword: bool
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -630,7 +630,7 @@ _PREFIX_RE = _compile_prefix_matcher(_PREFIX_PATTERNS)
 
 
 # ┌── 函数 def _mask_control_split_tokens()
-# │  作用：Mask tokens whose body is split by control/zero-width characters.
+# │  作用：Mask 令牌 whose body 是 split 由 control/zero-width characters.
 # │  参数：text: str, mask_fn
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -678,7 +678,7 @@ _DISPLAY_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f\x80-\x9f\u200b-\u200f\u202a-\u
 
 
 # ┌── 函数 def mask_secret()
-# │  作用：Mask a secret for display (``hermes config`` / ``status`` / ``dump``):
+# │  作用：Mask secret 用于展示 (``hermes 配置`` / ``status`` / ``dump``):
 # │  参数：value: str, head: int = ..., tail: int = ..., floor: int = ..., placeholder: str = ..., empty: str = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -696,7 +696,7 @@ def mask_secret(value: str, *, head: int = 4, tail: int = 4, floor: int = 12,
 
 
 # ┌── 函数 def _mask_token()
-# │  作用：Mask a log token — 18-char floor, preserves 6 prefix / 4 suffix; empty → ``***``.
+# │  作用：Mask 日志令牌 — 18-char 下取整到, preserves 6 prefix / 4 suffix; empty → ``***``.
 # │  参数：token: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -710,7 +710,7 @@ def _mask_token(token: str) -> str:
 
 
 # ┌── 函数 def _is_python_repr_secret_key()
-# │  作用：Return True for exact secret keys or credential-suffixed key names.
+# │  作用：当 exact secret 键或 credential-suffixed 键名称. 时返回 True。
 # │  参数：key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -734,7 +734,7 @@ def _is_python_repr_secret_key(key: str) -> bool:
 
 
 # ┌── 函数 def _redact_python_repr_fields()
-# │  作用：Fully mask credential fields in Python mapping ``repr`` output.
+# │  作用：Fully mask credential 字段在 Python mapping ``repr`` 输出.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -778,7 +778,7 @@ def _redact_python_repr_fields(text: str) -> str:
 
 
 # ┌── 函数 def _redact_python_diagnostic_repr_fields()
-# │  作用：Mask repr fields only on pytest/error lines in source-preserving output.
+# │  作用：Mask repr 字段仅 在…上 pytest/错误 lines 在 source-preserving 输出.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -807,7 +807,7 @@ def _redact_python_diagnostic_repr_fields(text: str) -> str:
 
 
 # ┌── 函数 def _redact_query_string()
-# │  作用：Replace values of sensitive ``k=v&k=v`` params with ``***``; others pass through.
+# │  作用：Replace 值的 sensitive ``k=v&k=v`` params 带 ``***``; others pass through.
 # │  参数：query: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -824,7 +824,7 @@ def _redact_query_string(query: str) -> str:
 
 
 # ┌── 函数 def _canonical_url_param_name()
-# │  作用：Decode a URL parameter name (up to 3 unquote rounds) for case-insensitive matching.
+# │  作用：Decode URL 参数名称 (up 3 unquote 轮) 用于 case-insensitive matching.
 # │  参数：name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -841,7 +841,7 @@ def _canonical_url_param_name(name: str) -> str:
 
 
 # ┌── 函数 def _redact_strict_url_credentials()
-# │  作用：Strict egress-boundary redaction of URL credentials (absolute, relative and
+# │  作用：Strict egress-boundary redaction 的 URL credentials (absolute, relative 且
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -858,7 +858,7 @@ def _redact_strict_url_credentials(text: str) -> str:
 
 
 # ┌── 函数 def redact_cdp_url()
-# │  作用：Mask secrets in a CDP/browser endpoint URL before it is logged.
+# │  作用：Mask secrets 在 CDP/browser endpoint URL 在…之前它 是 logged.
 # │  参数：value: object
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -882,7 +882,7 @@ def redact_cdp_url(value: object) -> str:
 
 
 # ┌── 函数 def _redact_form_body()
-# │  作用：Redact sensitive values when the ENTIRE text is a clean ``k=v&k=v`` body.
+# │  作用：Redact sensitive 值当 ENTIRE 文本是 clean ``k=v&k=v`` body.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -896,7 +896,7 @@ def _redact_form_body(text: str) -> str:
 
 
 # ┌── 函数 def _mask_token_nonreusable()
-# │  作用：Redact a prefix-matched credential to a NON-REUSABLE sentinel: no head/tail
+# │  作用：Redact prefix-matched credential NON-REUSABLE sentinel: 无 head/tail
 # │  参数：token: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -915,7 +915,7 @@ def _mask_token_nonreusable(token: str) -> str:
 
 
 # ┌── 函数 def _assignment_sub()
-# │  作用：re.sub callback: keep the match unless the key/value pair (groups[0], groups[-1]) needs redaction.
+# │  作用：re.sub 回调: 保留 match unless 键/值 pair (groups[0], groups[-1]) needs redaction.
 # │  参数：render, check_keyword: bool
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -933,7 +933,7 @@ def _assignment_sub(render, *, check_keyword: bool):
 
 
 # ┌── 函数 def _redact_assignments()
-# │  作用：ENV / config / JSON / YAML assignment passes (skipped for code files). Passes
+# │  作用：ENV / 配置 / JSON / YAML assignment passes (skipped 用于 code 文件). Passes
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -981,7 +981,7 @@ def _redact_assignments(text: str) -> str:
 
 
 # ┌── 函数 def _redact_url_credentials()
-# │  作用：DB connection-string passwords and bare-token URL userinfo (``://`` text only).
+# │  作用：数据库连接-字符串 passwords 且 bare-令牌 URL userinfo (``://`` 文本仅).
 # │  参数：text: str, code_file: bool
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1014,7 +1014,7 @@ def _redact_phone(m):
 
 
 # ┌── 函数 def redact_sensitive_text()
-# │  作用：Apply all redaction patterns to a block of text.
+# │  作用：Apply 全部 redaction patterns block 的文本.
 # │  参数：text: str, force: bool = ..., code_file: bool = ..., file_read: bool = ..., redact_url_credentials: bool = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1149,7 +1149,7 @@ _HOME_PREFIXES = ("$HOME/", "${HOME}/")
 
 
 # ┌── 函数 def _command_segments()
-# │  作用：Pipeline/sequence segments, split only on unquoted ``| ; &`` so an
+# │  作用：Pipeline/sequence segments, split 仅在…上 unquoted ``| ; &`` 从而
 # │  参数：command: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -1185,7 +1185,7 @@ def _command_segments(command: str) -> list[str]:
 
 
 # ┌── 函数 def _is_secret_file_arg()
-# │  作用：``.env``-style or shell rc basename anywhere; ``config.yaml`` only under a
+# │  作用：``.env``-style 或 shell rc basename anywhere; ``配置.YAML`` 仅 under
 # │  参数：arg: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1218,7 +1218,7 @@ def _is_secret_file_arg(arg: str) -> bool:
 
 
 # ┌── 函数 def _command_reads_secret_file()
-# │  作用：True if ``command`` reads a secret-bearing file (see ``_is_secret_file_arg``) to
+# │  作用：True 若 ``命令`` 读取 secret-bearing 文件 (see ``_is_secret_file_arg``)
 # │  参数：command: str | None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1247,7 +1247,7 @@ def _command_reads_secret_file(command: str | None) -> bool:
 
 
 # ┌── 函数 def is_env_dump_command()
-# │  作用：True if any pipeline/sequence segment starts with an _ENV_DUMP_COMMANDS
+# │  作用：True 若任意 pipeline/sequence segment starts 带 _ENV_DUMP_COMMANDS
 # │  参数：command: str | None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1278,7 +1278,7 @@ _BEARER_RESIDUE_RE = re.compile(r"\bBearer\s+(?:\[[^\]]+\]|[A-Za-z0-9._~+/-]{20,
 
 
 # ┌── 函数 def redact_for_egress()
-# │  作用：The one scrub for text leaving the process for a remote reader (chat platforms, A2A peers,
+# │  作用：one scrub 用于文本 leaving 进程用于 remote reader (chat 平台, A2A peers,
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1301,7 +1301,7 @@ def redact_for_egress(text: str) -> str:
 
 
 # ┌── 函数 def redact_terminal_output()
-# │  作用：Single redaction policy for ALL terminal-output surfaces: the ENV/YAML-assignment
+# │  作用：Single redaction 策略用于全部终端-输出上报: ENV/YAML-assignment
 # │  参数：output: str, command: str | None = None, force: bool = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1328,7 +1328,7 @@ def redact_terminal_output(output: str, command: str | None = None, *, force: bo
 # silently break the gate (every match contains its pattern's literal prefix).
 
 # ┌── 函数 def _extract_literal_prefix()
-# │  作用：Leading literal chars of a regex (up to the first metacharacter).
+# │  作用：Leading literal chars 的 regex (up first metacharacter).
 # │  参数：pattern: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1344,7 +1344,7 @@ def _extract_literal_prefix(pattern: str) -> str:
 
 
 # ┌── 函数 def _skip_char_class()
-# │  作用：Given ``pattern[i] == "["``, return the index just past the closing ``]``.
+# │  作用：Given ``pattern[i] == "["``, 返回 index just past 关闭 ``]``.
 # │  参数：pattern: str, i: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1358,7 +1358,7 @@ def _skip_char_class(pattern: str, i: int) -> int:
 
 
 # ┌── 函数 def _unbounded_quantifier_follows()
-# │  作用：True if an open-ended quantifier (``*``, ``+``, ``{m,}``) starts at ``pattern[j]``.
+# │  作用：True 若打开-ended quantifier (``*``, ``+``, ``{m,}``) starts 在 ``pattern[j]``.
 # │  参数：pattern: str, j: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1380,7 +1380,7 @@ def _unbounded_quantifier_follows(pattern: str, j: int) -> bool:
 
 
 # ┌── 函数 def _pattern_structure()
-# │  作用：One scan → ``(has_top_level_alternation, has_nested_unbounded_repeat)``.
+# │  作用：一次扫描 → 返回 ``(has_top_level_alternation, has_nested_unbounded_repeat)``。
 # │  参数：pattern: str
 # │  返回：tuple[bool, bool]
 # └──────────────────────────────────────────────────────────────
@@ -1444,7 +1444,7 @@ _PREFIX_SUBSTRINGS = tuple(_extract_literal_prefix(p) for p in _PREFIX_PATTERNS)
 
 
 # ┌── 函数 def _has_known_prefix_substring()
-# │  作用：Cheap pre-check before the expensive ``_PREFIX_RE``.
+# │  作用：Cheap pre-检查在…之前 expensive ``_PREFIX_RE``.
 # │  参数：text: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1465,7 +1465,7 @@ _registry_lock = threading.Lock()
 
 
 # ┌── 函数 def _plugin_patterns()
-# │  作用：All plugin-registered patterns in registration order.
+# │  作用：全部 plugin-registered patterns 在 registration order.
 # │  参数：无
 # │  返回：list
 # └──────────────────────────────────────────────────────────────
@@ -1476,7 +1476,7 @@ def _plugin_patterns() -> list:
 
 
 # ┌── 函数 def _rebuild_prefix_matcher()
-# │  作用：Recompile the prefix alternation and pre-screen substrings; callers read the
+# │  作用：Recompile prefix 交替且 pre-screen substrings; callers 读取
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1507,7 +1507,7 @@ _PATTERN_REJECT_RULES = (
 
 
 # ┌── 函数 def register_redaction_patterns()
-# │  作用：Additively register credential-token regexes; returns the count accepted.
+# │  作用：Additively register credential-令牌 regexes; 返回 count 已接受.
 # │  参数：patterns, source: str = 'plugin'
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1549,7 +1549,7 @@ def register_redaction_patterns(patterns, source: str = "plugin") -> int:
 
 
 # ┌── 函数 def _reset_plugin_redaction_patterns()
-# │  作用：Drop all plugin-registered patterns (tests/teardown only).
+# │  作用：丢弃全部 plugin-registered patterns (测试/teardown 仅).
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1561,7 +1561,7 @@ def _reset_plugin_redaction_patterns() -> None:
 
 
 # ┌── 类 class RedactingFormatter（继承自：logging.Formatter）
-# │  说明：Log formatter that redacts secrets from all log messages.
+# │  说明：日志 formatter 那个 redacts secrets 从全部日志消息.
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 class RedactingFormatter(logging.Formatter):

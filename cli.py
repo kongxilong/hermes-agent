@@ -107,7 +107,7 @@ import queue
 
 
 # ┌── 函数 def _lazy_shim()
-# │  作用：Import ``module.name`` on first call; keeps heavy imports off startup while ``cli.<name>`` stays patchable.
+# │  作用：导入 ``模块.名称`` 在…上 first call; 保留 heavy 导入 off startup 当 ``cli.<名称>`` stays patchable.
 # │  参数：module: str, name: str, alias: str | None = None
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ _REVERSE_ALIAS_CACHE: dict[str, str] | None = None
 
 
 # ┌── 函数 def _reverse_alias_for_display()
-# │  作用：Shortest alias for ``model_name`` from ``model_aliases:`` or ``model.aliases:``, else ``model_name``.
+# │  作用：Shortest 别名用于 ``model_name`` 从 ``model_aliases:`` 或 ``模型.别名:``, 否则 ``model_name``.
 # │  参数：model_name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -244,7 +244,7 @@ _TOOL_CALL_TAGS = ("tool_call", "tool_calls", "tool_result", "function_call", "f
 
 
 # ┌── 函数 def _strip_reasoning_tags()
-# │  作用：Strip reasoning blocks (closed, unterminated, orphan-close) and leaked tool-call XML from display text.
+# │  作用：Strip 推理块 (已关闭, unterminated, orphan-关闭) 且 leaked 工具调用 XML 从展示文本.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -317,7 +317,7 @@ def _assistant_copy_text(content: Any) -> str:
 
 
 # ┌── 函数 def _load_prefill_messages()
-# │  作用：Load prefill messages (JSON array) from *file_path*; relative to ~/.hermes/; missing/empty -> [].
+# │  作用：加载预填充消息 (JSON array) 从 *file_path*; relative ~/.hermes/; missing/empty -> [].
 # │  参数：file_path: str
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -350,7 +350,7 @@ def _load_prefill_messages(file_path: str) -> List[Dict[str, Any]]:
 
 
 # ┌── 函数 def _resolve_prefill_messages_file()
-# │  作用：Prefill file path: env, then top-level ``prefill_messages_file``, then legacy ``agent.*``.
+# │  作用：预填充文件路径: env, 然后 top-级别 ``prefill_messages_file``, 然后 legacy ``Agent.*``.
 # │  参数：config: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -366,7 +366,7 @@ def _resolve_prefill_messages_file(config: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _parse_reasoning_config()
-# │  作用：Parse a reasoning effort level (string or YAML bool; ``false``/``off`` = disabled).
+# │  作用：解析推理强度级别 (字符串或 YAML 布尔值; ``False``/``off`` = disabled).
 # │  参数：effort
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -381,7 +381,7 @@ def _parse_reasoning_config(effort) -> dict | None:
 
 
 # ┌── 函数 def _parse_service_tier_config()
-# │  作用：Parse a persisted fast-mode preference: None, "priority", "auto", or "cold".
+# │  作用：解析已持久化的快速模式偏好: None, "priority", "auto", 或 "cold".
 # │  参数：raw: str
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -437,7 +437,7 @@ _CWD_PLACEHOLDERS = (".", "auto", "cwd")
 
 
 # ┌── 函数 def _mirror_config_to_env()
-# │  作用：Project config.yaml values into the env vars the tool modules read (terminal/browser/auxiliary/security/sessions). Env always wins when already set.
+# │  作用：投射配置.YAML 值进入 env vars 工具模块读取 (终端/browser/辅助的/security/会话). Env always wins 当已 设置.
 # │  参数：defaults, _file_has_terminal_config
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -502,7 +502,7 @@ def _mirror_config_to_env(defaults, _file_has_terminal_config):
 
 
 # ┌── 函数 def _cli_config_defaults()
-# │  作用：Built-in defaults for every config key the CLI reads (the file overlays these).
+# │  作用：已构建-在默认值用于每个配置项 CLI 读取 ( 文件叠加这些).
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -552,7 +552,7 @@ def _cli_config_defaults():
 
 
 # ┌── 函数 def _merge_file_config()
-# │  作用：Overlay a parsed config file onto *defaults* in place (model normalization, deep merge, legacy keys).
+# │  作用：叠加已解析配置文件 onto *默认值* 在 place (模型归一化, deep merge, legacy 键).
 # │  参数：defaults: Dict[str, Any], file_config: Dict[str, Any]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -590,7 +590,7 @@ def _merge_file_config(defaults: Dict[str, Any], file_config: Dict[str, Any]) ->
 
 
 # ┌── 函数 def load_cli_config()
-# │  作用：~/.hermes/config.yaml (else ./cli-config.yaml) over built-in defaults; env vars win.
+# │  作用：~/.hermes/配置.YAML (否则 ./cli-配置.YAML) over 已构建-在默认值; env vars win.
 # │  参数：无
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -640,7 +640,7 @@ CLI_CONFIG = load_cli_config()
 
 
 # ┌── 函数 def _init_logging_and_display_from_config()
-# │  作用：Best-effort startup side effects: logging, config warnings, skin, display knobs.
+# │  作用：尽最大努力 startup side effects: 日志, 配置 warnings, skin, 展示 knobs.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -679,7 +679,7 @@ try:
     import importlib.util as _httpx_neuter_imp_util
 
 # ┌── 类 class _AsyncHttpxDelNeuter
-# │  说明：Patch ``AsyncHttpxClientWrapper.__del__`` to a no-op when ``openai._base_client`` loads.
+# │  说明：Patch ``AsyncHttpxClientWrapper.__del__`` 无-op 当 ``OpenAI._base_client`` 加载.
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
     class _AsyncHttpxDelNeuter:
@@ -750,7 +750,7 @@ validate_toolset = _lazy_shim("toolsets", "validate_toolset")
 
 
 # ┌── 函数 def _sync_process_session_id()
-# │  作用：Keep process-local session-id consumers aligned after CLI switches.
+# │  作用：保留进程-local 会话-id consumers aligned 在…之后 CLI 切换.
 # │  参数：session_id: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -792,7 +792,7 @@ _tui_input_modes_active = False
 # the on-exit terminal reset so non-TUI one-shot CLI runs — which also register _run_cleanup via atexit —
 # don't emit escape codes for modes they never enabled (#36823).
 # ┌── 函数 def _mark_tui_input_modes_active()
-# │  作用：Record that the TUI app started, so _run_cleanup resets input modes.
+# │  作用：Record 那个 TUI app started, 从而 _run_cleanup resets 输入模式.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -804,7 +804,7 @@ def _mark_tui_input_modes_active() -> None:
 
 
 # ┌── 函数 def _prepare_deferred_agent_startup()
-# │  作用：Run Termux-deferred agent discovery before the first real agent turn.
+# │  作用：运行 Termux-deferred Agent discovery 在…之前 first real Agent 轮次.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -846,7 +846,7 @@ def _prepare_deferred_agent_startup() -> None:
 
 
 # ┌── 函数 def _flush_logging_and_stdio()
-# │  作用：Best-effort ``logging.shutdown()`` + stdout/stderr flush before ``os._exit``.
+# │  作用：尽最大努力 ``日志.shutdown()`` + 标准输出/标准错误冲刷在…之前 ``os._exit``.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -860,7 +860,7 @@ def _flush_logging_and_stdio() -> None:
 
 
 # ┌── 函数 def _float_env()
-# │  作用：``float(os.getenv(name))``, or ``default`` when unset/unparseable.
+# │  作用：``浮点数(os.getenv(名称))``, 或 ``默认值`` 当 unset/unparseable.
 # │  参数：name: str, default: float
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -876,7 +876,7 @@ def _float_env(name: str, default: float) -> float:
 
 
 # ┌── 函数 def _exit_watchdog_timeout()
-# │  作用：``HERMES_EXIT_WATCHDOG_S`` as a float (default 30; ``0`` disables).
+# │  作用：``HERMES_EXIT_WATCHDOG_S`` 作为浮点数 (默认值 30; ``0`` disables).
 # │  参数：无
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -887,7 +887,7 @@ def _exit_watchdog_timeout() -> float:
 
 
 # ┌── 函数 def _arm_exit_watchdog()
-# │  作用：Daemon timer that ``os._exit(0)``s after ``timeout_s`` once shutdown has begun.
+# │  作用：Daemon timer 那个 ``os._exit(0)``s 在…之后 ``timeout_s`` 一旦 shutdown 有 begun.
 # │  参数：timeout_s: float | None = None, from_signal: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -936,7 +936,7 @@ _signal_watchdog_armed = False
 
 
 # ┌── 函数 def _arm_exit_watchdog_on_shutdown_signal()
-# │  作用：Arm the exit backstop the moment a termination signal arrives (idempotent; never raises).
+# │  作用：Arm exit backstop moment termination 信号 arrives (idempotent; never 抛出).
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -968,7 +968,7 @@ def _arm_exit_watchdog_on_shutdown_signal() -> None:
 
 
 # ┌── 函数 def _shutdown_agent_memory_provider()
-# │  作用：Memory-provider shutdown (on_session_end + shutdown_all) at the real session boundary.
+# │  作用：内存-服务商 shutdown (on_session_end + shutdown_all) 在 real 会话 boundary.
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1049,7 +1049,7 @@ _CLEANUP_STEPS = (
 
 
 # ┌── 函数 def _run_cleanup()
-# │  作用：Run resource cleanup exactly once.
+# │  作用：运行 resource cleanup exactly 一旦.
 # │  参数：notify_session_finalize: bool = ...
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1120,7 +1120,7 @@ def _notify_session_finalize(*, session_id: str | None, platform: str = "cli", r
 
 
 # ┌── 函数 def _oneshot_agent_and_session()
-# │  作用：``(agent, session_id)`` for a one-shot run; the agent's id wins over the CLI's.
+# │  作用：``(Agent, session_id)`` 用于 one-shot 运行; Agent's id wins over CLI's.
 # │  参数：cli
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1132,7 +1132,7 @@ def _oneshot_agent_and_session(cli):
 
 
 # ┌── 函数 def _invoke_interrupted_session_end()
-# │  作用：Best-effort ``on_session_end`` hook for a turn cut short (never raises).
+# │  作用：尽最大努力 ``on_session_end`` hook 用于轮次 cut short (never 抛出).
 # │  参数：agent, session_id, reason: str, **extra
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1148,7 +1148,7 @@ def _invoke_interrupted_session_end(agent, session_id, reason: str, **extra) -> 
 
 
 # ┌── 函数 def _emit_interrupted_session_end()
-# │  作用：Best-effort on_session_end hook for interrupted non-interactive runs.
+# │  作用：尽最大努力 on_session_end hook 用于 interrupted non-interactive 运行.
 # │  参数：cli, reason: str = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1195,7 +1195,7 @@ def _notify_single_query_session_finalize(cli, *, reason: str = "shutdown") -> N
 
 
 # ┌── 函数 def _flush_one_shot_session_store()
-# │  作用：Durably flush + finalize the one-shot session row before exit (idempotent, best-effort).
+# │  作用：Durably 冲刷 + finalize one-shot 会话 row 在…之前 exit (idempotent, 尽最大努力).
 # │  参数：cli
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1246,7 +1246,7 @@ def _flush_one_shot_session_store(cli) -> None:
 
 
 # ┌── 函数 def _wait_for_oneshot_background_completions()
-# │  作用：Bounded linger for notify_on_complete background processes (children write to our pipes).
+# │  作用：Bounded linger 用于 notify_on_complete background 进程 (children 写入我们的 pipes).
 # │  参数：cli
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1278,7 +1278,7 @@ def _wait_for_oneshot_background_completions(cli) -> None:
 
 
 # ┌── 函数 def _finalize_single_query()
-# │  作用：Close one-shot CLI resources before releasing the active session lease.
+# │  作用：关闭 one-shot CLI resources 在…之前 releasing active 会话 lease.
 # │  参数：cli
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1306,7 +1306,7 @@ def _finalize_single_query(cli) -> None:
 
 
 # ┌── 函数 def _reset_terminal_input_modes_on_exit()
-# │  作用：Disable focus reporting + mouse tracking on TUI exit (best-effort).
+# │  作用：Disable focus reporting + mouse tracking 在…上 TUI exit (尽最大努力).
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1358,7 +1358,7 @@ _active_worktree: Optional[Dict[str, str]] = None
 
 
 # ┌── 函数 def _cleanup_worktree()
-# │  作用：Remove a worktree and its branch on exit; kept only when it has unpushed commits.
+# │  作用：移除 worktree 且其 branch 在…上 exit; 保留仅 当它 有 unpushed commits.
 # │  参数：info: Dict[str, str] = None
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1395,7 +1395,7 @@ def _cleanup_worktree(info: Dict[str, str] = None) -> None:
 
 
 # ┌── 函数 def _run_state_db_auto_maintenance()
-# │  作用：One-time repairs + auto-archive/prune/vacuum per the ``sessions:`` config. Never raises.
+# │  作用：一次性的 repairs + auto-archive/prune/vacuum per ``会话:`` 配置. Never 抛出.
 # │  参数：session_db
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1455,7 +1455,7 @@ def _run_state_db_auto_maintenance(session_db) -> None:
 
 
 # ┌── 函数 def _run_checkpoint_auto_maintenance()
-# │  作用：Call ``maybe_auto_prune_checkpoints`` per the ``checkpoints:`` config. Never raises.
+# │  作用：Call ``maybe_auto_prune_checkpoints`` per ``checkpoints:`` 配置. Never 抛出.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1488,7 +1488,7 @@ _STREAM_PARTIAL_PREVIEW_LEN = 60  # tail of an unfinished line mirrored into the
 
 
 # ┌── 函数 def _hex_to_ansi()
-# │  作用：Convert '#RRGGBB' to a true-color ANSI escape, remapping dark-tuned colors in light mode.
+# │  作用：Convert '#RRGGBB' True-color ANSI escape, remapping dark-tuned colors 在 light 模式.
 # │  参数：hex_color: str, bold: bool = ...
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1515,7 +1515,7 @@ _LIGHT_DEFAULT_TERM_PROGRAMS = frozenset()  # Apple_Terminal isn't reliable; req
 
 
 # ┌── 函数 def _luminance_from_hex()
-# │  作用：Rec.709 luma in [0, 1] for '#RGB'/'#RRGGBB', or None when malformed.
+# │  作用：Rec.709 luma 在 [0, 1] 用于 '#RGB'/'#RRGGBB', 或 None 当格式非法的.
 # │  参数：hex_str: str
 # │  返回：float | None
 # └──────────────────────────────────────────────────────────────
@@ -1541,7 +1541,7 @@ _DA1_REPLY_RE = re.compile(rb"\x1b\[\?[0-9;]*c")
 
 
 # ┌── 函数 def _query_osc11_background()
-# │  作用：Terminal background via OSC 11 as "#RRGGBB", or None.
+# │  作用：终端 background via OSC 11 作为 "#RRGGBB", 或 None.
 # │  参数：无
 # │  返回：str | None
 # └──────────────────────────────────────────────────────────────
@@ -1627,7 +1627,7 @@ def _query_osc11_background() -> str | None:
 
 
 # ┌── 函数 def _heal_cooked_mode_drift()
-# │  作用：Re-apply raw mode on *fd* when termios drifted back to cooked (POSIX only).
+# │  作用：Re-apply raw 模式在…上 *fd* 当 termios drifted back cooked (POSIX 仅).
 # │  参数：fd: int
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1663,7 +1663,7 @@ def _heal_cooked_mode_drift(fd: int) -> bool:
 
 
 # ┌── 函数 def _detect_light_mode_uncached()
-# │  作用：The detection ladder documented above; may raise (caller maps errors to dark).
+# │  作用：detection ladder documented above; 可以抛出 (caller maps 错误 dark).
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1733,7 +1733,7 @@ _LIGHT_MODE_REMAP_UPPER = {k.upper(): v for k, v in _LIGHT_MODE_REMAP.items()}
 
 
 # ┌── 函数 def _maybe_remap_for_light_mode()
-# │  作用：In light mode, remap a dark-tuned color to its higher-contrast equivalent.
+# │  作用：在 light 模式, remap dark-tuned color 其 higher-contrast equivalent.
 # │  参数：hex_color: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1750,7 +1750,7 @@ def _maybe_remap_for_light_mode(hex_color: str) -> str:
 
 
 # ┌── 函数 def _install_skin_light_mode_hook()
-# │  作用：Wrap SkinConfig.get_color so EVERY skin color read goes through the light-mode remap. Idempotent.
+# │  作用：Wrap SkinConfig.get_color 从而每个 skin color 读取 goes through light-模式 remap. Idempotent.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1789,7 +1789,7 @@ with suppress(Exception):
 
 
 # ┌── 类 class _SkinAwareAnsi
-# │  说明：Lazy ANSI escape resolved from the skin on first use; ``.reset()`` after a ``/skin`` switch.
+# │  说明：Lazy ANSI escape resolved 从 skin 在…上 first use; ``.reset()`` 在…之后 ``/skin`` 切换.
 # │  成员：共 5 个方法；对外可用 1 个；含魔术方法 __init__, __str__, __add__, __radd__
 # └──────────────────────────────────────────────────────────────
 class _SkinAwareAnsi:
@@ -1844,7 +1844,7 @@ class _SkinAwareAnsi:
         return other + str(self)
 
     # ┌── 函数 def reset()
-    # │  作用：Clear cache so the next access re-reads the skin.
+    # │  作用：清除缓存从而 next access re-读取 skin.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1859,7 +1859,7 @@ _DIM = "\x1b[2;3m"
 
 
 # ┌── 函数 def _tty_wrap()
-# │  作用：Wrap *s* in an SGR attribute when stdout is a real TTY; plain text otherwise.
+# │  作用：Wrap *s* 在 SGR 属性当 标准输出是 real TTY; plain 文本 otherwise.
 # │  参数：s: str, sgr: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1879,7 +1879,7 @@ _d = functools.partial(_tty_wrap, sgr="\x1b[2;3m")  # dim-italic when stdout is 
 
 
 # ┌── 函数 def _accent_hex()
-# │  作用：Return the active skin accent color for legacy CLI output lines.
+# │  作用：返回 active skin accent color 用于 legacy CLI 输出 lines.。
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1896,7 +1896,7 @@ def _accent_hex() -> str:
 
 
 # ┌── 函数 def _rich_text_from_ansi()
-# │  作用：Rich Text from ANSI output; literal ``[brackets]`` are not treated as markup.
+# │  作用：Rich 文本从 ANSI 输出; literal ``[brackets]`` 是不 treated 作为 markup.
 # │  参数：text: str
 # │  返回：_RichText
 # └──────────────────────────────────────────────────────────────
@@ -1907,7 +1907,7 @@ def _rich_text_from_ansi(text: str) -> _RichText:
 
 
 # ┌── 函数 def _strip_markdown_syntax()
-# │  作用：Best-effort markdown marker removal for plain-text display.
+# │  作用：尽最大努力 markdown marker removal 用于 plain-文本展示.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1940,7 +1940,7 @@ _WINDOWS_PATH_WITH_DOT_SEGMENT_RE = re.compile(r"(?i)(?:\b[a-z]:\\|\\\\)[^\s`]*\
 
 
 # ┌── 函数 def _preserve_windows_dot_segments_for_markdown()
-# │  作用：Double the ``\`` before hidden dirs in Windows paths: CommonMark reads ``\.`` as an escaped dot.
+# │  作用：Double ``\`` 在…之前 hidden dirs 在 Windows 路径: CommonMark 读取 ``\.`` 作为 escaped dot.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1974,7 +1974,7 @@ def _terminal_columns() -> int:
 
 
 # ┌── 函数 def _terminal_width_for_streaming()
-# │  作用：Display cells inside the streamed response box (small margin for resize races).
+# │  作用：展示 cells inside streamed 响应 box (small margin 用于 resize races).
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1985,7 +1985,7 @@ def _terminal_width_for_streaming() -> int:
 
 
 # ┌── 函数 def _render_final_assistant_content()
-# │  作用：Render final assistant content as markdown, stripped text, or raw text.
+# │  作用：Render final assistant 内容作为 markdown, stripped 文本, 或原始文本.
 # │  参数：text: str, mode: str = 'render'
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2014,7 +2014,7 @@ def _render_final_assistant_content(text: str, mode: str = "render"):
 
 
 # ┌── 函数 def _post_stream_transform_output()
-# │  作用：Text still to display after a streamed response transform: the suffix, or the whole response when replaced.
+# │  作用：文本仍 展示在…之后 streamed 响应 transform: suffix, 或 whole 响应当 replaced.
 # │  参数：response: str, result: dict | None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2056,7 +2056,7 @@ def _coerce_output_history_limit(value) -> int:
 
 
 # ┌── 函数 def _configure_output_history()
-# │  作用：Configure recent CLI output replayed after terminal redraws.
+# │  作用：Configure recent CLI 输出已重放的在…之后终端 redraws.
 # │  参数：enabled: bool, max_lines = 200
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2129,7 +2129,7 @@ def _record_output_history(text: str) -> None:
 
 
 # ┌── 函数 def _replay_output_history()
-# │  作用：Repaint recent output above the prompt after a full screen clear.
+# │  作用：Repaint recent 输出 above 提示词在…之后 full screen 清除.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2164,7 +2164,7 @@ def _replay_output_history() -> None:
 
 
 # ┌── 函数 def _pt_print_ansi()
-# │  作用：``_pt_print(ANSI(text))``, falling back to ``print`` when stdout is not a real console.
+# │  作用：``_pt_print(ANSI(文本))``, falling back ``打印`` 当标准输出是 不 real console.
 # │  参数：text: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2180,7 +2180,7 @@ def _pt_print_ansi(text: str) -> None:
 
 
 # ┌── 函数 def _cprint()
-# │  作用：Print ANSI text through prompt_toolkit's renderer (patch_stdout swallows raw ANSI).
+# │  作用：打印 ANSI 文本 through prompt_toolkit's renderer (patch_stdout swallows raw ANSI).
 # │  参数：text: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2247,7 +2247,7 @@ def _cprint(text: str):
 
 
 # ┌── 函数 def _prepend_note_to_message()
-# │  作用：Prepend a one-shot note to a user message (str, or content-part list when an image is attached).
+# │  作用：Prepend one-shot note user 消息 (str, 或内容-part 列表当 image 是 attached).
 # │  参数：message, note: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2279,7 +2279,7 @@ def _prepend_note_to_message(message, note: str):
 
 
 # ┌── 函数 def _pt_app_is_running()
-# │  作用：Whether a prompt_toolkit Application currently owns the live terminal.
+# │  作用：是否 prompt_toolkit Application currently 持有当前活跃的终端.。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2297,7 +2297,7 @@ def _pt_app_is_running() -> bool:
 
 
 # ┌── 函数 def _cli_visible_print()
-# │  作用：``print`` unless a prompt_toolkit Application owns the terminal (patch_stdout swallows bare prints).
+# │  作用：``打印`` unless prompt_toolkit Application 持有终端 (patch_stdout swallows bare prints).
 # │  参数：text: str = ''
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2316,7 +2316,7 @@ _IMAGE_EXTENSIONS = frozenset({
 
 
 # ┌── 函数 def _termux_example_image_path()
-# │  作用：Return a realistic example media path for the current Termux setup.
+# │  作用：返回 realistic example media 路径用于 current Termux setup.。
 # │  参数：filename: str = 'cat.png'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2338,7 +2338,7 @@ def _termux_example_image_path(filename: str = "cat.png") -> str:
 
 
 # ┌── 函数 def _split_path_input()
-# │  作用：Split a leading path token (quoted or with ``\ `` escapes) from trailing free-form text.
+# │  作用：Split leading 路径令牌 (quoted 或带 ``\ `` escapes) 从 trailing free-形态文本.
 # │  参数：raw: str
 # │  返回：tuple[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -2379,7 +2379,7 @@ def _split_path_input(raw: str) -> tuple[str, str]:
 
 
 # ┌── 函数 def _resolve_attachment_path()
-# │  作用：Resolve a user-supplied attachment path (quotes, ``~``, env vars, ``file://``; relative to TERMINAL_CWD).
+# │  作用：Resolve user-supplied attachment 路径 (quotes, ``~``, env vars, ``文件://``; relative TERMINAL_CWD).
 # │  参数：raw_path: str
 # │  返回：Path | None
 # └──────────────────────────────────────────────────────────────
@@ -2454,7 +2454,7 @@ def _file_drop_result(path: Path, remainder: str) -> dict:
 
 
 # ┌── 函数 def _detect_file_drop()
-# │  作用：Detect a dragged/pasted file path at the start of *user_input* -> ``{path, is_image, remainder}`` or None.
+# │  作用：检测 dragged/pasted 文件路径在 start 的 *user_input* -> ``{路径, is_image, remainder}`` 或 None.
 # │  参数：user_input: str
 # │  返回：'dict | None'
 # └──────────────────────────────────────────────────────────────
@@ -2502,7 +2502,7 @@ def _detect_file_drop(user_input: str) -> "dict | None":
 
 
 # ┌── 函数 def _format_image_attachment_badges()
-# │  作用：Attached-image badge row: compact summary on narrow terminals, per-image badges otherwise.
+# │  作用：Attached-image badge row: compact 摘要在…上 narrow terminals, per-image badges otherwise.
 # │  参数：attached_images: list[Path], image_counter: int, width: int | None = None
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2537,7 +2537,7 @@ def _format_image_attachment_badges(attached_images: list[Path], image_counter: 
 
 
 # ┌── 函数 def _should_auto_attach_clipboard_image_on_paste()
-# │  作用：Auto-attach clipboard images only for image-only paste gestures.
+# │  作用：Auto-attach clipboard images 仅用于 image-仅 paste gestures.
 # │  参数：pasted_text: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2553,7 +2553,7 @@ _strip_leaked_bracketed_paste_wrappers = _lazy_shim(
 
 
 # ┌── 函数 def _hermes_call_output_screen_diff()
-# │  作用：prompt_toolkit ``_output_screen_diff`` with resize guards.
+# │  作用：prompt_toolkit ``_output_screen_diff`` 带 resize 护栏.
 # │  参数：orig_osd, app, output, screen, current_pos, color_depth, previous_screen, last_style  …共 14 个
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2592,7 +2592,7 @@ def _hermes_call_output_screen_diff(
 
 
 # ┌── 函数 def _apply_bracketed_paste_timeout_patch()
-# │  作用：Patch ``Vt100Parser.feed`` to flush a bracketed paste whose ESC[201~ end mark never arrives.
+# │  作用：Patch ``Vt100Parser.feed`` 冲刷 bracketed paste whose ESC[201~ end mark never arrives.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2691,7 +2691,7 @@ _BACKSLASH_LINE_CONTINUATION_RE = re.compile(r"\\[ \t]*$")
 
 
 # ┌── 函数 def _is_ghostty_terminal()
-# │  作用：Whether the terminal is Ghostty.
+# │  作用：是否 终端是 Ghostty.。
 # │  参数：env: Optional[Mapping[str, str]] = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2710,7 +2710,7 @@ def _is_ghostty_terminal(env: Optional[Mapping[str, str]] = None) -> bool:
 
 
 # ┌── 函数 def _terminal_supports_extended_enter_keys()
-# │  作用：Allowlist of terminals where requesting modified-Enter reporting is safe (aligned with the Ink TUI).
+# │  作用：白名单的 terminals 何处 requesting modified-Enter reporting 是 safe (aligned 带 Ink TUI).
 # │  参数：env: Optional[Mapping[str, str]] = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2730,7 +2730,7 @@ def _terminal_supports_extended_enter_keys(env: Optional[Mapping[str, str]] = No
 
 
 # ┌── 函数 def _enable_extended_enter_keys()
-# │  作用：Ask allowlisted terminals to report modified keys distinctly.
+# │  作用：Ask allowlisted terminals report modified 键 distinctly.
 # │  参数：output = None, env: Optional[Mapping[str, str]] = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2777,7 +2777,7 @@ def _enable_extended_enter_keys(output=None, env: Optional[Mapping[str, str]] = 
 
 
 # ┌── 函数 def _cli_multiline_shortcuts_enabled()
-# │  作用：``display.cli_multiline_shortcuts`` (default on: Ctrl+J = newline; off restores the legacy c-j submit).
+# │  作用：``展示.cli_multiline_shortcuts`` (默认值在…上: Ctrl+J = newline; off restores legacy c-j submit).
 # │  参数：config: Optional[Dict[str, Any]] = None
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2795,7 +2795,7 @@ def _cli_multiline_shortcuts_enabled(config: Optional[Dict[str, Any]] = None) ->
 
 
 # ┌── 函数 def _is_backslash_line_continuation()
-# │  作用：True when Enter should turn a trailing backslash into a newline.
+# │  作用：当 Enter 应当轮次 trailing backslash 进入 newline. 时返回 True。
 # │  参数：text: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2806,7 +2806,7 @@ def _is_backslash_line_continuation(text: str) -> bool:
 
 
 # ┌── 函数 def _apply_backslash_line_continuation()
-# │  作用：Replace a trailing ``\`` marker with an actual newline.
+# │  作用：Replace trailing ``\`` marker 带 actual newline.
 # │  参数：text: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2817,7 +2817,7 @@ def _apply_backslash_line_continuation(text: str) -> str:
 
 
 # ┌── 函数 def _preserve_ctrl_enter_newline()
-# │  作用：Environments delivering Ctrl+Enter as bare LF (Windows Terminal, WSL, SSH, Ghostty): c-j must stay newline.
+# │  作用：Environments delivering Ctrl+Enter 作为 bare LF (Windows 终端, WSL, SSH, Ghostty): c-j 必须 stay newline.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2851,7 +2851,7 @@ def _preserve_ctrl_enter_newline() -> bool:
 
 
 # ┌── 函数 def _bind_prompt_submit_keys()
-# │  作用：Enter always submits; c-j submits only with multiline shortcuts off AND where Ctrl+Enter isn't c-j.
+# │  作用：Enter always submits; c-j submits 仅带 multiline shortcuts off 且何处 Ctrl+Enter isn't c-j.
 # │  参数：kb, handler, multiline_shortcuts_enabled: Optional[bool] = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2870,7 +2870,7 @@ def _bind_prompt_submit_keys(kb, handler, *, multiline_shortcuts_enabled: Option
 
 
 # ┌── 函数 def _disable_prompt_toolkit_cpr_warning()
-# │  作用：Let prompt_toolkit fall back from CPR without printing into the prompt.
+# │  作用：Let prompt_toolkit fall back 从 CPR 不 printing 进入提示词.
 # │  参数：app
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -2881,7 +2881,7 @@ def _disable_prompt_toolkit_cpr_warning(app) -> None:
 
 
 # ┌── 函数 def _terminal_may_leak_cpr()
-# │  作用：Suppress prompt_toolkit CPR queries (delayed replies leak into input); Windows keeps pt's default.
+# │  作用：Suppress prompt_toolkit CPR queries (delayed replies leak 进入输入); Windows 保留 pt's 默认值.
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -2897,7 +2897,7 @@ def _terminal_may_leak_cpr() -> bool:
 
 
 # ┌── 函数 def _build_cpr_disabled_output()
-# │  作用：Vt100_Output with ``enable_cpr=False`` (``from_pty()`` doesn't expose it), or None on failure.
+# │  作用：Vt100_Output 带 ``enable_cpr=False`` (``from_pty()`` doesn't expose 它), 或 None 在…上 failure.
 # │  参数：stdout
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2933,7 +2933,7 @@ def _build_cpr_disabled_output(stdout):
 
 
 # ┌── 函数 def _select_classic_cli_pt_output()
-# │  作用：CPR-disabled ``Vt100_Output`` when CPR may leak, else None (Application keeps pt's default).
+# │  作用：CPR-disabled ``Vt100_Output`` 当 CPR 可以 leak, 否则 None (Application 保留 pt's 默认值).
 # │  参数：stdout
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2944,7 +2944,7 @@ def _select_classic_cli_pt_output(stdout):
 
 
 # ┌── 函数 def _strip_leaked_terminal_responses_with_meta()
-# │  作用：Strip leaked CPR replies and mouse-report fragments -> ``(cleaned, had_mouse_reports)``.
+# │  作用：Strip leaked CPR replies 且 mouse-report 片段 -> ``(cleaned, had_mouse_reports)``.
 # │  参数：text: str
 # │  返回：tuple[str, bool]
 # └──────────────────────────────────────────────────────────────
@@ -2971,7 +2971,7 @@ def _strip_leaked_terminal_responses_with_meta(text: str) -> tuple[str, bool]:
 
 
 # ┌── 函数 def _estimate_tui_input_height()
-# │  作用：Input rows from live terminal cells; the BeforeInput prompt consumes cells only on line 0.
+# │  作用：输入 rows 从当前活跃的终端 cells; BeforeInput 提示词消费 cells 仅在…上 line 0.
 # │  参数：lines: list[str] | tuple[str, ...], prompt_text: str, terminal_columns: int, max_height: int = ...
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3001,7 +3001,7 @@ def _estimate_tui_input_height(
 
 
 # ┌── 函数 def _status_bar_visible_from_display_config()
-# │  作用：Initial status-bar visibility; both YAML ``off`` (False) and strings like ``"hidden"`` mean off.
+# │  作用：Initial status-bar visibility; both YAML ``off`` (False) 且 strings like ``"hidden"`` mean off.
 # │  参数：display_config: object
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3018,7 +3018,7 @@ def _status_bar_visible_from_display_config(display_config: object) -> bool:
 
 
 # ┌── 函数 def _collect_query_images()
-# │  作用：Collect local image attachments for single-query CLI flows.
+# │  作用：Collect local image attachments 用于 single-query CLI flows.
 # │  参数：query: str | None, image_arg: str | None = None
 # │  返回：tuple[str, list[Path]]
 # └──────────────────────────────────────────────────────────────
@@ -3052,7 +3052,7 @@ _OSC_ESCAPE_RE = re.compile(r"\x1b\][\s\S]*?(?:\x07|\x1b\\)")
 
 
 # ┌── 类 class ChatConsole
-# │  说明：Rich Console drop-in routing rendered ANSI through ``_cprint`` so colors survive patch_stdout.
+# │  说明：Rich Console 丢弃-在 routing rendered ANSI through ``_cprint`` 从而 colors survive patch_stdout.
 # │  成员：共 3 个方法；对外可用 2 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
 class ChatConsole:
@@ -3082,7 +3082,7 @@ class ChatConsole:
             _cprint(line)
 
     # ┌── 函数 def status()
-    # │  作用：No-op ``console.status`` so slash helpers don't duplicate ``_busy_command()``'s indicator.
+    # │  作用：无-op ``console.status`` 从而 slash helpers don't duplicate ``_busy_command()``'s indicator.
     # │  参数：self, *_args, **_kwargs
     # │  返回：（未标注类型）
     # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -3096,7 +3096,7 @@ class ChatConsole:
 
 
 # ┌── 函数 def _build_compact_banner()
-# │  作用：Build a compact banner that fits the current terminal width.
+# │  作用：构建 compact banner 那个 fits current 终端 width.
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3153,7 +3153,7 @@ def _build_compact_banner() -> str:
 
 
 # ┌── 函数 def _looks_like_slash_command()
-# │  作用：``/help`` yes, ``/Users/x/file.md`` no: a command's first word has no further ``/``.
+# │  作用：``/help`` yes, ``/Users/x/文件.md`` 无: 命令's first word 有无 further ``/``.
 # │  参数：text: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3171,7 +3171,7 @@ _skill_bundles = None
 
 
 # ┌── 函数 def _slash_args()
-# │  作用：Text after the slash-command word, stripped ("" when absent).
+# │  作用：文本在…之后 slash-命令 word, stripped ("" 当 absent).
 # │  参数：cmd: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -3232,7 +3232,7 @@ build_bundle_invocation_message = _lazy_shim("agent.skill_bundles", "build_bundl
 
 
 # ┌── 函数 def _get_plugin_cmd_handler_names()
-# │  作用：Return plugin command names (without slash prefix) for dispatch matching.
+# │  作用：返回 plugin 命令名称 (不 slash prefix) 用于 dispatch matching.。
 # │  参数：无
 # │  返回：set
 # └──────────────────────────────────────────────────────────────
@@ -3249,7 +3249,7 @@ def _get_plugin_cmd_handler_names() -> set:
 
 
 # ┌── 函数 def _parse_skills_argument()
-# │  作用：Normalize a CLI skills flag into a deduplicated list of skill identifiers.
+# │  作用：归一化 CLI skills 标志进入 deduplicated 列表的 skill identifiers.
 # │  参数：skills: str | list[str] | tuple[str, ...] | None
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -3265,7 +3265,7 @@ def _parse_skills_argument(skills: str | list[str] | tuple[str, ...] | None) -> 
 
 
 # ┌── 函数 def save_config_value()
-# │  作用：Persist dot-separated ``key_path`` = value into HERMES_HOME/config.yaml; True on success.
+# │  作用：持久化 dot-separated ``key_path`` = 值进入 HERMES_HOME/配置.YAML; True 在…上 success.
 # │  参数：key_path: str, value: any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3299,7 +3299,7 @@ def save_config_value(key_path: str, value: any) -> bool:
 
 
 # ┌── 函数 def _normalize_moa_model()
-# │  作用：``moa:<preset>`` -> ``("moa", preset)`` (same routing as ``/moa``); anything else -> ``(None, model)``.
+# │  作用：``moa:<preset>`` -> ``("moa", preset)`` (same routing 作为 ``/moa``); anything 否则 -> ``(None, 模型)``.
 # │  参数：model: Optional[str]
 # │  返回：tuple[Optional[str], Optional[str]]
 # └──────────────────────────────────────────────────────────────
@@ -3325,7 +3325,7 @@ _split_model_config_default = _lazy_shim("hermes_cli.config", "split_model_confi
 
 
 # ┌── 类 class _VoiceInputMessage
-# │  说明：Sentinel for voice-transcribed input so the concise voice prefix never applies to typed text.
+# │  说明：Sentinel 用于 voice-transcribed 输入从而 concise voice prefix never applies typed 文本.
 # │  成员：共 2 个方法；全部是下划线开头的内部方法；含魔术方法 __init__, __str__
 # └──────────────────────────────────────────────────────────────
 class _VoiceInputMessage:
@@ -3357,7 +3357,7 @@ class _VoiceInputMessage:
 
 
 # ┌── 类 class _SeededQueryMessage
-# │  说明：Sentinel for a ``-q`` prompt seeded into an interactive session; treated LITERALLY (no slash/!/file-drop).
+# │  说明：Sentinel 用于 ``-q`` 提示词 seeded 进入 interactive 会话; treated LITERALLY (无 slash/!/文件-丢弃).
 # │  成员：共 2 个方法；全部是下划线开头的内部方法；含魔术方法 __init__, __str__
 # └──────────────────────────────────────────────────────────────
 class _SeededQueryMessage:
@@ -3385,7 +3385,7 @@ class _SeededQueryMessage:
 
 
 # ┌── 函数 def _should_seed_interactive()
-# │  作用：``-q`` seeds an interactive session only on a real TTY without ``--oneshot``/``-Q`` (automation answers and exits).
+# │  作用：``-q`` seeds interactive 会话仅 在…上 real TTY 不 ``--oneshot``/``-Q`` (automation answers 且 exits).
 # │  参数：query, image, quiet: bool, oneshot: bool
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -3404,7 +3404,7 @@ def _should_seed_interactive(query, image, quiet: bool, oneshot: bool) -> bool:
 
 
 # ┌── 函数 def _panel_box_width()
-# │  作用：Stable TUI panel width wide enough for the title and content (incl. borders).
+# │  作用：Stable TUI panel width wide enough 用于 title 且内容 (incl. borders).
 # │  参数：title: str, content_lines: list[str], min_width: int = 46, max_width: int = 76
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -3418,7 +3418,7 @@ def _panel_box_width(title: str, content_lines: list[str], min_width: int = 46, 
 
 
 # ┌── 函数 def _wrap_panel_text()
-# │  作用：Wrap panel text; ``keep_ws`` preserves whitespace (command/detail previews).
+# │  作用：Wrap panel 文本; ``keep_ws`` preserves whitespace (命令/detail previews).
 # │  参数：text: str, width: int, subsequent_indent: str = '', keep_ws: bool = ...
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -3452,7 +3452,7 @@ def _append_blank_panel_line(lines, border_style: str, box_width: int) -> None:
 
 
 # ┌── 类 class _ChatTurn
-# │  说明：Per-turn state shared by the ``chat()`` phases and the agent worker thread.
+# │  说明：Per-轮次状态 shared 由 ``chat()`` 阶段且 Agent 工作线程.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -3480,7 +3480,7 @@ _PASTE_REF_RE = re.compile(r'\[Pasted text #\d+: \d+ lines \u2192 (.+?)\]')
 
 
 # ┌── 类 class HermesCLI（继承自：CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin, CLITuiMixin, CLIStatusBarMixin, CLIVoiceMixin, CLIModelSwitchMixin, CLISessionMixin, CLIStreamMixin, CLIModalMixin, CLITerminalMixin, CLIInfoMixin, CLILoopsMixin, CLIChatTurnMixin）
-# │  说明：Interactive REPL for the Hermes Agent.
+# │  说明：Interactive REPL 用于 Hermes Agent.
 # │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
 # │  成员：共 46 个方法；对外可用 4 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
@@ -3494,7 +3494,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     disabled_toolsets: Optional[List[str]] = None
 
     # ┌── 函数 def __init__()
-    # │  作用：CLI args win over config; ``reasoning`` is per-run only; ``resume`` restores history from SQLite.
+    # │  作用：CLI args win over 配置; ``reasoning`` 是 per-运行仅; ``resume`` restores history 从 SQLite.
     # │  参数：self, model: str = None, toolsets: List[str] = None, provider: str = None, reasoning: str = None, api_key: str = None, base_url: str = None, max_turns: int = None  …共 15 个
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3522,7 +3522,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._init_runtime_state(resume)
 
     # ┌── 函数 def _init_display_options()
-    # │  作用：Display-related config: compact/tool-progress/focus view, bells, streaming, previews, stream buffers.
+    # │  作用：展示-related 配置: compact/工具-progress/focus view, bells, streaming, previews, stream buffers.
     # │  参数：self, verbose, compact
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3596,7 +3596,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._input_mode_recovery_notice_shown = self._termios_drift_notice_shown = False
 
     # ┌── 函数 def _init_model_routing()
-    # │  作用：Resolve model/provider/base_url, turn limits, toolsets, checkpoints, prompt/personality, reasoning + routing config.
+    # │  作用：Resolve 模型/服务商/base_url, 轮次限制, 工具集, checkpoints, 提示词/personality, reasoning + routing 配置.
     # │  参数：self, model, toolsets, provider, reasoning, api_key, base_url, max_turns  …共 12 个
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3609,7 +3609,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._init_prompt_and_reasoning(reasoning)
 
     # ┌── 函数 def _init_model_and_provider()
-    # │  作用：Priority: CLI args > env vars > config file.
+    # │  作用：Priority: CLI args > env vars > 配置文件.
     # │  参数：self, model, provider, api_key, base_url
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3703,7 +3703,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self.api_key = api_key or os.getenv(_keys[0]) or os.getenv(_keys[1])
 
     # ┌── 函数 def _init_turn_limits()
-    # │  作用：max_turns: CLI arg > config > env var > default; run budget: CLI flag > config.
+    # │  作用：max_turns: CLI arg > 配置 > 环境变量 > 默认值; 运行预算: CLI 标志 > 配置.
     # │  参数：self, max_turns, run_budget
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3755,7 +3755,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self.ignore_rules = ignore_rules or os.environ.get("HERMES_IGNORE_RULES") == "1"
 
     # ┌── 函数 def _init_prompt_and_reasoning()
-    # │  作用：Ephemeral system prompt/prefill, reasoning + service tier, OpenRouter routing knobs, fallback chain.
+    # │  作用：Ephemeral system 提示词/预填充, reasoning + service tier, OpenRouter routing knobs, 兜底 chain.
     # │  参数：self, reasoning
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3806,7 +3806,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._fallback_model = get_fallback_chain(CLI_CONFIG)
 
     # ┌── 函数 def _init_runtime_state()
-    # │  作用：Session store + all per-run mutable state (queues, overlays, pet/voice/status-bar fields).
+    # │  作用：会话 store + 全部 per-运行 mutable 状态 (队列, 叠加, pet/voice/status-bar 字段).
     # │  参数：self, resume
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3835,7 +3835,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._init_ui_state()
 
     # ┌── 函数 def _init_session_store()
-    # │  作用：Open the session store early (so /title works before the first message) + opportunistic maintenance.
+    # │  作用：打开会话 store early (从而 /title works 在…之前 first 消息) + opportunistic maintenance.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3878,7 +3878,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         _run_checkpoint_auto_maintenance()
 
     # ┌── 函数 def _init_ui_state()
-    # │  作用：Per-run mutable UI state; must exist before any chat() call since -q never goes through run().
+    # │  作用：Per-运行 mutable UI 状态; 必须 exist 在…之前任意 chat() call since -q never goes through 运行().
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3978,7 +3978,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._cache_hit_baseline_model: Optional[str] = None
 
     # ┌── 函数 def _claim_active_session()
-    # │  作用：Claim a global active-session slot for this CLI process.
+    # │  作用：Claim global active-会话 slot 用于这个 CLI 进程.
     # │  参数：self, surface: str = 'cli', stderr: bool = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4034,7 +4034,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     _PET_CFG_INTERVAL = 2.5
 
     # ┌── 函数 def _install_tool_callbacks()
-    # │  作用：Install tool callbacks that need the live prompt UI.
+    # │  作用：安装工具回调那个 need 当前活跃的提示词 UI.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4052,7 +4052,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._tool_callbacks_installed = True
 
     # ┌── 函数 def _ensure_tirith_security()
-    # │  作用：Check tirith availability once before tools can run terminal commands.
+    # │  作用：检查 tirith availability 一旦在…之前工具可以运行终端命令.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4077,7 +4077,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             pass
 
     # ┌── 函数 def _show_security_advisories()
-    # │  作用：Startup banner for unacked security advisories, on stderr (piped stdout stays clean); 24h rate-limited.
+    # │  作用：Startup banner 用于 unacked security advisories, 在…上标准错误 (piped 标准输出 stays clean); 24h rate-limited.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4094,7 +4094,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             pass  # never block startup
 
     # ┌── 函数 def _show_browser_backend_notice()
-    # │  作用：Once-per-24h hint when the default Browser Use backend silently fell back to built-in tools.
+    # │  作用：一旦-per-24h hint 当默认值 Browser Use backend silently fell back 已构建-在工具.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4111,7 +4111,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             logger.debug("browser backend notice failed", exc_info=True)
 
     # ┌── 函数 def finalize_preloaded_skills()
-    # │  作用：Join the background --skills preload and fold it into the prompt (idempotent).
+    # │  作用：拼接 background --skills preload 且 fold 它进入提示词 (idempotent).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4155,7 +4155,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self.preloaded_skills = loaded_skills
 
     # ┌── 函数 def _show_tool_availability_warnings()
-    # │  作用：Warn about tools disabled by missing API keys (not system deps).
+    # │  作用：警告 about 工具 disabled 由 missing API 键 (不 system deps).
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4178,7 +4178,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             pass
 
     # ┌── 函数 def show_config()
-    # │  作用：Display current configuration with kawaii ASCII art.
+    # │  作用：展示 current configuration 带 kawaii ASCII art.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4269,7 +4269,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     }
 
     # ┌── 函数 def _slash_handler()
-    # │  作用：(method name, pass cmd_original?) for a registered command, else None.
+    # │  作用：(方法名称, pass cmd_original?) 用于 registered 命令, 否则 None.
     # │  参数：cls, canonical: str
     # │  返回：tuple[str, bool] | None
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4286,7 +4286,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         return entry
 
     # ┌── 函数 def process_command()
-    # │  作用：Dispatch a slash command; returns False to exit the REPL.
+    # │  作用：Dispatch slash 命令; 返回 False exit REPL.
     # │  参数：self, command: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4330,7 +4330,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         return result is not False
 
     # ┌── 函数 def _process_unregistered_slash()
-    # │  作用：Slash input with no built-in handler; precedence: quick_commands -> plugins -> bundles -> skills -> prefix expansion.
+    # │  作用：Slash 输入带 无已构建-在 handler; precedence: quick_commands -> plugins -> bundles -> skills -> prefix expansion.
     # │  参数：self, cmd_original: str, cmd_lower: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4358,7 +4358,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         return True
 
     # ┌── 函数 def _run_quick_command()
-    # │  作用：User-defined quick command (config.yaml): ``exec`` runs a shell snippet, ``alias`` re-dispatches.
+    # │  作用：User-defined quick 命令 (配置.YAML): ``exec`` 运行 shell snippet, ``别名`` re-dispatches.
     # │  参数：self, base_cmd: str, qcmd: dict, user_args: str
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4438,7 +4438,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self._pending_input.put(msg)
 
     # ┌── 函数 def _run_skill_bundle_command()
-    # │  作用：``/<bundle>`` loads several skills at once (bundles win over same-named skills).
+    # │  作用：``/<bundle>`` 加载 several skills 在一旦 (bundles win over same-named skills).
     # │  参数：self, base_cmd: str, bundle_info: dict, user_instruction: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4463,7 +4463,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._queue_skill_message(msg)
 
     # ┌── 函数 def _run_skill_slash_command()
-    # │  作用：``/<skill> ...``; stacked ``/skill-a /skill-b do XYZ`` loads every leading skill (up to 5).
+    # │  作用：``/<skill> ...``; stacked ``/skill- /skill-b XYZ`` 加载每个 leading skill (up 5).
     # │  参数：self, base_cmd: str, skill_info: dict, rest: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4491,7 +4491,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             ChatConsole().print(f"[bold red]Failed to load skill for {base_cmd}[/]")
 
     # ┌── 函数 def _expand_slash_prefix()
-    # │  作用：Unique-prefix expansion against built-in COMMANDS + skill commands/bundles (agrees with tab-completion).
+    # │  作用：Unique-prefix expansion against 已构建-在命令 + skill 命令/bundles (agrees 带 tab-completion).
     # │  参数：self, cmd_original: str, cmd_lower: str, skill_commands, skill_bundles
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -4525,7 +4525,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         return True
 
     # ┌── 函数 def _drain_interrupt_queue_to_pending_input()
-    # │  作用：Move stray ``_interrupt_queue`` messages into ``_pending_input`` after every turn.
+    # │  作用：Move stray ``_interrupt_queue`` 消息进入 ``_pending_input`` 在…之后每个轮次.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4549,7 +4549,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             pass
 
     # ┌── 函数 def _on_reasoning()
-    # │  作用：Callback for intermediate reasoning display during tool-call loops.
+    # │  作用：回调用于 intermediate reasoning 展示在…期间工具调用循环.
     # │  参数：self, reasoning_text: str
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4569,7 +4569,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
     _DESTRUCTIVE_SKIP_TOKENS = frozenset({"now", "--yes", "-y"})
 
     # ┌── 函数 def _tui_process_loop()
-    # │  作用：REPL worker thread: drain ``_pending_input``, run idle housekeeping, dispatch each input.
+    # │  作用：REPL 工作线程: drain ``_pending_input``, 运行 idle housekeeping, dispatch 每个输入.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4594,7 +4594,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 logger.warning("process_loop unhandled error (msg may be lost): %s", e)
 
     # ┌── 函数 def _tui_idle_tick()
-    # │  作用：Idle housekeeping between inputs (agent not running).
+    # │  作用：Idle housekeeping between 输入 (Agent 不运行).
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4612,7 +4612,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 step()
 
     # ┌── 函数 def _tui_process_one_input()
-    # │  作用：Route one submitted input: file drop, /resume pick, ! shell, slash command, or a chat turn.
+    # │  作用：路由 one submitted 输入: 文件丢弃, /resume pick, ! shell, slash 命令, 或 chat 轮次.
     # │  参数：self, user_input
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4683,7 +4683,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self._tui_after_turn()
 
     # ┌── 函数 def _tui_run_slash_input()
-    # │  作用：Dispatch a slash command. Returns the pending agent seed to run as a chat turn, else None.
+    # │  作用：Dispatch slash 命令. 返回 pending Agent seed 运行作为 chat 轮次, 否则 None.
     # │  参数：self, user_input: str
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4706,7 +4706,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         return _seed or None
 
     # ┌── 函数 def _tui_after_turn()
-    # │  作用：Post-turn bookkeeping after chat() returns (normal, error, or interrupt).
+    # │  作用：Post-轮次 bookkeeping 在…之后 chat() 返回 (normal, 错误, 或 interrupt).
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4764,7 +4764,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             self._drain_process_notifications("cli-post-turn")
 
     # ┌── 函数 def _tui_signal_handler()
-    # │  作用：SIGHUP/SIGTERM -> graceful shutdown.
+    # │  作用：收到 SIGHUP/SIGTERM 信号时，执行优雅关闭。
     # │  参数：self, signum, frame
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4805,7 +4805,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         raise KeyboardInterrupt()  # fallback for non-prompt_toolkit contexts
 
     # ┌── 函数 def _tui_print_startup()
-    # │  作用：Startup output: light-mode probe, banner, advisories, resume/welcome lines, tips.
+    # │  作用：Startup 输出: light-模式 probe, banner, advisories, resume/welcome lines, tips.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4860,7 +4860,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         self._console_print()
 
     # ┌── 函数 def _tui_startup_prewarm_and_warnings()
-    # │  作用：Idle-window prewarms (picker cache, agent runtime imports) plus the redaction-off and OpenClaw-residue banners.
+    # │  作用：Idle-window prewarms (picker 缓存, Agent 运行时导入) plus redaction-off 且 OpenClaw-residue banners.
     # │  参数：self, _welcome_skin
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4923,7 +4923,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             pass
 
     # ┌── 函数 def _tui_startup_background_maintenance()
-    # │  作用：Best-effort startup passes: curator skill maintenance, personal + org skill sync.
+    # │  作用：尽最大努力 startup passes: 策展器 skill maintenance, personal + org skill 同步.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4951,7 +4951,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
                 pull()
 
     # ┌── 函数 def _tui_build_application()
-    # │  作用：Construct the prompt_toolkit Application for the REPL.
+    # │  作用：Construct prompt_toolkit Application 用于 REPL.
     # │  参数：self, layout, kb, style
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -4995,7 +4995,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         )
 
     # ┌── 函数 def _tui_install_signal_handlers()
-    # │  作用：SIGTERM/SIGHUP -> graceful shutdown; Windows absorbs SIGINT (see body).
+    # │  作用：收到 SIGTERM/SIGHUP 时执行优雅关闭；在 Windows 上 SIGINT 会被吸收（见函数体）。
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -5017,7 +5017,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             pass  # restricted environments
 
     # ┌── 函数 def _tui_stdin_usable()
-    # │  作用：Validate fd 0 before prompt_toolkit starts; on macOS fall back to a select() loop when kqueue can't watch it (uv-managed Python).
+    # │  作用：校验 fd 0 在…之前 prompt_toolkit starts; 在…上 macOS fall back select() 循环当 kqueue 无法 watch 它 (uv-managed Python).
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5059,7 +5059,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
         return True
 
     # ┌── 函数 def run()
-    # │  作用：Run the interactive CLI loop with persistent input at bottom.
+    # │  作用：运行 interactive CLI 循环带 persistent 输入在 bottom.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -5178,7 +5178,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
             relaunch(self._pending_relaunch, preserve_inherited=False)
 
     # ┌── 函数 def _tui_shutdown()
-    # │  作用：Teardown after the app exits: interrupt agent, stop voice/pet, persist + close session, cleanup, exit summary.
+    # │  作用：Teardown 在…之后 app exits: interrupt Agent, stop voice/pet, 持久化 + 关闭会话, cleanup, exit 摘要.
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -5241,7 +5241,7 @@ class HermesCLI(CLIProcessNotificationsMixin, CLIAgentSetupMixin, CLICommandsMix
 
 
 # ┌── 函数 def _int_or()
-# │  作用：``int(value)``, or ``default`` when it does not parse.
+# │  作用：``int(值)``, 或 ``默认值`` 当它 不解析.
 # │  参数：value, default: int
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -5257,7 +5257,7 @@ def _int_or(value, default: int) -> int:
 
 
 # ┌── 函数 def _interrupt_agent_for_signal()
-# │  作用：Hard-interrupt ``agent`` for a shutdown signal, then sleep ``HERMES_SIGTERM_GRACE`` (1.5 s).
+# │  作用：Hard-interrupt ``Agent`` 用于 shutdown 信号, 然后 sleep ``HERMES_SIGTERM_GRACE`` (1.5 s).
 # │  参数：agent, signum
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5279,7 +5279,7 @@ def _interrupt_agent_for_signal(agent, signum) -> None:
 
 
 # ┌── 函数 def _run_kanban_goal_loop_q()
-# │  作用：Drive a kanban goal_mode worker through ``goals.run_kanban_goal_loop`` after its first turn.
+# │  作用：Drive kanban goal_mode 工作线程 through ``goals.run_kanban_goal_loop`` 在…之后其 first 轮次.
 # │  参数：cli: 'HermesCLI', first_response: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5336,7 +5336,7 @@ def _run_kanban_goal_loop_q(cli: "HermesCLI", first_response: str) -> None:
 
 
 # ┌── 函数 def _sync_cli_session_id_from_agent()
-# │  作用：Keep ``cli.session_id`` in sync when mid-run compression rotated the agent's session.
+# │  作用：保留 ``cli.session_id`` 在同步当 mid-运行 compression rotated Agent's 会话.
 # │  参数：cli
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5347,7 +5347,7 @@ def _sync_cli_session_id_from_agent(cli) -> None:
 
 
 # ┌── 函数 def _run_quiet_single_query()
-# │  作用：Quiet (-Q) one-shot turn: run, print the response (stderr for errors/session_id), then sys.exit with the automation exit code.
+# │  作用：Quiet (-Q) one-shot 轮次: 运行, 打印响应 (标准错误用于错误/session_id), 然后 sys.exit 带 automation exit code.
 # │  参数：cli, effective_query
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5452,7 +5452,7 @@ def _run_quiet_single_query(cli, effective_query):
 
 
 # ┌── 函数 def _route_single_query_images()
-# │  作用：Attach one-shot images natively when the model supports vision, else pre-describe them as text.
+# │  作用：Attach one-shot images natively 当模型 supports vision, 否则 pre-描述 them 作为文本.
 # │  参数：cli, query, effective_query, single_query_images, single_query_image_urls
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5507,7 +5507,7 @@ def _route_single_query_images(cli, query, effective_query, single_query_images,
 
 
 # ┌── 函数 def _collect_kanban_task_images()
-# │  作用：Kanban workers: image paths/URLs in the task body join the first turn's attachments.
+# │  作用：Kanban 工作线程: image 路径/URLs 在 task body 拼接 first 轮次's attachments.
 # │  参数：single_query_images
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5544,7 +5544,7 @@ def _collect_kanban_task_images(single_query_images):
 
 
 # ┌── 函数 def _install_single_query_signal_handlers()
-# │  作用：Route SIGINT/SIGTERM/SIGHUP through agent.interrupt() before unwinding; kanban workers hard-exit.
+# │  作用：路由 SIGINT/SIGTERM/SIGHUP through Agent.interrupt() 在…之前 unwinding; kanban 工作线程 hard-exit.
 # │  参数：cli
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5595,7 +5595,7 @@ def _install_single_query_signal_handlers(cli):
 
 
 # ┌── 函数 def _build_cli_from_args()
-# │  作用：Resolve the toolset list (explicit / coding posture / platform default), construct HermesCLI, and start the background skills preload.
+# │  作用：Resolve 工具集列表 (explicit / coding posture / 平台默认值), construct HermesCLI, 且 start background skills preload.
 # │  参数：model, toolsets, provider, reasoning, api_key, base_url, max_turns, run_budget  …共 15 个
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5670,7 +5670,7 @@ def _build_cli_from_args(model, toolsets, provider, reasoning, api_key, base_url
 
 
 # ┌── 函数 def _run_legacy_gateway()
-# │  作用：Legacy `cli.py --gateway` entry: arm the startup watchdog (before importing the gateway graph), then run it.
+# │  作用：Legacy `cli.py --gateway` entry: arm startup watchdog (在…之前导入 gateway graph), 然后运行它.
 # │  参数：无
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5686,7 +5686,7 @@ def _run_legacy_gateway():
 
 
 # ┌── 函数 def _start_worktree_setup()
-# │  作用：Start isolated-worktree creation (+ tool prewarm) in the background.
+# │  作用：Start isolated-worktree creation (+ 工具 prewarm) 在 background.
 # │  参数：list_tools, list_toolsets, worktree, w
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5752,7 +5752,7 @@ def _start_worktree_setup(list_tools, list_toolsets, worktree, w):
 
 
 # ┌── 函数 def _configure_quiet_agent()
-# │  作用：Neutralize every stdout-writing callback so -Q stdout carries only the final response.
+# │  作用：Neutralize 每个标准输出-写入回调从而 -Q 标准输出 carries 仅 final 响应.
 # │  参数：agent
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -5772,7 +5772,7 @@ def _configure_quiet_agent(agent) -> None:
 
 
 # ┌── 函数 def _run_single_query_mode()
-# │  作用：``-q``/``--image`` entry: seed an interactive session on a TTY, else run the one-shot turn and exit.
+# │  作用：``-q``/``--image`` entry: seed interactive 会话在…上 TTY, 否则运行 one-shot 轮次且 exit.
 # │  参数：cli, query, image, quiet, oneshot
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -5834,7 +5834,7 @@ def _run_single_query_mode(cli, query, image, quiet, oneshot):
 
 
 # ┌── 函数 def main()
-# │  作用：Hermes Agent CLI - Interactive AI Assistant
+# │  作用：Hermes Agent 命令行界面——交互式 AI 助手。
 # │  参数：query: str = None, q: str = None, oneshot: bool = False, image: str = None, toolsets: str = None, skills: str | list[str] | tuple[str, ...] = None, model: str = None, provider: str = None  …共 26 个
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

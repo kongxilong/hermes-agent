@@ -97,7 +97,7 @@ _DENIAL_TALLY_MAX_SESSIONS = 256
 
 
 # ┌── 函数 def _get_denial_breaker_threshold()
-# │  作用：``approvals.denial_breaker_threshold``: default 3; 0 or negative disables.
+# │  作用：``approvals.denial_breaker_threshold``: 默认值 3; 0 或 negative disables.
 # │  参数：无
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ def _get_denial_breaker_threshold() -> int:
 
 
 # ┌── 函数 def _record_denial()
-# │  作用：Increment and return the session's consecutive guardian-denial count. Pop-and-reinsert
+# │  作用：Increment 且返回会话's consecutive guardian-denial count. Pop-且-reinsert
 # │  参数：session_key: str
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ def _record_denial(session_key: str) -> int:
 
 
 # ┌── 函数 def _reset_denials()
-# │  作用：Clear the session's consecutive-denial tally (an approval happened).
+# │  作用：清除会话's consecutive-denial tally ( approval happened).
 # │  参数：session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ def _reset_denials(session_key: str) -> None:
 
 
 # ┌── 函数 def _denial_breaker_addendum()
-# │  作用：Escalated hard-stop text once the breaker has tripped, else ''. Read-only: callers
+# │  作用：Escalated hard-stop 文本一旦 breaker 有 tripped, 否则 ''. 读取-仅: callers
 # │  参数：session_key: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ _gateway_notify_cbs: dict[str, object] = {}  # session_key → callable(approval
 
 
 # ┌── 函数 def register_gateway_notify()
-# │  作用：Register ``cb(approval_data: dict) -> None`` for sending approval requests. The callback
+# │  作用：Register ``cb(approval_data: 字典) -> None`` 用于 sending approval 请求. 回调
 # │  参数：session_key: str, cb
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ def register_gateway_notify(session_key: str, cb) -> None:
 
 
 # ┌── 函数 def unregister_gateway_notify()
-# │  作用：Unregister the callback and wake ALL blocked threads for this session so
+# │  作用：Unregister 回调且 wake 全部 blocked 线程用于这个会话从而
 # │  参数：session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ def unregister_gateway_notify(session_key: str) -> None:
 
 
 # ┌── 函数 def resolve_gateway_approval()
-# │  作用：Unblock waiting agent thread(s) from the gateway's /approve or /deny handler.
+# │  作用：Unblock waiting Agent 线程(s) 从 gateway's /approve 或 /deny handler.
 # │  参数：session_key: str, choice: str, resolve_all: bool = False, reason: Optional[str] = None, request_id: Optional[str] = None
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ def resolve_gateway_approval(session_key: str, choice: str,
 
 
 # ┌── 函数 def list_gateway_approvals()
-# │  作用：Return replay-safe snapshots of unresolved approvals for one session.
+# │  作用：返回 重放-safe snapshots 的 unresolved approvals 用于 one 会话.。
 # │  参数：session_key: str
 # │  返回：list[dict]
 # └──────────────────────────────────────────────────────────────
@@ -259,7 +259,7 @@ def list_gateway_approvals(session_key: str) -> list[dict]:
 
 
 # ┌── 函数 def register_gateway_settle()
-# │  作用：Attach ``settle(reason)`` to one pending approval; it runs once when that wait ends by any path.
+# │  作用：Attach ``settle(reason)`` one pending approval; 它运行一旦当 那个 wait ends 由任意路径.
 # │  参数：session_key: str, request_id: str, settle
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -277,7 +277,7 @@ def register_gateway_settle(session_key: str, request_id: str, settle) -> bool:
 
 
 # ┌── 函数 def ack_gateway_approval()
-# │  作用：Record that a client received a particular pending approval request.
+# │  作用：Record 那个客户端 received particular pending approval 请求.
 # │  参数：session_key: str, request_id: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ def ack_gateway_approval(session_key: str, request_id: str) -> bool:
 
 
 # ┌── 函数 def has_blocking_approval()
-# │  作用：Check if a session has one or more blocking gateway approvals waiting.
+# │  作用：检查若 会话有 one 或 more blocking gateway approvals waiting.
 # │  参数：session_key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -306,7 +306,7 @@ def has_blocking_approval(session_key: str) -> bool:
 
 
 # ┌── 函数 def get_pending_gateway_approval()
-# │  作用：Copy of the oldest unresolved gateway approval, for reconnecting clients
+# │  作用：复制的 oldest unresolved gateway approval, 用于 reconnecting 客户端
 # │  参数：session_key: str
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -326,7 +326,7 @@ def get_pending_gateway_approval(session_key: str) -> dict | None:
 
 
 # ┌── 函数 def submit_pending()
-# │  作用：Store a pending approval request for a session.
+# │  作用：Store pending approval 请求用于会话.
 # │  参数：session_key: str, approval: dict
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -337,7 +337,7 @@ def submit_pending(session_key: str, approval: dict):
 
 
 # ┌── 函数 def approve_session()
-# │  作用：Approve a pattern for this session only.
+# │  作用：Approve pattern 用于这个会话仅.
 # │  参数：session_key: str, pattern_key: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -348,7 +348,7 @@ def approve_session(session_key: str, pattern_key: str):
 
 
 # ┌── 函数 def _release_permission_mode_dependents()
-# │  作用：Drop resources whose immutable mode derives from Hermes YOLO. Lazy import so approval-only
+# │  作用：丢弃 resources whose immutable 模式 derives 从 Hermes YOLO 免审批. Lazy 导入从而 approval-仅
 # │  参数：session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ def _set_session_yolo(session_key: str, enabled: bool) -> None:
 
 
 # ┌── 函数 def enable_session_yolo()
-# │  作用：Enable YOLO bypass for a single session key.
+# │  作用：Enable YOLO 免审批 bypass 用于 single 会话键.
 # │  参数：session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -389,7 +389,7 @@ def enable_session_yolo(session_key: str) -> None:
 
 
 # ┌── 函数 def disable_session_yolo()
-# │  作用：Disable YOLO bypass for a single session key.
+# │  作用：Disable YOLO 免审批 bypass 用于 single 会话键.
 # │  参数：session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -399,7 +399,7 @@ def disable_session_yolo(session_key: str) -> None:
 
 
 # ┌── 函数 def clear_session()
-# │  作用：Remove all approval and yolo state for a given session.
+# │  作用：移除全部 approval 且 YOLO 免审批状态用于 given 会话.
 # │  参数：session_key: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -429,7 +429,7 @@ def clear_session(session_key: str) -> None:
 
 
 # ┌── 函数 def is_session_yolo_enabled()
-# │  作用：Return True when YOLO bypass is enabled for a specific session.
+# │  作用：当 YOLO 免审批 bypass 是 enabled 用于 specific 会话. 时返回 True。
 # │  参数：session_key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -444,7 +444,7 @@ def is_session_yolo_enabled(session_key: str) -> bool:
 
 
 # ┌── 函数 def is_current_session_yolo_enabled()
-# │  作用：Return True when the active approval session has YOLO bypass enabled.
+# │  作用：当 active approval 会话有 YOLO 免审批 bypass enabled. 时返回 True。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -455,7 +455,7 @@ def is_current_session_yolo_enabled() -> bool:
 
 
 # ┌── 函数 def _yolo_active()
-# │  作用：CLI ``--yolo`` (process-scoped, frozen at import) or gateway ``/yolo``
+# │  作用：CLI ``--YOLO 免审批`` (进程-scoped, frozen 在导入) 或 gateway ``/YOLO 免审批``
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -467,7 +467,7 @@ def _yolo_active() -> bool:
 
 
 # ┌── 函数 def _permanent_set()
-# │  作用：The permanent allowlist that governs the ACTIVE profile. Unscoped (single-profile process,
+# │  作用：permanent 白名单那个 governs ACTIVE 配置档. Unscoped (single-配置档进程,
 # │  参数：无
 # │  返回：set
 # └──────────────────────────────────────────────────────────────
@@ -497,7 +497,7 @@ def _permanent_set() -> set:
 
 
 # ┌── 函数 def is_approved()
-# │  作用：Session-scoped or permanent approval. Accepts the canonical key and the legacy
+# │  作用：会话-scoped 或 permanent approval. 接受 canonical 键且 legacy
 # │  参数：session_key: str, pattern_key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -512,7 +512,7 @@ def is_approved(session_key: str, pattern_key: str) -> bool:
 
 
 # ┌── 函数 def approve_permanent()
-# │  作用：Add a pattern to the permanent allowlist.
+# │  作用：添加 pattern permanent 白名单.
 # │  参数：pattern_key: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -523,7 +523,7 @@ def approve_permanent(pattern_key: str):
 
 
 # ┌── 函数 def load_permanent()
-# │  作用：Bulk-load permanent allowlist entries from config.
+# │  作用：Bulk-加载 permanent 白名单 entries 从配置.
 # │  参数：patterns: set
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -536,7 +536,7 @@ def load_permanent(patterns: set):
 
 
 # ┌── 函数 def _persist_choice()
-# │  作用：Persist a human ``session``/``always`` choice for each ``(key, _, is_tirith)``. Tirith
+# │  作用：持久化 human ``会话``/``always`` choice 用于每个 ``(键, _, is_tirith)``. Tirith
 # │  参数：session_key: str, choice: str, warnings: list[tuple]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -558,7 +558,7 @@ def _persist_choice(session_key: str, choice: str, warnings: list[tuple]) -> Non
 # --- Config persistence for permanent allowlist ---------------------------------------------------------------------
 
 # ┌── 函数 def _read_permanent_allowlist()
-# │  作用：``command_allowlist`` of the active profile's config as a set (empty on malformed input).
+# │  作用：``command_allowlist`` 的 active 配置档's 配置作为设置 (empty 在…上格式非法的输入).
 # │  参数：无
 # │  返回：set
 # └──────────────────────────────────────────────────────────────
@@ -609,7 +609,7 @@ def _baseline_key() -> str:
 
 
 # ┌── 函数 def load_permanent_allowlist()
-# │  作用：Load ``command_allowlist`` from config and sync it into the approval state
+# │  作用：加载 ``command_allowlist`` 从配置且 同步它 进入 approval 状态
 # │  参数：无
 # │  返回：set
 # └──────────────────────────────────────────────────────────────
@@ -631,7 +631,7 @@ def load_permanent_allowlist() -> set:
 
 
 # ┌── 函数 def save_permanent_allowlist()
-# │  作用：Save permanently allowed command patterns to config, reconciling with the file.
+# │  作用：Save permanently allowed 命令 patterns 配置, reconciling 带文件.
 # │  参数：patterns: set
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -673,7 +673,7 @@ def save_permanent_allowlist(patterns: set):
 # --- Bypass check (yolo / mode=off) ---------------------------------------------------------------------------------
 
 # ┌── 函数 def is_approval_bypass_active_for_session()
-# │  作用：Canonical three-source bypass check: process ``--yolo`` (frozen at import), the
+# │  作用：Canonical three-source bypass 检查: 进程 ``--YOLO 免审批`` (frozen 在导入),
 # │  参数：session_key: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -686,7 +686,7 @@ def is_approval_bypass_active_for_session(session_key: str) -> bool:
 
 
 # ┌── 函数 def is_approval_bypass_active()
-# │  作用：Return whether the current approval context has bypass enabled.
+# │  作用：返回 是否 current approval 上下文有 bypass enabled.。。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -709,7 +709,7 @@ def _approved() -> dict:
 
 
 # ┌── 函数 def _denied()
-# │  作用：Standard non-consent result: the agent must not retry or rephrase.
+# │  作用：Standard non-consent 结果: Agent 必须不 重试或 rephrase.
 # │  参数：message: str, pattern_key: str, description: str, outcome: str, **extra
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -721,7 +721,7 @@ def _denied(message: str, *, pattern_key: str, description: str, outcome: str, *
 
 
 # ┌── 函数 def _blocked()
-# │  作用：Non-interactive block (cron / -q / unattended / no-human): no consent keys.
+# │  作用：Non-interactive block (cron / -q / unattended / 无-human): 无 consent 键.
 # │  参数：message: str, pattern_key: str, description: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -732,7 +732,7 @@ def _blocked(message: str, *, pattern_key: str, description: str) -> dict:
 
 
 # ┌── 函数 def _user_approved()
-# │  作用：A human approval (incl. ESCALATE-then-approve or a smart-DENY owner
+# │  作用：human approval (incl. ESCALATE-然后-approve 或 smart-DENY owner
 # │  参数：session_key: str, description: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -756,7 +756,7 @@ def _gateway_notify_cb(session_key: str):
 
 
 # ┌── 函数 def _pending_result()
-# │  作用：Queue an approval nobody can answer right now (no gateway notifier, no CLI panel) for
+# │  作用：队列 approval nobody 可以 answer right now (无 gateway notifier, 无 CLI panel) 用于
 # │  参数：spec, session_key: str, command: str, description: str, pattern_key: str, pattern_keys: list[str], body: str | None, smart_denied: bool
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -801,7 +801,7 @@ def _pending_result(spec, session_key: str, *, command: str, description: str,
 # --- Unattended contexts (nobody present to answer a prompt) --------------------------------------------------------
 
 # ┌── 类 class _Unattended
-# │  说明：One non-interactive context and the text every gate uses to explain it.
+# │  说明：One non-interactive 上下文且 文本每个 gate uses explain 它.
 # │  成员：共 3 个方法；对外可用 3 个
 # └──────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
@@ -858,7 +858,7 @@ _CRON_CTX = _Unattended(
 
 
 # ┌── 函数 def _unattended_contexts()
-# │  作用：Active unattended contexts in evaluation order: single-query first (``hermes chat -q``
+# │  作用：Active unattended 上下文在 evaluation order: single-query first (``hermes chat -q``
 # │  参数：无
 # │  返回：list[_Unattended]
 # └──────────────────────────────────────────────────────────────
@@ -883,7 +883,7 @@ def _unattended_contexts() -> list[_Unattended]:
 
 
 # ┌── 函数 def _unattended_deny()
-# │  作用：Deny-mode handling for one unattended context (cron / -q / webhook); None = allow.
+# │  作用：Deny-模式 handling 用于 one unattended 上下文 (cron / -q / webhook); None = allow.
 # │  参数：command: str, ctx: _Unattended
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -1021,7 +1021,7 @@ _ACTION_GATE = _GateSpec(
 
 
 # ┌── 函数 def _smart_gate()
-# │  作用：Guardian-LLM step -> ``(result, smart_denied_for_owner)``: a result ends the gate;
+# │  作用：Guardian-LLM 步骤 -> ``(结果, smart_denied_for_owner)``: 结果 ends gate;
 # │  参数：spec: _GateSpec, command: str, description: str, pattern_key: str, pattern_keys: list[str], session_key: str, human_present: bool
 # │  返回：tuple[dict | None, bool]
 # └──────────────────────────────────────────────────────────────
@@ -1062,7 +1062,7 @@ def _smart_gate(spec: _GateSpec, command: str, description: str, pattern_key: st
 
 
 # ┌── 函数 def _human_decision()
-# │  作用：Ask a human (after the optional guardian-LLM step) and turn the answer into the gate result.
+# │  作用：Ask human (在…之后 optional guardian-LLM 步骤) 且轮次 answer 进入 gate 结果.
 # │  参数：spec: _GateSpec, command: str, description: str, pattern_key: str, pattern_keys: list[str], warnings: list[tuple], session_key: str, approval_callback  …共 14 个
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1201,7 +1201,7 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
 
 
 # ┌── 函数 def _presence()
-# │  作用：``(approval_callback, is_cli, is_gateway, is_ask)`` for the current context. Single-query
+# │  作用：``(approval_callback, is_cli, is_gateway, is_ask)`` 用于 current 上下文. Single-query
 # │  参数：approval_callback = None
 # │  返回：tuple
 # └──────────────────────────────────────────────────────────────
@@ -1219,7 +1219,7 @@ def _presence(approval_callback=None) -> tuple:
 
 
 # ┌── 函数 def _run_approval_gate()
-# │  作用：Shared human-approval gate for a flagged action (tool call or write): decision core for
+# │  作用：Shared human-approval gate 用于 flagged action (工具 call 或写入): decision core 用于
 # │  参数：pattern_key: str, description: str, display_target: str, approval_callback = ..., subject: str = ..., noun: str = ..., advice: str = ..., cron_deny_message: str = ...  …共 13 个
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1302,7 +1302,7 @@ def _run_approval_gate(
 
 
 # ┌── 函数 def _should_skip_container_guards()
-# │  作用：True when the backend is isolated enough to skip dangerous-command prompts. Docker is the
+# │  作用：当 backend 是 isolated enough skip dangerous-命令 prompts. Docker 是 时返回 True。
 # │  参数：env_type: str, has_host_access: bool = False
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1317,7 +1317,7 @@ def _should_skip_container_guards(env_type: str, has_host_access: bool = False) 
 
 
 # ┌── 函数 def _user_deny_block()
-# │  作用：The operator's ``approvals.deny`` rules are documented as never bypassable — not by yolo,
+# │  作用：operator's ``approvals.deny`` rules 是 documented 作为 never bypassable — 不由 YOLO 免审批,
 # │  参数：command: str
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -1335,7 +1335,7 @@ def _user_deny_block(command: str) -> dict | None:
 
 
 # ┌── 函数 def _floor_block()
-# │  作用：Unconditional floors, BEFORE yolo / mode=off / cron approve-mode so no
+# │  作用：Unconditional floors, 在…之前 YOLO 免审批 / 模式=off / cron approve-模式从而无
 # │  参数：command: str, sudo_guard: bool = ...
 # │  返回：dict | None
 # └──────────────────────────────────────────────────────────────
@@ -1360,7 +1360,7 @@ def _floor_block(command: str, *, sudo_guard: bool = False) -> dict | None:
 
 
 # ┌── 函数 def check_dangerous_command()
-# │  作用：Detect a dangerous command and handle approval (pattern layer only). ``has_host_access``:
+# │  作用：检测 dangerous 命令且 handle approval (pattern layer 仅). ``has_host_access``:
 # │  参数：command: str, env_type: str, approval_callback = None, has_host_access: bool = False
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1397,7 +1397,7 @@ def check_dangerous_command(command: str, env_type: str,
 
 
 # ┌── 函数 def request_tool_approval()
-# │  作用：Escalate an arbitrary tool call to the human-approval gate.
+# │  作用：Escalate arbitrary 工具 call human-approval gate.
 # │  参数：tool_name: str, reason: str, rule_key: str = ..., approval_callback = ...
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1433,7 +1433,7 @@ def request_tool_approval(tool_name: str, reason: str, *, rule_key: str = "", ap
 # --- Combined pre-exec guard (tirith + dangerous command detection) -------------------------------------------------
 
 # ┌── 函数 def _format_tirith_description()
-# │  作用：Human-readable severity/title/description summary of tirith findings.
+# │  作用：Human-readable severity/title/description 摘要的 tirith findings.
 # │  参数：tirith_result: dict
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1454,7 +1454,7 @@ def _format_tirith_description(tirith_result: dict) -> str:
 
 
 # ┌── 函数 def _tirith_scan()
-# │  作用：Tirith result for the interactive flow; an un-importable scanner allows
+# │  作用：Tirith 结果用于 interactive flow; un-importable scanner allows
 # │  参数：command: str
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1483,7 +1483,7 @@ def _tirith_scan(command: str) -> dict:
 
 
 # ┌── 函数 def check_all_command_guards()
-# │  作用：Run all pre-exec security checks and return a single approval decision. Tirith and
+# │  作用：运行全部 pre-exec security 检查且 返回 single approval decision. Tirith 且
 # │  参数：command: str, env_type: str, approval_callback = None, has_host_access: bool = False
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1563,7 +1563,7 @@ _EXECUTE_CODE_DESCRIPTION = (
 
 
 # ┌── 函数 def check_execute_code_guard()
-# │  作用：Approve an execute_code script before its child process is spawned.
+# │  作用：Approve execute_code script 在…之前其 child 进程是 spawned.
 # │  参数：code: str, env_type: str, has_host_access: bool = False
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────

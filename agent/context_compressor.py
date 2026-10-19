@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 
 # ┌── 函数 def _safe_int()
-# │  作用：Best-effort integer coercion for telemetry fields.
+# │  作用：尽最大努力整数 coercion 用于 telemetry 字段.
 # │  参数：value: Any
 # │  返回：int | None
 # └──────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ _PINNED_ROUTE_FIELDS: tuple[str, ...] = ("provider", "model", "base_url", "api_k
 
 
 # ┌── 函数 def pin_summary_route()
-# │  作用：Pin the next summary LLM call to an explicit route; ``None`` is a no-op. Re-entrant: restores the prior pin.
+# │  作用：Pin next 摘要 LLM call explicit 路由; ``None`` 是无-op. 可重入的: restores prior pin.
 # │  参数：route: Optional[Dict[str, Any]]
 # │  返回：（未标注类型）
 # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -122,7 +122,7 @@ def pin_summary_route(route: Optional[Dict[str, Any]]):
 
 
 # ┌── 函数 def take_pinned_summary_route()
-# │  作用：Read and consume the pinned summary route (single use: the main-model retry must not re-issue it).
+# │  作用：读取且 消费 pinned 摘要路由 (一次性的: main-模型重试必须不 重新下发它).
 # │  参数：无
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ def take_pinned_summary_route() -> Optional[Dict[str, Any]]:
 
 
 # ┌── 函数 def _pinned_summary_call_kwargs()
-# │  作用：Consume the pinned route as explicit ``call_llm`` keyword arguments.
+# │  作用：消费 pinned 路由作为 explicit ``call_llm`` keyword 参数.
 # │  参数：无
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ _HYGIENE_PREAGENT_ONLY_COOLDOWN_MARKERS: tuple[str, ...] = (
 
 
 # ┌── 函数 def _is_hygiene_preagent_only_cooldown()
-# │  作用：Return True for a cooldown that belongs only to pre-agent hygiene.
+# │  作用：当 冷却那个 belongs 仅 pre-Agent 整理/清理. 时返回 True。
 # │  参数：error: object
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ def _is_hygiene_preagent_only_cooldown(error: object) -> bool:
 
 
 # ┌── 函数 def _response_finish_reason()
-# │  作用：Lowercased ``choices[0].finish_reason`` of a dict- or object-shaped response; ``""`` when unreadable.
+# │  作用：Lowercased ``choices[0].finish_reason`` 的字典- 或对象形态的响应; ``""`` 当 unreadable.
 # │  参数：response: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ _TRUNCATED_SUMMARY_MARKER = "finish_reason=length"
 
 
 # ┌── 函数 def _is_summary_access_or_quota_error()
-# │  作用：Return True for non-retryable summary auth, permission, or quota errors.
+# │  作用：当 non-retryable 摘要 auth, permission, 或 quota 错误. 时返回 True。
 # │  参数：exc: Exception
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ def _is_summary_access_or_quota_error(exc: Exception) -> bool:
 
 
 # ┌── 函数 def _exc_status_code()
-# │  作用：HTTP status carried on the exception itself or on its ``response``.
+# │  作用：HTTP 状态码 carried 在…上异常 itself 或在…上其 ``响应``.
 # │  参数：exc: Exception
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ _BACKGROUND_PROCESS_NOTIFICATION_PREFIX = "[IMPORTANT: Background process "
 
 
 # ┌── 函数 def _fresh_compaction_message_copy()
-# │  作用：Copy a message for compaction assembly without persistence markers (``_strip_persistence_markers`` is authoritative).
+# │  作用：复制消息用于压缩 assembly 不持久化标记 (``_strip_persistence_markers`` 是 authoritative).
 # │  参数：msg: Dict[str, Any]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -362,7 +362,7 @@ def _fresh_compaction_message_copy(msg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _template_visible_role()
-# │  作用：Role as counted by strict chat-template alternation checks.
+# │  作用：角色作为 counted 由 strict chat-template 交替检查.
 # │  参数：message: Any
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -379,7 +379,7 @@ def _template_visible_role(message: Any) -> Optional[str]:
 
 
 # ┌── 函数 def _last_template_visible_role()
-# │  作用：Last role a strict alternation template would count in *messages*.
+# │  作用：Last 角色 strict 交替 template 会 count 在 *消息*.
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -400,7 +400,7 @@ def _last_template_visible_role(messages: List[Dict[str, Any]]) -> Optional[str]
 
 
 # ┌── 函数 def _strip_persistence_markers()
-# │  作用：Enforce the invariant: no assembled message carries a persistence marker.
+# │  作用：强制不变量: 无 assembled 消息 carries 持久化标记.
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -415,7 +415,7 @@ def _strip_persistence_markers(messages: List[Dict[str, Any]]) -> None:
 
 
 # ┌── 函数 def stamp_db_persisted_markers()
-# │  作用：Fulfil the post-commit contract of ``SessionDB.archive_and_compact()``.
+# │  作用：Fulfil post-commit contract 的 ``会话数据库.archive_and_compact()``.
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ def stamp_db_persisted_markers(messages: List[Dict[str, Any]]) -> None:
 
 
 # ┌── 函数 def _prune_stale_reasoning_replay()
-# │  作用：Strip stale ``codex_reasoning_items`` from assistant turns older than the active one.
+# │  作用：Strip 卡死的 ``codex_reasoning_items`` 从 assistant 轮次 older 比 active one.
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -523,7 +523,7 @@ def _looks_like_compaction_summary(msg: Dict[str, Any], content: str) -> bool:
 
 
 # ┌── 函数 def _salvage_reduce_todo_snapshot()
-# │  作用：Last-resort shrink: drop the synthetic todo snapshot, keeping only a pruned-skill reload notice if present.
+# │  作用：Last-resort shrink: 丢弃 synthetic todo snapshot, 保留仅 pruned-skill reload 提示若 present.
 # │  参数：out: List[Dict[str, Any]]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -544,7 +544,7 @@ def _salvage_reduce_todo_snapshot(out: List[Dict[str, Any]]) -> None:
 
 
 # ┌── 函数 def salvage_grown_transcript()
-# │  作用：Mechanically shrink a compression candidate (copies, cheapest loss first); ``None`` unless strictly smaller.
+# │  作用：Mechanically shrink compression candidate (复制, cheapest loss first); ``None`` unless strictly smaller.
 # │  参数：original: List[Dict[str, Any]], candidate: List[Dict[str, Any]], budget: Optional[int] = None
 # │  返回：Optional[List[Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -670,7 +670,7 @@ _RESTART_HANDOFF_PROBE_EXTRA_MESSAGES = 4
 
 
 # ┌── 类 class _HandoffScan
-# │  说明：Result of ``ContextCompressor._scan_window_handoffs``.
+# │  说明：结果的 ``ContextCompressor._scan_window_handoffs``.
 # │  成员：共 0 个方法；全部是下划线开头的内部方法
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -685,7 +685,7 @@ class _HandoffScan:
 
 
 # ┌── 函数 def _short_error_text()
-# │  作用：Error text (or class name) capped for durable cooldown rows and telemetry.
+# │  作用：错误文本 (或类 名称) capped 用于 durable 冷却 rows 且 telemetry.
 # │  参数：e: Exception, limit: int = 220
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -697,7 +697,7 @@ def _short_error_text(e: Exception, limit: int = 220) -> str:
 
 
 # ┌── 类 class _SummaryFailureKind
-# │  说明：Transient-failure classes of a summary call (several may hold at once).
+# │  说明：Transient-failure 类的 摘要 call (several 可以 hold 在一旦).
 # │  成员：共 1 个方法；对外可用 1 个
 # └──────────────────────────────────────────────────────────────
 @dataclass
@@ -712,7 +712,7 @@ class _SummaryFailureKind:
     truncated: bool
 
     # ┌── 函数 def fallback_reason()
-    # │  作用：Reason string for the one-shot main-model retry log line, most specific first.
+    # │  作用：Reason 字符串用于 one-shot main-模型重试日志 line, most specific first.
     # │  参数：self
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -728,7 +728,7 @@ class _SummaryFailureKind:
 
 
 # ┌── 函数 def _classify_summary_failure()
-# │  作用：Classify a summary-call exception by status code / message shape.
+# │  作用：Classify 摘要-call 异常由 status code / 消息形态.
 # │  参数：e: Exception
 # │  返回：_SummaryFailureKind
 # └──────────────────────────────────────────────────────────────
@@ -795,7 +795,7 @@ _TIMEOUT_COOLDOWN_LADDER = (60, 300, 900)
 
 
 # ┌── 函数 def _next_timeout_cooldown()
-# │  作用：Bump ``compressor._consecutive_timeout_failures`` and return the ladder rung for it.
+# │  作用：递增 ``compressor._consecutive_timeout_failures`` 且返回 ladder rung 用于它.
 # │  参数：compressor: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -823,7 +823,7 @@ _PRUNED_TOOL_PLACEHOLDER = "[Old tool output cleared to save context space]"
 
 
 # ┌── 函数 def _is_summary_stub()
-# │  作用：True for a tool result already replaced by a 1-line ``[tool] ... (N chars)`` summary.
+# │  作用：当 工具结果已 replaced 由 1-line ``[工具] ... (N chars)`` 摘要. 时返回 True。
 # │  参数：content: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -846,7 +846,7 @@ _CLARIFY_NON_RESPONSE_PREFIXES = (
 
 
 # ┌── 函数 def _is_clarify_non_response_sentinel()
-# │  作用：Return True when a clarify ``user_response`` is runtime sentinel prose, not an answer.
+# │  作用：当 clarify ``user_response`` 是运行时 sentinel prose, 不 answer. 时返回 True。
 # │  参数：response: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -876,7 +876,7 @@ _MAX_PRUNED_SKILL_MARKERS = 20
 
 
 # ┌── 函数 def _skill_pruned_marker()
-# │  作用：Return the canonical prune marker for *skill_name* (shared by emit and check sites).
+# │  作用：返回 canonical prune marker 用于 *skill_name* (shared 由 emit 且检查 sites).。
 # │  参数：skill_name: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -896,7 +896,7 @@ _SKILL_PRUNED_MARKER_RE = re.compile(
 
 
 # ┌── 函数 def _extract_pruned_skill_names()
-# │  作用：Return skill names referenced by prune markers in *text*, in order.
+# │  作用：返回 skill 名称 referenced 由 prune markers 在 *文本*, 在 order.。
 # │  参数：text: str
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -907,7 +907,7 @@ def _extract_pruned_skill_names(text: str) -> list[str]:
 
 
 # ┌── 函数 def _collect_ghosted_skill_names()
-# │  作用：Skill names about to be lost in compaction: demoted ``skill_view`` rows and raw, never-demoted bodies.
+# │  作用：Skill 名称 about 是 lost 在压缩: demoted ``skill_view`` rows 且 raw, never-demoted bodies.
 # │  参数：turns: List[Dict[str, Any]]
 # │  返回：list[str]
 # └──────────────────────────────────────────────────────────────
@@ -933,7 +933,7 @@ _PRUNED_SKILLS_SECTION_HEADING = "## Pruned Skills"
 
 
 # ┌── 函数 def _reinject_pruned_skill_markers()
-# │  作用：Deterministically restore prune markers the summarizer dropped.
+# │  作用：Deterministically 恢复 prune markers summarizer 已丢弃.
 # │  参数：summary: str, skill_names: list[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -975,7 +975,7 @@ _LEAN_TAIL_DEMOTE_MIN_CHARS = 1_500
 
 
 # ┌── 函数 def _lean_recovery_stub()
-# │  作用：One-line replacement for a demoted tail tool result.
+# │  作用：One-line replacement 用于 demoted tail 工具结果.
 # │  参数：tool_name: str, content_len: int, session_id: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -996,7 +996,7 @@ _SYNTHETIC_USER_ROW_PREFIXES = (
 
 
 # ┌── 函数 def _synthetic_user_row()
-# │  作用：True for scaffolding user rows that carry no real user words.
+# │  作用：当 scaffolding user rows 那个 carry 无 real user words. 时返回 True。
 # │  参数：content: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1010,7 +1010,7 @@ def _synthetic_user_row(content: str) -> bool:
 
 
 # ┌── 函数 def _build_verbatim_user_section()
-# │  作用：Compacted region's REAL user messages verbatim, newest-first under a char budget (straddler truncated); "" if none.
+# │  作用：Compacted region's REAL user 消息 verbatim, newest-first under char 预算 (straddler truncated); "" 若 None.
 # │  参数：turns: List[Dict[str, Any]]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1048,7 +1048,7 @@ def _build_verbatim_user_section(turns: List[Dict[str, Any]]) -> str:
 
 
 # ┌── 函数 def _build_recovery_footer()
-# │  作用：Deterministic pointer to the compacted region in session history.
+# │  作用：Deterministic pointer compacted region 在会话 history.
 # │  参数：session_id: str, region_len: int
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1114,7 +1114,7 @@ _ANCHOR_NOISE = frozenset({
 
 
 # ┌── 函数 def _build_anchor_index()
-# │  作用：Regex-harvest exact identifiers from the compacted region (LLM-free); per-category caps, most-frequent first.
+# │  作用：Regex-harvest exact identifiers 从 compacted region (LLM-free); per-category caps, most-frequent first.
 # │  参数：turns: List[Dict[str, Any]]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1163,7 +1163,7 @@ _SKILL_PRUNE_RECENT_WINDOW = 10
 
 
 # ┌── 函数 def _skill_view_call_sites()
-# │  作用：Yield ``(message_index, skill_name)`` for every skill_view tool call.
+# │  作用：Yield ``(message_index, skill_name)`` 用于每个 skill_view 工具 call.
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：list[tuple[int, str]]
 # └──────────────────────────────────────────────────────────────
@@ -1186,7 +1186,7 @@ def _skill_view_call_sites(messages: List[Dict[str, Any]]) -> list[tuple[int, st
 
 
 # ┌── 函数 def _collect_protected_skill_names()
-# │  作用：Skill names (lower-cased) whose skill_view bodies must survive Phase-1 demotion.
+# │  作用：Skill 名称 (lower-cased) whose skill_view bodies 必须 survive 阶段-1 demotion.
 # │  参数：messages: List[Dict[str, Any]], prune_boundary: int
 # │  返回：set[str]
 # └──────────────────────────────────────────────────────────────
@@ -1255,7 +1255,7 @@ _HISTORICAL_TASK_SECTION_RE = re.compile(rf"(?ms)^{re.escape(HISTORICAL_TASK_HEA
 
 
 # ┌── 函数 def _redact_compaction_text()
-# │  作用：Redact text that crosses a compaction summary boundary (strict mode).
+# │  作用：Redact 文本那个 crosses 压缩摘要 boundary (strict 模式).
 # │  参数：text: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1279,7 +1279,7 @@ def _dedupe_append(items: list[str], value: str, *, limit: int) -> None:
 
 
 # ┌── 函数 def _tc_get()
-# │  作用：Field of a dict- or object-shaped tool call (or its ``function`` sub-object).
+# │  作用：字段的 字典- 或对象形态的工具 call (或其 ``函数`` sub-对象).
 # │  参数：obj: Any, key: str, default: Any = ''
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1290,7 +1290,7 @@ def _tc_get(obj: Any, key: str, default: Any = "") -> Any:
 
 
 # ┌── 函数 def _extract_tool_call_name_and_args()
-# │  作用：Return a best-effort ``(name, arguments)`` pair for dict/object tool calls.
+# │  作用：返回 尽最大努力 ``(名称, 参数)`` pair 用于字典/对象工具调用.。
 # │  参数：tool_call: Any
 # │  返回：tuple[str, str]
 # └──────────────────────────────────────────────────────────────
@@ -1302,7 +1302,7 @@ def _extract_tool_call_name_and_args(tool_call: Any) -> tuple[str, str]:
 
 
 # ┌── 函数 def _tool_calls_by_id()
-# │  作用：Map ``tool_call_id -> (tool_name, raw_arguments)`` over every assistant tool call.
+# │  作用：Map ``tool_call_id -> (tool_name, raw_arguments)`` over 每个 assistant 工具 call.
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：Dict[str, tuple]
 # └──────────────────────────────────────────────────────────────
@@ -1330,7 +1330,7 @@ def _collect_path_mentions(text: str, relevant_files: list[str], *, limit: int =
 
 
 # ┌── 函数 def _collect_paths_from_jsonish()
-# │  作用：Harvest path-like values (known keys + inline mentions) from parsed tool arguments.
+# │  作用：Harvest 路径-like 值 (known 键 + inline mentions) 从已解析工具参数.
 # │  参数：obj: Any, relevant_files: list[str]
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -1349,7 +1349,7 @@ def _collect_paths_from_jsonish(obj: Any, relevant_files: list[str]) -> None:
 
 
 # ┌── 函数 def _compact_fallback_turn()
-# │  作用：One-line, redacted, length-capped rendering of a turn's content for the static fallback.
+# │  作用：One-line, redacted, length-capped rendering 的轮次's 内容用于 static 兜底.
 # │  参数：value: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1365,7 +1365,7 @@ def _compact_fallback_turn(value: Any) -> str:
 
 
 # ┌── 函数 def _bullets()
-# │  作用：Markdown bullets of the first ``limit`` distinct non-blank items, or ``None.``.
+# │  作用：Markdown bullets 的 first ``限制`` distinct non-blank items, 或 ``None.``.
 # │  参数：items: list[str], limit: int = 8
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1377,7 +1377,7 @@ def _bullets(items: list[str], limit: int = 8) -> str:
 
 
 # ┌── 函数 def _content_length_for_budget()
-# │  作用：Effective char-length of message content for budgeting: text by length plus the learned
+# │  作用：Effective char-length 的消息内容用于 budgeting: 文本由 length plus learned
 # │  参数：raw_content: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1402,7 +1402,7 @@ def _content_length_for_budget(raw_content: Any) -> int:
 
 
 # ┌── 函数 def _serialized_length_for_budget()
-# │  作用：Return a stable char-length for non-content replay/metadata fields.
+# │  作用：返回 stable char-length 用于 non-内容重放/metadata 字段.。
 # │  参数：value: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1436,7 +1436,7 @@ _STALE_REPLAY_PRUNE_KEYS = "codex_reasoning_items",
 
 
 # ┌── 函数 def _reasoning_details_text_chars()
-# │  作用：Thinking-text chars inside a ``reasoning_details`` envelope (never the signed/base64 envelope blobs).
+# │  作用：Thinking-文本 chars inside ``reasoning_details`` envelope (never signed/base64 envelope blobs).
 # │  参数：value: Any
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1456,7 +1456,7 @@ def _reasoning_details_text_chars(value: Any) -> int:
 
 
 # ┌── 函数 def _estimate_msg_budget_tokens()
-# │  作用：Token estimate for one message in the tail-protection budget walks.
+# │  作用：令牌估算用于 one 消息在 tail-protection 预算 walks.
 # │  参数：msg: dict, charge_stale_thinking: bool = True
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1498,7 +1498,7 @@ def _estimate_msg_budget_tokens(msg: dict, charge_stale_thinking: bool = True) -
 
 
 # ┌── 函数 def _last_index_with_role()
-# │  作用：Index of the newest dict message with ``role``, or -1.
+# │  作用：Index 的 newest 字典消息带 ``角色``, 或 -1.
 # │  参数：messages: 'List[Dict[str, Any]]', role: str
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1509,7 +1509,7 @@ def _last_index_with_role(messages: "List[Dict[str, Any]]", role: str) -> int:
 
 
 # ┌── 函数 def _last_assistant_index()
-# │  作用：Newest assistant message index, or -1 (the one turn whose thinking may replay; see ``_NEWEST_TURN_ONLY_BUDGET_KEYS``).
+# │  作用：Newest assistant 消息 index, 或 -1 ( one 轮次 whose thinking 可以重放; see ``_NEWEST_TURN_ONLY_BUDGET_KEYS``).
 # │  参数：messages: 'List[Dict[str, Any]]'
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1520,7 +1520,7 @@ def _last_assistant_index(messages: "List[Dict[str, Any]]") -> int:
 
 
 # ┌── 函数 def _part_text()
-# │  作用：Text of a content part: the string itself, a dict's ``text``, else None.
+# │  作用：文本的 内容 part: 字符串 itself, 字典's ``文本``, 否则 None.
 # │  参数：item: Any
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1531,7 +1531,7 @@ def _part_text(item: Any) -> Optional[str]:
 
 
 # ┌── 函数 def _with_part_text()
-# │  作用：Copy of a content part carrying ``text`` (string parts become the text itself).
+# │  作用：复制的 内容 part carrying ``文本`` (字符串 parts become 文本 itself).
 # │  参数：item: Any, text: str
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1542,7 +1542,7 @@ def _with_part_text(item: Any, text: str) -> Any:
 
 
 # ┌── 函数 def _content_text_for_contains()
-# │  作用：Return a best-effort text view of message content (for substring checks only).
+# │  作用：返回 尽最大努力文本 view 的消息内容 (用于 substring 检查仅).。
 # │  参数：content: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1556,7 +1556,7 @@ def _content_text_for_contains(content: Any) -> str:
 
 
 # ┌── 函数 def _append_text_to_content()
-# │  作用：Append or prepend plain text to message content (string or multimodal list).
+# │  作用：追加或 prepend plain 文本消息内容 (字符串或 multimodal 列表).
 # │  参数：content: Any, text: str, prepend: bool = ...
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1575,7 +1575,7 @@ def _append_text_to_content(content: Any, text: str, *, prepend: bool = False) -
 
 
 # ┌── 函数 def _replace_image_parts()
-# │  作用：New parts list with every image part replaced by a text placeholder; None if no images.
+# │  作用：New parts 列表带 每个 image part replaced 由文本 placeholder; None 若无 images.
 # │  参数：parts: Any, placeholder: str
 # │  返回：Optional[List[Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1589,7 +1589,7 @@ def _replace_image_parts(parts: Any, placeholder: str) -> Optional[List[Any]]:
 
 
 # ┌── 函数 def _tool_content_has_images()
-# │  作用：True when a tool-result body (part list or ``_multimodal`` envelope) carries images.
+# │  作用：当 工具-结果 body (part 列表或 ``_multimodal`` envelope) carries images. 时返回 True。
 # │  参数：content: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1601,7 +1601,7 @@ def _tool_content_has_images(content: Any) -> bool:
 
 
 # ┌── 函数 def _strip_images_from_tool_msg()
-# │  作用：Copy of a tool message with image payloads replaced (stale ``api_content`` dropped); ``None`` if nothing to strip.
+# │  作用：复制的 工具消息带 image payloads replaced (卡死的 ``api_content`` 已丢弃); ``None`` 若 nothing strip.
 # │  参数：msg: Dict[str, Any]
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1618,7 +1618,7 @@ def _strip_images_from_tool_msg(msg: Dict[str, Any]) -> Optional[Dict[str, Any]]
 
 
 # ┌── 函数 def _rewritten()
-# │  作用：Copy of ``msg`` carrying ``content``; drops the stale ``api_content`` sidecar so replay can't resend it.
+# │  作用：复制的 ``msg`` carrying ``内容``; 丢弃卡死的 ``api_content`` sidecar 从而重放无法 resend 它.
 # │  参数：msg: Dict[str, Any], content: Any
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -1631,7 +1631,7 @@ def _rewritten(msg: Dict[str, Any], content: Any) -> Dict[str, Any]:
 
 
 # ┌── 函数 def _retire_stale_tool_result_images()
-# │  作用：Replace image payloads on older tool results with text placeholders.
+# │  作用：Replace image payloads 在…上 older 工具结果带 文本 placeholders.
 # │  参数：result: List[Dict[str, Any]], keep_newest: int = _MAX_KEEP_TOOL_IMAGES
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1656,7 +1656,7 @@ def _retire_stale_tool_result_images(result: List[Dict[str, Any]], keep_newest: 
 
 
 # ┌── 函数 def evict_stale_outbound_tool_images()
-# │  作用：Drop stale screenshot/vision payloads from the per-call API copy.
+# │  作用：丢弃卡死的 screenshot/vision payloads 从每次调用的 API 复制.
 # │  参数：api_messages: List[Dict[str, Any]], keep_newest: int = _MAX_KEEP_TOOL_IMAGES
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -1679,7 +1679,7 @@ def evict_stale_outbound_tool_images(
 
 
 # ┌── 函数 def _truncate_tool_call_args_json()
-# │  作用：Shrink long string leaves in a tool-call arguments JSON blob, keeping it valid (providers 400 on malformed args).
+# │  作用：Shrink long 字符串 leaves 在工具调用参数 JSON blob, 保留它 valid (服务商 400 在…上格式非法的 args).
 # │  参数：args: str, head_chars: int = 200
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1714,7 +1714,7 @@ _IMAGE_PART_TYPES = frozenset({"image_url", "input_image", "image"})
 
 
 # ┌── 函数 def _is_image_part()
-# │  作用：True if ``part`` is an image block (``image_url``, ``input_image``, or ``image``).
+# │  作用：True 若 ``part`` 是 image block (``image_url``, ``input_image``, 或 ``image``).
 # │  参数：part: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1725,7 +1725,7 @@ def _is_image_part(part: Any) -> bool:
 
 
 # ┌── 函数 def _content_has_images()
-# │  作用：True if a message's ``content`` is a multimodal list with image parts.
+# │  作用：True 若消息's ``内容`` 是 multimodal 列表带 image parts.
 # │  参数：content: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1736,7 +1736,7 @@ def _content_has_images(content: Any) -> bool:
 
 
 # ┌── 函数 def _strip_images_from_content()
-# │  作用：``content`` with image parts replaced by placeholders; unchanged (same object) when none.
+# │  作用：``内容`` 带 image parts replaced 由 placeholders; unchanged (same 对象) 当 None.
 # │  参数：content: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -1748,7 +1748,7 @@ def _strip_images_from_content(content: Any) -> Any:
 
 
 # ┌── 函数 def _strip_historical_media()
-# │  作用：Replace image parts in older messages with placeholder text.
+# │  作用：Replace image parts 在 older 消息带 placeholder 文本.
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -1812,7 +1812,7 @@ def _strip_historical_media(messages: List[Dict[str, Any]]) -> List[Dict[str, An
 
 
 # ┌── 函数 def _summary_part_text()
-# │  作用：Summarizer-facing text of one content part; non-text parts keep a marker so content is known to exist.
+# │  作用：Summarizer-facing 文本的 one 内容 part; non-文本 parts 保留 marker 从而内容是 known exist.
 # │  参数：part: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1830,7 +1830,7 @@ def _summary_part_text(part: Any) -> str:
 
 
 # ┌── 函数 def _image_part_label()
-# │  作用：Short summarizer label for an image part: http(s) URLs kept as a handle, ``data:`` URLs collapse to ``[image]``.
+# │  作用：Short summarizer label 用于 image part: http(s) URLs 保留作为 handle, ``data:`` URLs collapse ``[image]``.
 # │  参数：part: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1846,7 +1846,7 @@ def _image_part_label(part: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _str_arg()
-# │  作用：Coerce a parsed tool arg to ``str`` (models emit non-string values).
+# │  作用：Coerce 已解析工具 arg ``str`` (模型 emit non-字符串值).
 # │  参数：args: dict, key: str, default: str = ''
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1858,7 +1858,7 @@ def _str_arg(args: dict, key: str, default: str = "") -> str:
 
 
 # ┌── 函数 def _summarize_tool_result()
-# │  作用：1-line summary of a tool call + result. Never raises: a malformed historical call must not crash-loop compression.
+# │  作用：1-line 摘要的 工具 call + 结果. Never 抛出: 格式非法的 historical call 必须不 crash-循环 compression.
 # │  参数：tool_name: str, tool_args: str, tool_content: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2039,7 +2039,7 @@ def _sum_named(name, args, content, content_len, line_count):
 
 
 # ┌── 函数 def _sum_template()
-# │  作用：Summarizer formatting ``template`` from the parsed args (``defaults`` fill missing keys) plus ``content_len``.
+# │  作用：Summarizer formatting ``template`` 从已解析 args (``默认值`` fill missing 键) plus ``content_len``.
 # │  参数：template: str, **defaults
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -2082,7 +2082,7 @@ _TOOL_RESULT_SUMMARIZERS = {
 
 
 # ┌── 函数 def _json_dict()
-# │  作用：Parse ``text`` as a JSON object; ``{}`` for empty, invalid, or non-object input.
+# │  作用：解析 ``文本`` 作为 JSON 对象; ``{}`` 用于 empty, invalid, 或 non-对象输入.
 # │  参数：text: Any
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -2101,7 +2101,7 @@ def _json_dict(text: Any) -> dict:
 
 
 # ┌── 函数 def _summarize_tool_result_unguarded()
-# │  作用：Build the summary line (unguarded; see ``_summarize_tool_result``).
+# │  作用：构建摘要 line (unguarded; see ``_summarize_tool_result``).
 # │  参数：tool_name: str, tool_args: str, tool_content: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2121,7 +2121,7 @@ def _summarize_tool_result_unguarded(tool_name: str, tool_args: str, tool_conten
 
 
 # ┌── 函数 def _model_threshold_key_rank()
-# │  作用：Match rank for one ``model_thresholds`` key, or None when it does not apply.
+# │  作用：Match rank 用于 one ``model_thresholds`` 键, 或 None 当它 不 apply.
 # │  参数：key: str, model: str, provider: str
 # │  返回：'tuple[int, int] | None'
 # └──────────────────────────────────────────────────────────────
@@ -2140,7 +2140,7 @@ def _model_threshold_key_rank(key: str, model: str, provider: str) -> "tuple[int
 
 
 # ┌── 函数 def resolve_model_threshold()
-# │  作用：Per-model threshold: longest matching ``model_thresholds`` key wins, else ``default``.
+# │  作用：按模型的阈值: longest matching ``model_thresholds`` 键 wins, 否则 ``默认值``.
 # │  参数：model: str, model_thresholds: dict[str, float] | None, default: float, provider: str = ''
 # │  返回：float
 # └──────────────────────────────────────────────────────────────
@@ -2162,7 +2162,7 @@ def resolve_model_threshold(
 
 
 # ┌── 函数 def _memory_provider_section()
-# │  作用：Prompt block carrying the sanitized memory-provider JSON, or "" when empty.
+# │  作用：提示词 block carrying sanitized 内存-服务商 JSON, 或 "" 当 empty.
 # │  参数：memory_context: str
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2186,7 +2186,7 @@ def _memory_provider_section(memory_context: str) -> str:
 
 
 # ┌── 函数 def _today_for_prompt()
-# │  作用：Date-only (user tz) for temporal anchoring; "" when the clock fails. Cache-safe: the summary is outside the prefix.
+# │  作用：Date-仅 (user tz) 用于 temporal anchoring; "" 当 clock fails. 缓存-safe: 摘要是 outside prefix.
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -2270,7 +2270,7 @@ Describe agent/tool work only as completed actions, state, or historical work.]"
 
 
 # ┌── 类 class ContextCompressor（继承自：SummaryDispatchMixin, MicroCompactionMixin, ContextEngine）
-# │  说明：Default context engine: prune tool results, protect head/tail, summarize the middle
+# │  说明：默认值上下文引擎: prune 工具结果, protect head/tail, summarize middle
 # │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
 # │  成员：共 144 个方法；对外可用 31 个；含魔术方法 __init__
 # └──────────────────────────────────────────────────────────────
@@ -2290,7 +2290,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return "compressor"
 
     # ┌── 函数 def on_session_reset()
-    # │  作用：Reset all per-session state for /new or /reset (also resets micro-compaction).
+    # │  作用：Reset 全部 per-会话状态用于 /new 或 /reset (也 resets micro-压缩).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2302,7 +2302,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._micro_compact_passes = self._micro_compact_tokens_saved_total = self._micro_compact_turns_since_pass = 0
 
     # ┌── 函数 def _reset_micro_compact_cursor_state()
-    # │  作用：Forget the rolling micro summary and its cursor/failure bookkeeping.
+    # │  作用：Forget rolling micro 摘要且 其 cursor/failure bookkeeping.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2314,7 +2314,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._micro_compact_last_failure_cursor = -1
 
     # ┌── 函数 def _begin_compression_telemetry()
-    # │  作用：Initialize content-free per-attempt compression telemetry.
+    # │  作用：Initialize 内容-free per-尝试 compression telemetry.
     # │  参数：self, current_tokens: int | None, attempt_id: str | None = ..., session_id: str | None = ..., trigger_source: str | None = ...
     # │  返回：Dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -2395,7 +2395,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
             telemetry[key] = (telemetry.get(key) or 0) + value if accumulate else value
 
     # ┌── 函数 def _emit_init_summary_once()
-    # │  作用：Emit the init log line once, on first context-length resolution (keeps __init__ non-blocking).
+    # │  作用：Emit init 日志 line 一旦, 在…上 first 上下文-length resolution (保留 __init__ non-blocking).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2414,7 +2414,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         )
 
     # ┌── 函数 def _resolve_context_length()
-    # │  作用：Resolve and cache the model's context length on first access.
+    # │  作用：Resolve 且缓存模型's 上下文 length 在…上 first access.
     # │  参数：self
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2539,7 +2539,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._max_summary_tokens = value
 
     # ┌── 函数 def on_session_end()
-    # │  作用：Clear all per-session compaction state at a real session boundary.
+    # │  作用：清除全部 per-会话压缩状态在 real 会话 boundary.
     # │  参数：self, session_id: str, messages: List[Dict[str, Any]]
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2561,7 +2561,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._reset_session_compaction_state()
 
     # ┌── 函数 def _reset_real_usage_pairing()
-    # │  作用：Forget the real-usage state read by real_usage_pending().
+    # │  作用：Forget real-usage 状态读取由 real_usage_pending().
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2571,7 +2571,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self.awaiting_real_usage_after_compression = self._provider_omits_usage = False
 
     # ┌── 函数 def _reset_session_compaction_state()
-    # │  作用：Shared per-session reset for /new, /reset and session end.
+    # │  作用：Shared per-会话 reset 用于 /new, /reset 且会话 end.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2609,7 +2609,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._reset_proactive_prune_rearm()
 
     # ┌── 函数 def bind_session_state()
-    # │  作用：Bind the current session row so durable cooldowns can round-trip.
+    # │  作用：Bind current 会话 row 从而 durable cooldowns 可以轮-trip.
     # │  参数：self, session_db: Any = None, session_id: str = ''
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2631,7 +2631,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._load_proactive_prune_rearm_tokens()
 
     # ┌── 函数 def on_session_start()
-    # │  作用：Bind session-scoped compression state for a new or resumed session.
+    # │  作用：Bind 会话-scoped compression 状态用于 new 或 resumed 会话.
     # │  参数：self, session_id: str, **kwargs
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2666,7 +2666,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
                 self._persist_ineffective_compression_count()
 
     # ┌── 函数 def _durable_read()
-    # │  作用：Best-effort read of a durable per-session value; ``default`` when unbound/unsupported/failed.
+    # │  作用：尽最大努力读取的 durable per-会话值; ``默认值`` 当 unbound/unsupported/failed.
     # │  参数：self, method: str, label: str, coerce, default, *args, session_db: Any = ..., session_id: Optional[str] = ...
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -2699,7 +2699,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return False, default
 
     # ┌── 函数 def _durable_write()
-    # │  作用：Best-effort write of a durable per-session value; True only when the write succeeded.
+    # │  作用：尽最大努力写入的 durable per-会话值; True 仅当 写入 succeeded.
     # │  参数：self, method: str, label: str, *args
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -2722,7 +2722,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return False
 
     # ┌── 函数 def _load_durable()
-    # │  作用：Restore ``self.<attr>`` from the bound row; a non-numeric row resets it to ``default``.
+    # │  作用：恢复 ``self.<attr>`` 从 bound row; non-numeric row resets 它 ``默认值``.
     # │  参数：self, attr: str, method: str, label: str, coerce, default, *args
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2741,7 +2741,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._load_durable("_fallback_compression_streak", "get_compression_fallback_streak", "compression fallback streak", int, 0)
 
     # ┌── 函数 def _load_proactive_prune_rearm_tokens()
-    # │  作用：Restore the cache-boundary runway for a resumed durable session.
+    # │  作用：恢复缓存-boundary runway 用于 resumed durable 会话.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2753,7 +2753,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         )
 
     # ┌── 函数 def _clear_durable_proactive_prune_rearm()
-    # │  作用：Best-effort removal of the persisted prune-runway key; transcript untouched.
+    # │  作用：尽最大努力 removal 的已持久化的 prune-runway 键; transcript untouched.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2770,7 +2770,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._durable_write("set_compression_fallback_streak", "compression fallback streak", self._fallback_compression_streak)
 
     # ┌── 函数 def _load_ineffective_compression_count()
-    # │  作用：Load the durable anti-thrash strike count so a restart never disarms a guard.
+    # │  作用：加载 durable anti-thrash strike count 从而 restart never disarms 护栏.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2787,7 +2787,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._durable_write("set_compression_ineffective_count", "compression ineffective count", self._ineffective_compression_count)
 
     # ┌── 函数 def _load_anti_thrash_recovery_deadline()
-    # │  作用：Restore the durable recovery deadline (wall-clock epoch); missing storage leaves it disarmed.
+    # │  作用：恢复 durable recovery deadline (真实时钟的纪元/版本); missing storage leaves 它 disarmed.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2799,7 +2799,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._load_durable("_anti_thrash_recovery_deadline", "get_compression_recovery_deadline", "compression recovery deadline", float, 0.0)
 
     # ┌── 函数 def _set_anti_thrash_recovery_deadline()
-    # │  作用：Set the recovery deadline, persisting on change only (0 = disarmed).
+    # │  作用：设置 recovery deadline, 持久化在…上 change 仅 (0 = disarmed).
     # │  参数：self, deadline: float
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2811,7 +2811,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._durable_write("set_compression_recovery_deadline", "compression recovery deadline", deadline)
 
     # ┌── 函数 def _record_ineffective_compression_verdict()
-    # │  作用：Set the anti-thrash strike counter; persists only on change.
+    # │  作用：设置 anti-thrash strike counter; 持久化仅 在…上 change.
     # │  参数：self, count: int
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2823,7 +2823,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._persist_ineffective_compression_count()
 
     # ┌── 函数 def _record_structural_no_op()
-    # │  作用：Defer retries after a structural no-op WITHOUT striking the anti-thrash breaker.
+    # │  作用：Defer 重试在…之后 structural 无-op 不 striking anti-thrash breaker.
     # │  参数：self, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2839,7 +2839,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
             )
 
     # ┌── 函数 def record_rejected_compaction()
-    # │  作用：One ineffective strike for a pre-commit rejection; no real-usage arming or streak change (nothing committed).
+    # │  作用：One ineffective strike 用于 pre-commit rejection; 无 real-usage arming 或 streak change (nothing committed).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2853,7 +2853,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
             )
 
     # ┌── 函数 def record_completed_compaction()
-    # │  作用：Record one completed boundary; ``feasibility_skip`` is streak-neutral but still arms the real-usage verdict.
+    # │  作用：Record one completed boundary; ``feasibility_skip`` 是 streak-neutral 但仍 arms real-usage verdict.
     # │  参数：self, used_fallback: bool = ..., feasibility_skip: bool = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2886,7 +2886,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._persist_fallback_compression_streak()
 
     # ┌── 函数 def get_active_compression_failure_cooldown()
-    # │  作用：Return the live compression-failure cooldown for the bound session.
+    # │  作用：返回 当前活跃的 compression-failure 冷却用于 bound 会话.。
     # │  参数：self, refresh: bool = ...
     # │  返回：Optional[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -2969,7 +2969,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         )
 
     # ┌── 函数 def record_timeout_failure()
-    # │  作用：Consecutive timeout/stall via the ladder; error persisted as ``backoff:<kind>:strategy=<tail_mode>`` for restarts.
+    # │  作用：Consecutive 超时/stall via ladder; 错误已持久化的作为 ``backoff:<种类>:strategy=<tail_mode>`` 用于 restarts.
     # │  参数：self, error: str, failure_kind: str = 'timeout'
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2994,7 +2994,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         ContextCompressor._durable_write(self, "clear_compression_failure_cooldown", "compression failure cooldown clear")
 
     # ┌── 函数 def _compression_cancelled()
-    # │  作用：Read the host-owned cooperative cancellation signal, if installed.
+    # │  作用：读取宿主-持有的 cooperative cancellation 信号, 若 installed.
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3018,7 +3018,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
             return False
 
     # ┌── 函数 def update_model()
-    # │  作用：Update model info after a model switch or fallback activation.
+    # │  作用：更新模型信息在…之后模型切换或 兜底 activation.
     # │  参数：self, model: str, context_length: int, base_url: str = '', api_key: Any = '', provider: str = '', api_mode: str = '', max_tokens: int | None = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3076,7 +3076,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
     _STRUCTURAL_NO_OP_BACKOFF_SECONDS = 300.0
 
     # ┌── 函数 def _coerce_max_tokens()
-    # │  作用：Normalize max_tokens to a positive int, or None for "no reservation".
+    # │  作用：归一化 max_tokens positive int, 或 None 用于 "无 reservation".
     # │  参数：value: Any
     # │  返回：int | None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3097,7 +3097,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
     _coerce_threshold_tokens_cap = _coerce_max_tokens
 
     # ┌── 函数 def _apply_threshold_tokens_cap()
-    # │  作用：Clamp threshold_tokens to the configured cap (itself clamped to the context length).
+    # │  作用：Clamp threshold_tokens configured cap (itself clamped 上下文 length).
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3109,7 +3109,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
                 self.threshold_tokens = _effective_cap
 
     # ┌── 函数 def _effective_threshold_percent()
-    # │  作用：Raise-only small-context threshold floor: models under 512K trigger at >= 75%.
+    # │  作用：抛出-仅 small-上下文阈值下取整到: 模型 under 512K trigger 在 >= 75%.
     # │  参数：context_length: int, threshold_percent: float
     # │  返回：float
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3124,7 +3124,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return threshold_percent
 
     # ┌── 函数 def _compute_threshold_tokens()
-    # │  作用：Compute the compaction trigger in tokens from the effective input budget.
+    # │  作用：Compute 压缩 trigger 在令牌从 effective 输入预算.
     # │  参数：context_length: int, threshold_percent: float, max_tokens: int | None = None
     # │  返回：int
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3268,7 +3268,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
             setattr(self, flag, False)
 
     # ┌── 函数 def update_from_response()
-    # │  作用：Update tracked token usage from API response.
+    # │  作用：更新 tracked 令牌 usage 从 API 响应.
     # │  参数：self, usage: Dict[str, Any]
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -3282,7 +3282,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._verify_compaction_cleared_threshold = self.awaiting_real_usage_after_compression = False
 
     # ┌── 函数 def _apply_real_prompt_verdict()
-    # │  作用：Pair the real prompt count with its rough estimate and judge the armed compaction verdict.
+    # │  作用：Pair real 提示词 count 带其 粗略的估算且 judge armed 压缩 verdict.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3321,7 +3321,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
                     self._record_ineffective_compression_verdict(0)
 
     # ┌── 函数 def maybe_seed_preflight_display_tokens()
-    # │  作用：Display-only seed of ``last_prompt_tokens`` from the 0 state; the -1 sentinel and real readings are preserved.
+    # │  作用：展示-仅 seed 的 ``last_prompt_tokens`` 从 0 状态; -1 sentinel 且 real readings 是 preserved.
     # │  参数：self, preflight_tokens: int
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3331,7 +3331,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
             self.last_prompt_tokens = preflight_tokens
 
     # ┌── 函数 def snapshot_preflight_display_tokens()
-    # │  作用：Capture the display token count before a speculative preflight seed.
+    # │  作用：Capture 展示令牌 count 在…之前 speculative preflight seed.
     # │  参数：self
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -3341,7 +3341,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return self.last_prompt_tokens
 
     # ┌── 函数 def rollback_interrupted_preflight_display_tokens()
-    # │  作用：Restore a speculative display seed without touching compaction state.
+    # │  作用：恢复 speculative 展示 seed 不 touching 压缩状态.
     # │  参数：self, snapshot: int
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3352,7 +3352,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self.last_prompt_tokens = snapshot
 
     # ┌── 函数 def note_usage_less_response()
-    # │  作用：A completed response carried no usage: until a real reading arrives, this provider cannot
+    # │  作用：completed 响应 carried 无 usage: until real 读取 arrives, 这个服务商无法
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3362,7 +3362,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._provider_omits_usage = True
 
     # ┌── 函数 def note_native_compaction_checkpoint()
-    # │  作用：Wait for real usage before trusting a newly checkpointed request.
+    # │  作用：Wait 用于 real usage 在…之前 trusting newly checkpointed 请求.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3381,7 +3381,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self.last_compression_rough_tokens = 0
 
     # ┌── 函数 def should_defer_preflight_to_real_usage()
-    # │  作用：True when a whole-context ROUGH estimate over threshold must wait ONE request for the
+    # │  作用：当 whole-上下文粗略的估算 over 阈值必须 wait ONE 请求用于 时返回 True。
     # │  参数：self, rough_tokens: int
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3409,7 +3409,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return not self._provider_omits_usage
 
     # ┌── 函数 def should_compress()
-    # │  作用：True when compression should run now (anti-thrash included; see :meth:`should_compress_info` for the reason).
+    # │  作用：当 compression 应当运行 now (anti-thrash included; see :meth:`should_compress_info` 用于 reason). 时返回 True。
     # │  参数：self, prompt_tokens: int = None
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3419,7 +3419,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return self.should_compress_info(prompt_tokens)[0]
 
     # ┌── 函数 def should_compress_info()
-    # │  作用：Return ``(should_compress, reason)``.
+    # │  作用：返回 ``(should_compress, reason)``.。
     # │  参数：self, prompt_tokens: int = None
     # │  返回：'tuple[bool, str | None]'
     # └──────────────────────────────────────────────────────────────
@@ -3438,7 +3438,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return True, None
 
     # ┌── 函数 def _compression_block_reason()
-    # │  作用：Block reason: ``"cooldown:<s>"``, ``"structural_backoff:<s>"``, ``"ineffective"``, or None.
+    # │  作用：Block reason: ``"冷却:<s>"``, ``"structural_backoff:<s>"``, ``"ineffective"``, 或 None.
     # │  参数：self
     # │  返回：'str | None'
     # └──────────────────────────────────────────────────────────────
@@ -3455,7 +3455,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return "ineffective" if self._tripped() else None
 
     # ┌── 函数 def _tripped()
-    # │  作用：Anti-thrash breaker state: two ineffective compactions or two fallback summaries in a row.
+    # │  作用：Anti-thrash breaker 状态: two ineffective compactions 或 two 兜底摘要在 row.
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3465,7 +3465,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return self._ineffective_compression_count >= 2 or self._fallback_compression_streak >= 2
 
     # ┌── 函数 def _refresh_durable_guards()
-    # │  作用：Re-read durable cooldown + breaker state; called only when a gate is about to block.
+    # │  作用：Re-读取 durable 冷却 + breaker 状态; called 仅当 gate 是 about block.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3483,7 +3483,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
                 logger.debug("compression %s refresh failed: %s", label, exc)
 
     # ┌── 函数 def _automatic_compression_blocked()
-    # │  作用：Whether auto-compaction is in cooldown or tripped; ``ignore_cooldown`` skips only the summary-failure cooldown.
+    # │  作用：是否 auto-压缩是 在冷却或 tripped; ``ignore_cooldown`` skips 仅摘要-failure 冷却.。
     # │  参数：self, ignore_cooldown: bool = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3498,7 +3498,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return self._automatic_compression_blocked_locally(ignore_cooldown=ignore_cooldown)
 
     # ┌── 函数 def _automatic_compression_blocked_locally()
-    # │  作用：Evaluate the automatic-compaction gate on in-memory state only.
+    # │  作用：Evaluate automatic-压缩 gate 在…上在-内存状态仅.
     # │  参数：self, ignore_cooldown: bool = ...
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3579,7 +3579,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return False
 
     # ┌── 函数 def _walk_tail_budget()
-    # │  作用：Accumulate message tokens newest-first until ``ceiling`` (once ``min_tail`` rows are kept).
+    # │  作用：Accumulate 消息令牌 newest-first until ``ceiling`` (一旦 ``min_tail`` rows 是保留).
     # │  参数：self, messages: List[Dict[str, Any]], head_end: int, ceiling: int, min_tail: int, cut_at_break: bool
     # │  返回：tuple[int, int]
     # └──────────────────────────────────────────────────────────────
@@ -3607,7 +3607,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return cut, accumulated
 
     # ┌── 函数 def _prune_boundary()
-    # │  作用：First index of the protected tail; token budget (when given) beats the count floor.
+    # │  作用：First index 的 protected tail; token 预算 (当 given) beats count 下取整到.
     # │  参数：self, result: List[Dict[str, Any]], protect_tail_count: int, protect_tail_tokens: int | None
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -3626,7 +3626,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return min(boundary, len(result) - min_protect)
 
     # ┌── 函数 def _dedupe_tool_results()
-    # │  作用：Pass 1: keep the newest copy of identical tool results, back-reference older ones.
+    # │  作用：Pass 1: 保留 newest 复制的 identical 工具结果, back-reference older ones.
     # │  参数：result: List[Dict[str, Any]]
     # │  返回：int
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3651,7 +3651,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return pruned
 
     # ┌── 函数 def _truncate_tool_call_args_at()
-    # │  作用：Shrink large tool_call argument payloads at ``idx`` (inside the parsed JSON, so it stays valid).
+    # │  作用：Shrink large tool_call 参数 payloads 在 ``idx`` (inside 已解析 JSON, 从而它 stays valid).
     # │  参数：result: List[Dict[str, Any]], idx: int
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3675,7 +3675,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return modified
 
     # ┌── 函数 def _demote_tool_result_at()
-    # │  作用：Replace the tool result at ``idx`` with a 1-line summary; True if modified.
+    # │  作用：Replace 工具结果在 ``idx`` 带 1-line 摘要; True 若 modified.
     # │  参数：result: List[Dict[str, Any]], idx: int, call_id_to_tool: Dict[str, tuple[str, str]], min_prune_chars: int, protected_skills: Optional[set[str]] = None
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -3717,7 +3717,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return True
 
     # ┌── 函数 def _pressure_demote_tail()
-    # │  作用：Pass 4: demote inside the protected tail when it alone exceeds the soft budget (#61932).
+    # │  作用：Pass 4: demote inside protected tail 当它 alone exceeds soft 预算 (#61932).
     # │  参数：self, result: List[Dict[str, Any]], prune_boundary: int, protect_tail_tokens: int, call_id_to_tool: Dict[str, tuple[str, str]], min_prune_chars: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -3776,7 +3776,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return demoted
 
     # ┌── 函数 def _prune_old_tool_results()
-    # │  作用：Old tool results -> 1-line summaries; dedup, arg truncation, pressure demotion. Returns ``(messages, count)``.
+    # │  作用：Old 工具结果 -> 1-line 摘要; dedup, arg truncation, 压力 demotion. 返回 ``(消息, count)``.
     # │  参数：self, messages: List[Dict[str, Any]], protect_tail_count: int, protect_tail_tokens: int | None = None, min_prune_chars: int = _PRUNE_MIN_CHARS
     # │  返回：tuple[List[Dict[str, Any]], int]
     # └──────────────────────────────────────────────────────────────
@@ -3817,7 +3817,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return result, pruned
 
     # ┌── 函数 def _reset_proactive_prune_rearm()
-    # │  作用：Fully rearm the proactive prune and let a future lockout warn again.
+    # │  作用：Fully rearm proactive prune 且 let future lockout 警告 again.
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3834,7 +3834,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         self._last_reclaim_block_warn = None
 
     # ┌── 函数 def _billed_basis_over_threshold()
-    # │  作用：Whether a provider-billed reading says the session is over threshold.
+    # │  作用：是否 服务商-billed 读取 says 会话是 over 阈值.。
     # │  参数：self, current_tokens: 'int | None'
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -3856,7 +3856,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         )
 
     # ┌── 函数 def _warn_reclamation_no_op()
-    # │  作用：Warn when an over-threshold session's reclamation path no-ops.
+    # │  作用：警告当 over-阈值会话's reclamation 路径无-ops.
     # │  参数：self, reason: str, current_tokens: 'int | None', before: 'int | None' = None
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -3903,7 +3903,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         )
 
     # ┌── 函数 def prune_tool_results_only()
-    # │  作用：Deterministic, no-LLM tool-result prune gated on ``proactive_prune_tokens``.
+    # │  作用：Deterministic, 无-LLM 工具-结果 prune gated 在…上 ``proactive_prune_tokens``.
     # │  参数：self, messages: List[Dict[str, Any]], current_tokens: int | None = None
     # │  返回：tuple[List[Dict[str, Any]], int]
     # └──────────────────────────────────────────────────────────────
@@ -3985,7 +3985,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return pruned_msgs, pruned_count
 
     # ┌── 函数 def _compute_summary_budget()
-    # │  作用：Scale the summary token budget with content size and context window.
+    # │  作用：Scale 摘要 token 预算带 内容 size 且上下文窗口.
     # │  参数：self, turns_to_summarize: List[Dict[str, Any]]
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -4006,7 +4006,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
     _SUMMARY_INPUT_MAX_CHARS = _SUMMARY_INPUT_MAX_CHARS
 
     # ┌── 函数 def _render_tool_call_for_summary()
-    # │  作用：`` name(args)`` line for the summarizer; object-shaped calls render as ``name(...)``.
+    # │  作用：`` 名称(args)`` line 用于 summarizer; 对象形态的 calls render 作为 ``名称(...)``.
     # │  参数：self, tc: Any
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -4024,7 +4024,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return f"  {fn.get('name', '?')}({args})"
 
     # ┌── 函数 def _serialize_for_summary()
-    # │  作用：Serialize turns into labeled, redacted text for the summarizer.
+    # │  作用：Serialize 轮次进入 labeled, redacted 文本用于 summarizer.
     # │  参数：self, turns: List[Dict[str, Any]]
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -4055,7 +4055,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         return "\n\n".join(parts)
 
     # ┌── 函数 def _fallback_anchors()
-    # │  作用：Locally extractable anchors: user asks, actions, files, blockers, last dropped turns.
+    # │  作用：Locally extractable anchors: user asks, actions, 文件, blockers, last 已丢弃轮次.
     # │  参数：self, turns_to_summarize: List[Dict[str, Any]]
     # │  返回：Dict[str, list[str]]
     # └──────────────────────────────────────────────────────────────
@@ -4122,7 +4122,7 @@ class ContextCompressor(SummaryDispatchMixin, MicroCompactionMixin, ContextEngin
         }
 
     # ┌── 函数 def _build_static_fallback_summary()
-    # │  作用：Deterministic handoff when the LLM summarizer is unavailable: locally extractable anchors (user asks,
+    # │  作用：Deterministic 交接当 LLM summarizer 是 unavailable: locally extractable anchors (user asks,
     # │  参数：self, turns_to_summarize: List[Dict[str, Any]], reason: str | None = None
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -4199,7 +4199,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
         return self._augment_summary_lean(summary, turns_to_summarize)
 
     # ┌── 函数 def _demote_stale_tail_tools()
-    # │  作用：Lean mode: demote tail tool results older than the newest ``_LEAN_TAIL_KEEP_TOOL_ROUNDS`` rounds to
+    # │  作用：Lean 模式: demote tail 工具结果 older 比 newest ``_LEAN_TAIL_KEEP_TOOL_ROUNDS`` 轮
     # │  参数：self, messages: List[Dict[str, Any]], tail_start: int
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -4233,7 +4233,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
         return result
 
     # ┌── 函数 def _augment_summary_lean()
-    # │  作用：Append deterministic lean-mode sections to a summary; no-op in legacy mode.
+    # │  作用：追加 deterministic lean-模式 sections 摘要; 无-op 在 legacy 模式.
     # │  参数：self, summary: str, turns_to_summarize: List[Dict[str, Any]]
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -4253,7 +4253,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
         return summary
 
     # ┌── 函数 def _bound_summary_input()
-    # │  作用：Cap total summarizer input, keeping head and tail and marking the omitted middle.
+    # │  作用：Cap total summarizer 输入, 保留 head 且 tail 且 marking omitted middle.
     # │  参数：cls, content: str
     # │  返回：str
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4285,7 +4285,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
     _SAMPLED_INPUT_SLICES = 8
 
     # ┌── 函数 def _sample_summary_input()
-    # │  作用：Cap summarizer input by EVEN SAMPLING across the whole region (lean mode).
+    # │  作用：Cap summarizer 输入由 EVEN SAMPLING across whole region (lean 模式).
     # │  参数：cls, content: str
     # │  返回：str
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4320,7 +4320,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
         return "".join(parts)
 
     # ┌── 函数 def _fallback_to_main_for_compression()
-    # │  作用：Fall back from a separate ``summary_model`` to the main model: record the aux failure, clear model + cooldown.
+    # │  作用：Fall back 从 separate ``summary_model`` main 模型: record aux failure, 清除模型 + 冷却.
     # │  参数：self, e: Exception, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -4341,7 +4341,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
         self._clear_compression_failure_cooldown()  # no cooldown — retry immediately
 
     # ┌── 函数 def _call_summary_llm()
-    # │  作用：Issue the single aux summary call; return validated content text.
+    # │  作用：Issue single aux 摘要 call; 返回已校验内容文本.
     # │  参数：self, prompt: str, prompt_started_at: float
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -4426,7 +4426,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
         return content
 
     # ┌── 函数 def _generate_summary()
-    # │  作用：Structured summary of the turns (iterative update when a previous summary exists); None if all attempts fail.
+    # │  作用：结构化的摘要的 轮次 (iterative 更新当 previous 摘要 exists); None 若全部尝试 fail.
     # │  参数：self, turns_to_summarize: List[Dict[str, Any]], focus_topic: Optional[str] = None, memory_context: str = '', bypass_cooldown: bool = False
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -4493,7 +4493,7 @@ Summary generation was unavailable, so this is a best-effort deterministic fallb
             return self._on_summary_failure(e, turns_to_summarize, focus_topic, memory_context)
 
     # ┌── 函数 def _build_summary_prompt()
-    # │  作用：Assemble the summarizer prompt (fresh or iterative-update form); focus guidance goes last so it takes precedence.
+    # │  作用：Assemble summarizer 提示词 (fresh 或 iterative-更新形态); focus guidance goes last 从而它 takes precedence.
     # │  参数：self, content_to_summarize: str, summary_budget: int, focus_topic: Optional[str], memory_context: str, has_user_turn: bool
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -4556,7 +4556,7 @@ This compaction should PRIORITISE preserving all information related to the focu
         return prompt
 
     # ┌── 函数 def _temporal_anchoring_rule()
-    # │  作用：Dated past-tense rule; "" when the date is unknown so the summarizer never sees an empty placeholder.
+    # │  作用：Dated past-tense rule; "" 当 date 是 unknown 从而 summarizer never sees empty placeholder.
     # │  参数：无
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4580,7 +4580,7 @@ This compaction should PRIORITISE preserving all information related to the focu
         return ""
 
     # ┌── 函数 def _summary_template_sections()
-    # │  作用：The ``## ...`` section template shared by the fresh and iterative-update prompts.
+    # │  作用：``## ...`` section template shared 由 fresh 且 iterative-更新 prompts.
     # │  参数：cls, _section: Dict[str, str], summary_budget: int, _session_log_section: str
     # │  返回：str
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4647,7 +4647,7 @@ Target ~{summary_budget + (_LEAN_SESSION_LOG_BUDGET_TOKENS if _session_log_secti
 Write only the summary body. Do not include any preamble or prefix."""
 
     # ┌── 函数 def _on_summary_failure()
-    # │  作用：Classify a summary-call failure; retry once on the main model (returning its result) or arm a cooldown (None).
+    # │  作用：Classify 摘要-call failure; 重试一旦在…上 main 模型 (返回其 结果) 或 arm 冷却 (None).
     # │  参数：self, e: Exception, turns_to_summarize: List[Dict[str, Any]], focus_topic: Optional[str], memory_context: str
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -4723,7 +4723,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return None
 
     # ┌── 函数 def _strip_summary_prefix()
-    # │  作用：Return the summary body without the current, legacy, or any historical prefix.
+    # │  作用：返回 摘要 body 不 current, legacy, 或任意 historical prefix.。
     # │  参数：summary: str
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4748,7 +4748,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return text
 
     # ┌── 函数 def _with_summary_prefix()
-    # │  作用：Normalize summary text to the current compaction handoff format.
+    # │  作用：归一化摘要文本 current 压缩交接 format.
     # │  参数：cls, summary: str
     # │  返回：str
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4761,7 +4761,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return f"{SUMMARY_PREFIX}\n{text}" if text else SUMMARY_PREFIX
 
     # ┌── 函数 def _starts_with_summary_prefix()
-    # │  作用：Return True if *text* begins with any known handoff prefix.
+    # │  作用：返回 True 若 *文本* begins 带任意 known 交接 prefix.。
     # │  参数：text: str
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4773,7 +4773,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return text.startswith((SUMMARY_PREFIX, LEGACY_SUMMARY_PREFIX, *_HISTORICAL_SUMMARY_PREFIXES))
 
     # ┌── 函数 def classify_summary_content()
-    # │  作用：Classify how *content* relates to a compaction summary.
+    # │  作用：Classify 如何 *内容* relates 压缩摘要.
     # │  参数：cls, content: Any
     # │  返回：Optional[str]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4804,7 +4804,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return cls.classify_summary_content(content) is not None
 
     # ┌── 函数 def _has_compressed_summary_metadata()
-    # │  作用：Return True if *message* carries the in-process compressed-summary flag.
+    # │  作用：返回 True 若 *消息* carries 在-进程 compressed-摘要标志.。
     # │  参数：message: Any
     # │  返回：bool
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4816,7 +4816,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return isinstance(message, dict) and bool(message.get(COMPRESSED_SUMMARY_METADATA_KEY))
 
     # ┌── 函数 def _transcript_has_real_user_turn()
-    # │  作用：Return whether *messages* contain a user-authored (not synthetic summary) turn.
+    # │  作用：返回 是否 *消息* contain user-authored (不 synthetic 摘要) 轮次.。。
     # │  参数：cls, messages: List[Dict[str, Any]]
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4831,7 +4831,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         )
 
     # ┌── 函数 def _is_synthetic_compression_user_turn()
-    # │  作用：Recognize internal user-role rows by content marker (SessionDB drops metadata).
+    # │  作用：Recognize internal user-角色 rows 由内容 marker (会话数据库丢弃 metadata).
     # │  参数：cls, message: Any
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4863,7 +4863,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         ))
 
     # ┌── 函数 def _validate_summary_user_provenance()
-    # │  作用：Reject user attribution when the source transcript has no user.
+    # │  作用：拒绝 user attribution 当 source transcript 有无 user.
     # │  参数：summary: str, has_user_turn: bool
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -4884,7 +4884,7 @@ Write only the summary body. Do not include any preamble or prefix."""
             )
 
     # ┌── 函数 def _is_context_summary_message()
-    # │  作用：Return True for summary handoff messages by metadata or content.
+    # │  作用：当 摘要交接消息由 metadata 或内容. 时返回 True。
     # │  参数：cls, message: Any
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4899,7 +4899,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return cls._has_compressed_summary_metadata(message) or cls._is_context_summary_content(message.get("content"))
 
     # ┌── 函数 def _is_blank_user_turn()
-    # │  作用：Return whether *message* is an empty, non-summary user-role echo.
+    # │  作用：返回 是否 *消息* 是 empty, non-摘要 user-角色 echo.。。
     # │  参数：cls, message: Any
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4933,7 +4933,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return all(map(_blank_part, content))
 
     # ┌── 函数 def _is_actionable_user_turn()
-    # │  作用：Return whether *message* contains user input worth anchoring.
+    # │  作用：返回 是否 *消息* contains user 输入 worth anchoring.。。
     # │  参数：cls, message: Any
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4955,7 +4955,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return not cls._is_blank_user_turn(message)
 
     # ┌── 函数 def _blank_echo_indices_after()
-    # │  作用：Return contiguous blank echoes after a user event; removable only if an assistant follows.
+    # │  作用：返回 contiguous blank echoes 在…之后 user 事件; removable 仅若 assistant follows.。
     # │  参数：cls, messages: List[Dict[str, Any]], user_idx: int
     # │  返回：set[int]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -4976,7 +4976,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return set(range(user_idx + 1, idx))
 
     # ┌── 函数 def _derive_auto_focus_topic()
-    # │  作用：Infer a compact focus hint from the most recent real user turns.
+    # │  作用：Infer compact focus hint 从 most recent real user 轮次.
     # │  参数：cls, messages: List[Dict[str, Any]]
     # │  返回：Optional[str]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5009,7 +5009,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return focus
 
     # ┌── 函数 def _latest_user_task_snapshot()
-    # │  作用：Return a deterministic task-snapshot line from the newest real user turn.
+    # │  作用：返回 deterministic task-snapshot line 从 newest real user 轮次.。
     # │  参数：cls, messages: List[Dict[str, Any]]
     # │  返回：Optional[str]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5039,7 +5039,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return None
 
     # ┌── 函数 def _ground_historical_task_snapshot()
-    # │  作用：Force the task snapshot section to match a real user turn when possible.
+    # │  作用：Force task snapshot section match real user 轮次当 possible.
     # │  参数：cls, summary: str, messages: List[Dict[str, Any]]
     # │  返回：str
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5063,7 +5063,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return f"{replacement}{body}".strip()
 
     # ┌── 函数 def _find_context_summaries()
-    # │  作用：Find handoff summaries inside a compression window.
+    # │  作用：Find 交接摘要 inside compression window.
     # │  参数：cls, messages: List[Dict[str, Any]], start: int, end: int
     # │  返回：list[tuple[int, str]]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5084,7 +5084,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         ]
 
     # ┌── 函数 def _find_latest_context_summary()
-    # │  作用：Find the newest handoff summary inside a compression window.
+    # │  作用：Find newest 交接摘要 inside compression window.
     # │  参数：cls, messages: List[Dict[str, Any]], start: int, end: int
     # │  返回：tuple[Optional[int], str]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5099,7 +5099,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return summaries[-1] if summaries else (None, "")
 
     # ┌── 函数 def _strip_context_summary_handoff_message()
-    # │  作用：Drop stale handoff data while preserving merged prior-tail content.
+    # │  作用：丢弃卡死的交接 data 当 preserving merged prior-tail 内容.
     # │  参数：cls, message: Dict[str, Any]
     # │  返回：Optional[Dict[str, Any]]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5173,7 +5173,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return None
 
     # ┌── 函数 def _get_tool_call_id()
-    # │  作用：Canonical call ID for logging only; matching must use _tool_call_id_variants.
+    # │  作用：Canonical call ID 用于日志仅; matching 必须 use _tool_call_id_variants.
     # │  参数：tc
     # │  返回：str
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -5185,7 +5185,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return (_tc_get(tc, "call_id") or _tc_get(tc, "id") or "").strip()
 
     # ┌── 函数 def _tool_call_id_variants()
-    # │  作用：Return every id variant a result might reference *tc* by (forwards to message_sanitization).
+    # │  作用：返回 每个 id variant 结果可能 reference *tc* 由 (forwards message_sanitization).。
     # │  参数：tc
     # │  返回：set
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -5203,7 +5203,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return set(tool_call_id_variants(tc))
 
     # ┌── 函数 def _sanitize_tool_pairs()
-    # │  作用：Remove orphaned tool results and strip orphaned tool_calls after compression.
+    # │  作用：移除 orphaned 工具结果且 strip orphaned tool_calls 在…之后 compression.
     # │  参数：self, messages: List[Dict[str, Any]]
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -5250,7 +5250,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return messages
 
     # ┌── 函数 def _align_boundary_forward()
-    # │  作用：Push a compress-start boundary forward past any orphan tool results.
+    # │  作用：Push compress-start boundary forward past 任意 orphan 工具结果.
     # │  参数：self, messages: List[Dict[str, Any]], idx: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5262,7 +5262,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return idx
 
     # ┌── 函数 def _restart_handoff_probe_bounds()
-    # │  作用：Return the bounded transcript region that can indicate restart decay.
+    # │  作用：返回 bounded transcript region 那个可以 indicate restart decay.。
     # │  参数：self, messages: List[Dict[str, Any]]
     # │  返回：tuple[int, int]
     # └──────────────────────────────────────────────────────────────
@@ -5276,7 +5276,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return first_non_system, min(len(messages), first_non_system + self.protect_first_n + _RESTART_HANDOFF_PROBE_EXTRA_MESSAGES)
 
     # ┌── 函数 def _effective_protect_first_n()
-    # │  作用：``protect_first_n``, decayed to 0 once the session has been compressed so early turns don't fossilize.
+    # │  作用：``protect_first_n``, decayed 0 一旦会话有 已 compressed 从而 early 轮次 don't fossilize.
     # │  参数：self, messages: Optional[List[Dict[str, Any]]] = None
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5296,7 +5296,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return self.protect_first_n
 
     # ┌── 函数 def _protect_head_size()
-    # │  作用：Head messages to protect: the system prompt (if present) plus the decaying ``protect_first_n`` extra rows.
+    # │  作用：Head 消息 protect: system 提示词 (若 present) plus decaying ``protect_first_n`` extra rows.
     # │  参数：self, messages: List[Dict[str, Any]]
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5311,7 +5311,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return head + self._effective_protect_first_n(messages)
 
     # ┌── 函数 def _align_boundary_backward()
-    # │  作用：Pull a compress-end boundary back so a tool group is not split (orphaned tail results would be dropped).
+    # │  作用：Pull compress-end boundary back 从而工具 group 是不 split (orphaned tail 结果会 是已丢弃).
     # │  参数：self, messages: List[Dict[str, Any]], idx: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5329,7 +5329,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return idx
 
     # ┌── 函数 def _real_user_indices_desc()
-    # │  作用：Newest-first indices of actionable, non-synthetic user turns at or after *head_end* (no handoffs/blank echoes).
+    # │  作用：Newest-first indices 的 actionable, non-synthetic user 轮次在 或在…之后 *head_end* (无 handoffs/blank echoes).
     # │  参数：cls, messages: List[Dict[str, Any]], head_end: int
     # │  返回：list[int]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5345,7 +5345,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         ]
 
     # ┌── 函数 def _find_last_user_message_idx()
-    # │  作用：Return the latest actionable user turn at or after *head_end*, or -1.
+    # │  作用：返回 latest actionable user 轮次在 或在…之后 *head_end*, 或 -1.。
     # │  参数：self, messages: List[Dict[str, Any]], head_end: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5355,7 +5355,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return next(iter(self._real_user_indices_desc(messages, head_end)), -1)
 
     # ┌── 函数 def _find_last_assistant_message_idx()
-    # │  作用：Last text-bearing non-summary assistant reply at/after *head_end* (else last non-summary assistant), or -1.
+    # │  作用：Last 文本-bearing non-摘要 assistant reply 在/在…之后 *head_end* (否则 last non-摘要 assistant), 或 -1.
     # │  参数：self, messages: List[Dict[str, Any]], head_end: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5380,7 +5380,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return last_any
 
     # ┌── 函数 def _ensure_last_assistant_message_in_tail()
-    # │  作用：Keep the most recent assistant reply in the protected tail, re-aligned back so a tool group is not split.
+    # │  作用：保留 most recent assistant reply 在 protected tail, re-aligned back 从而工具 group 是不 split.
     # │  参数：self, messages: List[Dict[str, Any]], cut_idx: int, head_end: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5403,7 +5403,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return max(new_cut, head_end + 1)
 
     # ┌── 函数 def _ensure_last_user_message_in_tail()
-    # │  作用：Guarantee the most recent user message is in the protected tail.
+    # │  作用：Guarantee most recent user 消息是 在 protected tail.
     # │  参数：self, messages: List[Dict[str, Any]], cut_idx: int, head_end: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5439,7 +5439,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return adjusted
 
     # ┌── 函数 def _find_inflight_user_task()
-    # │  作用：Return the user turn that is still awaiting completion, or ``None``.
+    # │  作用：返回 user 轮次那个是 仍 awaiting completion, 或 ``None``.。
     # │  参数：cls, messages: List[Dict[str, Any]]
     # │  返回：Optional[Dict[str, Any]]
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -5512,7 +5512,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return messages[last_user_idx]
 
     # ┌── 函数 def _reappend_inflight_user_task()
-    # │  作用：Restate an unfinished user task after the compaction handoff.
+    # │  作用：Restate unfinished user task 在…之后压缩交接.
     # │  参数：self, compressed: List[Dict[str, Any]], inflight: Optional[Dict[str, Any]]
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -5627,7 +5627,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return compressed
 
     # ┌── 函数 def _ensure_last_n_user_messages_in_tail()
-    # │  作用：Keep the last N actionable user messages in the tail; n <= 1 delegates to the single-message method.
+    # │  作用：保留 last N actionable user 消息在 tail; n <= 1 delegates single-消息方法.
     # │  参数：self, messages: List[Dict[str, Any]], cut_idx: int, head_end: int, n: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5658,7 +5658,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return max(user_indices[min(n, len(user_indices)) - 1], head_end + 1)
 
     # ┌── 函数 def _find_turn_pair_end()
-    # │  作用：Index after the turn-pair (user -> assistant -> tools) at *user_idx*; ``user_idx + 1`` when no reply yet.
+    # │  作用：Index 在…之后轮次-pair (user -> assistant -> 工具) 在 *user_idx*; ``user_idx + 1`` 当无 reply yet.
     # │  参数：self, messages: List[Dict[str, Any]], user_idx: int
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5672,7 +5672,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return self._align_boundary_forward(messages, idx + 1)
 
     # ┌── 函数 def _stale_thinking_on_wire()
-    # │  作用：Whether the route replays stale thinking every turn; tail walks and preflight MUST agree or compaction loops.
+    # │  作用：是否 路由 replays 卡死的 thinking 每个轮次; tail walks 且 preflight 必须 agree 或压缩循环.。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5690,7 +5690,7 @@ Write only the summary body. Do not include any preamble or prefix."""
             return False
 
     # ┌── 函数 def _find_tail_cut_by_tokens()
-    # │  作用：Walk backward accumulating tokens until the budget; return the tail start index.
+    # │  作用：Walk backward accumulating 令牌 until 预算; 返回 tail start index.
     # │  参数：self, messages: List[Dict[str, Any]], head_end: int, token_budget: int | None = None
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -5742,7 +5742,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return min(n, self._align_boundary_forward(messages, max(cut_idx, head_end + 1)))
 
     # ┌── 函数 def has_content_to_compress()
-    # │  作用：True if a non-empty middle region exists (lets the gateway ``/compress`` guard skip the LLM call).
+    # │  作用：True 若 non-empty middle region exists (lets gateway ``/compress`` 护栏 skip LLM call).
     # │  参数：self, messages: List[Dict[str, Any]]
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5754,7 +5754,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return compress_start < compress_end
 
     # ┌── 函数 def _scan_window_handoffs()
-    # │  作用：Rehydrate ``_previous_summary`` / user-turn provenance from in-transcript handoffs.
+    # │  作用：Rehydrate ``_previous_summary`` / user-轮次 provenance 从在-transcript handoffs.
     # │  参数：self, messages: List[Dict[str, Any]], compress_start: int, compress_end: int, turns_to_summarize: List[Dict[str, Any]]
     # │  返回：'_HandoffScan'
     # └──────────────────────────────────────────────────────────────
@@ -5819,7 +5819,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return scan
 
     # ┌── 函数 def _begin_compress_attempt()
-    # │  作用：Reset per-call result state (callers read it after compress()) and open telemetry.
+    # │  作用：Reset 每次调用的结果状态 (callers 读取它 在…之后 compress()) 且打开 telemetry.
     # │  参数：self, current_tokens: Optional[int], force: bool
     # │  返回：Dict[str, Any]
     # └──────────────────────────────────────────────────────────────
@@ -5846,7 +5846,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return telemetry
 
     # ┌── 函数 def _structural_no_op_result()
-    # │  作用：Nothing eligible to compress: transient backoff (#93022), never an ineffectiveness strike.
+    # │  作用：没有可压缩的内容：临时退避（#93022），绝不会触发「无效」惩罚。
     # │  参数：self, telemetry: Dict[str, Any], failure_class: str, reason: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -5857,7 +5857,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         self._record_structural_no_op(reason)
 
     # ┌── 函数 def _drop_blank_echoes()
-    # │  作用：Remove blank platform echoes trailing the latest actionable user turn.
+    # │  作用：移除 blank 平台 echoes trailing latest actionable user 轮次.
     # │  参数：self, messages: List[Dict[str, Any]]
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -5868,7 +5868,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return [m for idx, m in enumerate(messages) if idx not in blank] if blank else messages
 
     # ┌── 函数 def _compress_window()
-    # │  作用：Return ``(compress_start, compress_end)`` for the summarizable middle.
+    # │  作用：返回 ``(compress_start, compress_end)`` 用于 summarizable middle.。
     # │  参数：self, messages: List[Dict[str, Any]]
     # │  返回：tuple[int, int]
     # └──────────────────────────────────────────────────────────────
@@ -5912,7 +5912,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         )
 
     # ┌── 函数 def _feasibility_skip()
-    # │  作用：Pre-LLM skip after a real-usage ineffectiveness strike (reads the counter, never writes).
+    # │  作用：Pre-LLM skip 在…之后 real-usage ineffectiveness strike (读取 counter, never 写入).
     # │  参数：self, telemetry: Dict[str, Any], turns_to_summarize: List[Dict[str, Any]], compress_start: int, compress_end: int
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5946,7 +5946,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return True
 
     # ┌── 函数 def _abort_on_summary_failure()
-    # │  作用：Abort (messages unchanged) on a terminal failure or when configured to; True when aborted.
+    # │  作用：Abort (消息 unchanged) 在…上终端 failure 或当 configured ; True 当 aborted.
     # │  参数：self, telemetry: Dict[str, Any], n_skipped: int, previous_summary_before_scan: Optional[str]
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -5982,7 +5982,7 @@ Write only the summary body. Do not include any preamble or prefix."""
     _COMPRESSION_NOTE = "[Note: Some earlier conversation turns have been compacted into a handoff summary to preserve context space. The current session state may still reflect earlier work, so build on that summary and state rather than re-doing work. Your persistent memory (MEMORY.md, USER.md) remains fully authoritative regardless of compaction.]"
 
     # ┌── 函数 def _assemble_head()
-    # │  作用：Protected head with the compaction note on the system prompt and stale handoffs stripped.
+    # │  作用：Protected head 带压缩 note 在…上 system 提示词且 卡死的 handoffs stripped.
     # │  参数：self, messages: List[Dict[str, Any]], compress_start: int
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -6005,7 +6005,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return compressed
 
     # ┌── 函数 def _fallback_summary_for_window()
-    # │  作用：Deterministic fallback so the model gets recoverable continuity anchors.
+    # │  作用：Deterministic 兜底从而模型获取 recoverable continuity anchors.
     # │  参数：self, telemetry: Dict[str, Any], turns_to_summarize: List[Dict[str, Any]], n_dropped: int, feasibility_skip: bool
     # │  返回：str
     # └──────────────────────────────────────────────────────────────
@@ -6033,7 +6033,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         )
 
     # ┌── 函数 def _assemble_tail()
-    # │  作用：Protected tail with already-folded handoff rows dropped and merged handoffs unwrapped.
+    # │  作用：Protected tail 带已-folded 交接 rows 已丢弃且 merged handoffs 已解包.
     # │  参数：self, messages: List[Dict[str, Any]], compress_end: int, tail_start: int, summary_indices: set
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -6053,7 +6053,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return tail_messages
 
     # ┌── 函数 def _summary_placement()
-    # │  作用：Pick the summary row's role so template-visible alternation holds.
+    # │  作用：Pick 摘要 row's 角色从而 template-visible 交替 holds.
     # │  参数：compressed: List[Dict[str, Any]], tail_messages: List[Dict[str, Any]], compress_start: int
     # │  返回：tuple[str, bool, bool, Optional[int]]
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -6096,7 +6096,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return summary_role, merge_into_tail, force_user_leading, first_tail_visible_idx
 
     # ┌── 函数 def _merge_summary_into_tail_row()
-    # │  作用：Fold the summary into a carried tail row (in place) when no standalone role alternates.
+    # │  作用：Fold 摘要进入 carried tail row (在 place) 当无 standalone 角色 alternates.
     # │  参数：self, msg: Dict[str, Any], summary: str, summary_role: str, force_user_leading: bool
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -6122,7 +6122,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         drop_stale_api_content(msg)
 
     # ┌── 函数 def _finalize_compressed()
-    # │  作用：Post-assembly cleanup: orphan pairs, media, savings, markers, replay prune, mem trim.
+    # │  作用：Post-assembly cleanup: orphan pairs, media, savings, markers, 重放 prune, mem trim.
     # │  参数：self, compressed: List[Dict[str, Any]], messages: List[Dict[str, Any]], n_messages: int
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -6186,7 +6186,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return compressed
 
     # ┌── 函数 def compress()
-    # │  作用：Summarize the middle turns: prune tool results and blank echoes (survives an abort), protect head and a
+    # │  作用：Summarize middle 轮次: prune 工具结果且 blank echoes (survives abort), protect head 且
     # │  参数：self, messages: List[Dict[str, Any]], current_tokens: Optional[int] = None, focus_topic: Optional[str] = None, force: bool = False, memory_context: str = '', bypass_cooldown: bool = False
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -6286,7 +6286,7 @@ Write only the summary body. Do not include any preamble or prefix."""
         return self._finalize_compressed(compressed, messages, n_messages)
 
     # ┌── 函数 def _assemble_compressed()
-    # │  作用：Head + summary row (or merged carrier) + tail, with alternation-safe summary placement.
+    # │  作用：Head + 摘要 row (或 merged carrier) + tail, 带交替-safe 摘要 placement.
     # │  参数：self, messages: List[Dict[str, Any]], compress_start: int, compress_end: int, scan: '_HandoffScan', summary: str
     # │  返回：List[Dict[str, Any]]
     # └──────────────────────────────────────────────────────────────
@@ -6323,7 +6323,7 @@ Write only the summary body. Do not include any preamble or prefix."""
 
 
 # ┌── 函数 def is_compaction_summary_message()
-# │  作用：Return True when *message* is a context-compaction handoff summary.
+# │  作用：当 *消息* 是上下文-压缩交接摘要. 时返回 True。
 # │  参数：message: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -6342,7 +6342,7 @@ SUMMARY_CARRIER_DURABLE_DISPLAY_METADATA_KEYS = ("reactions",)
 
 
 # ┌── 函数 def _handoff_only_content()
-# │  作用：Project summary-bearing content to the synthetic handoff alone; never keeps live media.
+# │  作用：投射摘要-bearing 内容 synthetic 交接 alone; never 保留当前活跃的 media.
 # │  参数：content: Any
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -6387,7 +6387,7 @@ def _handoff_only_content(content: Any) -> Any:
 
 
 # ┌── 函数 def split_user_originated_turn()
-# │  作用：Split a user row into ``(handoff_only, live_view)``; either may be None; fresh dicts.
+# │  作用：Split user row 进入 ``(handoff_only, live_view)``; either 可以是 None; fresh dicts.
 # │  参数：message: Any
 # │  返回：tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]
 # └──────────────────────────────────────────────────────────────
@@ -6446,7 +6446,7 @@ def split_user_originated_turn(message: Any) -> tuple[Optional[Dict[str, Any]], 
 
 
 # ┌── 函数 def user_originated_turn_view()
-# │  作用：Return the live human-authored projection of a user row, if any.
+# │  作用：返回 当前活跃的 human-authored projection 的 user row, 若任意.。
 # │  参数：message: Any
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -6457,7 +6457,7 @@ def user_originated_turn_view(message: Any) -> Optional[Dict[str, Any]]:
 
 
 # ┌── 函数 def history_before_user_originated_turn()
-# │  作用：Rewind prefix and canonical live view for ``index``; a composite carrier keeps its handoff scaffold at the head.
+# │  作用：Rewind prefix 且 canonical 当前活跃的 view 用于 ``index``; composite carrier 保留其 交接 scaffold 在 head.
 # │  参数：messages: List[Dict[str, Any]], index: int
 # │  返回：tuple[List[Dict[str, Any]], Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -6478,7 +6478,7 @@ def history_before_user_originated_turn(
 
 
 # ┌── 函数 def retryable_user_text()
-# │  作用：Lossless retry text, or raise before destructive mutation (media/unknown parts fail closed: no replay protocol).
+# │  作用：Lossless 重试文本, 或抛出在…之前 destructive mutation (media/unknown parts fail 已关闭: 无重放 protocol).
 # │  参数：content: Any
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -6513,7 +6513,7 @@ def retryable_user_text(content: Any) -> str:
 
 
 # ┌── 函数 def _handoff_carries_live_user_content()
-# │  作用：True when a summary-bearing row still carries a live user ask (pre-filter with ``is_compaction_summary_message``).
+# │  作用：当 摘要-bearing row 仍 carries 当前活跃的 user ask (pre-filter 带 ``is_compaction_summary_message``). 时返回 True。
 # │  参数：message: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -6524,7 +6524,7 @@ def _handoff_carries_live_user_content(message: Any) -> bool:
 
 
 # ┌── 函数 def reference_handoff_would_drive_next_model_call()
-# │  作用：True when the next model call would be driven only by a handoff; trailing tool rows mean an in-flight exchange.
+# │  作用：当 next 模型 call 会是 driven 仅由 交接; trailing 工具 rows mean 在-flight exchange. 时返回 True。
 # │  参数：messages: Optional[List[Dict[str, Any]]]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -6568,7 +6568,7 @@ def reference_handoff_would_drive_next_model_call(messages: Optional[List[Dict[s
 
 
 # ┌── 函数 def is_user_originated_turn()
-# │  作用：True for human-authored user turns (not compaction scaffolding); dispatchers must use this, not a bare role check.
+# │  作用：当 human-authored user 轮次 (不压缩 scaffolding); dispatchers 必须 use 这个, 不 bare 角色检查. 时返回 True。
 # │  参数：message: Any
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────

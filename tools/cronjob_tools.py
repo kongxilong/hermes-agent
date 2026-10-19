@@ -102,7 +102,7 @@ def _dumps(payload: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _notify_provider_jobs_changed_safe()
-# │  作用：Tell the active scheduler provider the job set changed; best-effort, never raises.
+# │  作用：Tell active scheduler 服务商 job 设置 changed; 尽最大努力, never 抛出.
 # │  参数：无
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ def _notify_provider_jobs_changed_safe() -> None:
 # ---------------------------------------------------------------------------
 
 # ┌── 函数 def _relay_fronted_delivery_platforms()
-# │  作用：Delivery-platform names for this job that the relay connector fronts.
+# │  作用：Delivery-平台名称用于这个 job 那个 relay connector fronts.
 # │  参数：job: Dict[str, Any]
 # │  返回：set
 # └──────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ def _relay_fronted_delivery_platforms(job: Dict[str, Any]) -> set:
 
 
 # ┌── 函数 def _api_server_base_url()
-# │  作用：``http://host:port`` of the local api_server, mirroring its bind resolution
+# │  作用：``http://宿主:port`` 的 local api_server, mirroring 其 bind resolution
 # │  参数：无
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ def _api_server_base_url() -> str:
 
 
 # ┌── 函数 def _forward_relay_fronted_run()
-# │  作用：Forward a manual run to the gateway when it targets a relay-fronted platform: such delivery
+# │  作用：Forward manual 运行 gateway 当它 targets relay-fronted 平台: such delivery
 # │  参数：job: Dict[str, Any], extra_prompt: Optional[str] = None
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -222,7 +222,7 @@ def _forward_relay_fronted_run(job: Dict[str, Any], extra_prompt: Optional[str] 
 
 
 # ┌── 函数 def _manual_run_delivery_note()
-# │  作用：Parenthetical delivery note for a manual run's summary; follows the refreshed record's
+# │  作用：Parenthetical delivery note 用于 manual 运行's 摘要; follows refreshed record's
 # │  参数：deliver: str, refreshed: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -257,7 +257,7 @@ _ALREADY_RUNNING_ERROR = (
 
 
 # ┌── 函数 def _claim_for_manual_run()
-# │  作用：At-most-once claim shared by the sync and background run paths: ``(claimed_job, None)`` or
+# │  作用：在-most-一旦 claim shared 由同步且 background 运行路径: ``(claimed_job, None)`` 或
 # │  参数：job_id: str, log_label: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ def _claim_for_manual_run(job_id: str, log_label: str):
 
 
 # ┌── 函数 def _execute_job_now()
-# │  作用：Run a job now, outside the scheduler tick: claim via ``claim_job_for_fire`` (the ticker's
+# │  作用：运行 job now, outside scheduler tick: claim via ``claim_job_for_fire`` ( ticker's
 # │  参数：job: Dict[str, Any], extra_prompt: Optional[str] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -303,7 +303,7 @@ def _execute_job_now(job: Dict[str, Any], extra_prompt: Optional[str] = None) ->
 
 
 # ┌── 函数 def _run_heartbeat()
-# │  作用：Heartbeat into the caller's activity tracker while a manual run executes (minutes,
+# │  作用：Heartbeat 进入 caller's activity tracker 当 manual 运行执行 (minutes,
 # │  参数：job_name: str
 # │  返回：（未标注类型）
 # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -365,7 +365,7 @@ def _run_heartbeat(job_name: str):
 
 
 # ┌── 函数 def _run_claimed_job()
-# │  作用：Fire an already-claimed job through the shared ``run_one_job`` body (split from
+# │  作用：Fire 已-claimed job through shared ``run_one_job`` body (split 从
 # │  参数：job: Dict[str, Any], extra_prompt: Optional[str] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -450,7 +450,7 @@ def _run_claimed_job(job: Dict[str, Any], extra_prompt: Optional[str] = None) ->
 
 
 # ┌── 函数 def execute_job_for_event()
-# │  作用：Fire an existing cron job in response to an external event.
+# │  作用：Fire existing cron job 在响应 external 事件.
 # │  参数：job_ref: str, extra_prompt: Optional[str] = None
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -491,7 +491,7 @@ def execute_job_for_event(
 
 
 # ┌── 函数 def _latest_job_output_excerpt()
-# │  作用：Excerpt of the job's most recent saved output file for the background completion
+# │  作用：Excerpt 的 job's most recent saved 输出文件用于 background completion
 # │  参数：job_id: str, max_chars: int = 2000
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -516,7 +516,7 @@ def _latest_job_output_excerpt(job_id: str, max_chars: int = 2000) -> Optional[s
 
 
 # ┌── 函数 def _reap_stale_executions()
-# │  作用：Reap execution rows left 'claimed'/'running' by a provably-dead owner (e.g. a prior
+# │  作用：Reap execution rows left 'claimed'/'运行' 由 provably-dead owner (e.g. prior
 # │  参数：job_name: str
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -543,7 +543,7 @@ def _reap_stale_executions(job_name: str) -> None:
 
 
 # ┌── 函数 def _background_session_key()
-# │  作用：Routing key for a detached completion, captured on THIS thread (contextvars don't
+# │  作用：Routing 键用于 detached completion, captured 在…上这个线程 (contextvars don't
 # │  参数：session_id: Optional[str]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -564,7 +564,7 @@ def _background_session_key(session_id: Optional[str]) -> str:
 
 
 # ┌── 函数 def _manual_run_completion()
-# │  作用：Async-delegation completion block for a finished background manual run.
+# │  作用：异步-delegation completion block 用于 finished background manual 运行.
 # │  参数：res: Dict[str, Any], job_id: str, job_name: str, deliver: str, started_at: float
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -592,7 +592,7 @@ def _manual_run_completion(
 
 
 # ┌── 函数 def _try_dispatch_background_run()
-# │  作用：Claim ``job`` now (SYNCHRONOUSLY, so unrunnable jobs report immediately), then fire it
+# │  作用：Claim ``job`` now (SYNCHRONOUSLY, 从而 unrunnable jobs report immediately), 然后 fire 它
 # │  参数：job: Dict[str, Any], session_id: Optional[str] = None, extra_prompt: Optional[str] = None
 # │  返回：Optional[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -706,7 +706,7 @@ def _try_dispatch_background_run(
 # ---------------------------------------------------------------------------
 
 # ┌── 函数 def _with_guidance()
-# │  作用：Attach mode/delivery guidance (create and update echo the same notes).
+# │  作用：Attach 模式/delivery guidance (创建且 更新 echo same notes).
 # │  参数：result: Dict[str, Any], job: Dict[str, Any], deliver: Optional[str]
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -851,7 +851,7 @@ def _job_state_result(updated: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _refreshed_job_view()
-# │  作用：Re-read so the response reflects the post-run last_run_at/last_status.
+# │  作用：Re-读取从而响应 reflects post-运行 last_run_at/last_status.
 # │  参数：job_id: str
 # │  返回：Dict[str, Any]
 # └──────────────────────────────────────────────────────────────
@@ -924,7 +924,7 @@ def _action_run(job: Dict[str, Any], a: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _pick()
-# │  作用：Effective value of ``key`` after this update: pending update wins over the stored job.
+# │  作用：Effective 值的 ``键`` 在…之后这个更新: pending 更新 wins over stored job.
 # │  参数：updates: Dict[str, Any], job: Dict[str, Any], key: str
 # │  返回：Any
 # └──────────────────────────────────────────────────────────────
@@ -935,7 +935,7 @@ def _pick(updates: Dict[str, Any], job: Dict[str, Any], key: str) -> Any:
 
 
 # ┌── 函数 def _update_core_fields()
-# │  作用：prompt / name / deliver / skills / model pins; returns an error string or None.
+# │  作用：提示词 / 名称 / deliver / skills / 模型 pins; 返回错误字符串或 None.
 # │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -991,7 +991,7 @@ def _update_core_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[st
 
 
 # ┌── 函数 def _update_script_fields()
-# │  作用：script / monitor_script / monitor_url (empty string clears); returns an error string or None.
+# │  作用：script / monitor_script / monitor_url (empty 字符串清除); 返回错误字符串或 None.
 # │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1017,7 +1017,7 @@ def _update_script_fields(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[
 
 
 # ┌── 函数 def _update_context_from()
-# │  作用：context_from / continuity: empty string / list clears; otherwise every ref must
+# │  作用：context_from / continuity: empty 字符串 / 列表清除; otherwise 每个 ref 必须
 # │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1044,7 +1044,7 @@ def _update_context_from(job: Dict[str, Any], a: Dict[str, Any], updates: Dict[s
 
 
 # ┌── 函数 def _update_run_fields()
-# │  作用：enabled_toolsets / attach_to_session / workdir / no_agent / repeat / schedule.
+# │  作用：enabled_toolsets / attach_to_session / workdir / no_agent / repeat / schedule（这些参数的说明）。
 # │  参数：job: Dict[str, Any], a: Dict[str, Any], updates: Dict[str, Any]
 # │  返回：Optional[str]
 # └──────────────────────────────────────────────────────────────
@@ -1111,7 +1111,7 @@ def _action_update(job: Dict[str, Any], a: Dict[str, Any]) -> str:
 
 
 # ┌── 函数 def _action_resnap()
-# │  作用：Adopt the current global inference resolution without pinning (#44585).
+# │  作用：Adopt current global inference resolution 不 pinning (#44585).
 # │  参数：a: Dict[str, Any]
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1173,7 +1173,7 @@ _JOB_ACTIONS = {
 
 
 # ┌── 函数 def _resolve_job_or_error()
-# │  作用：``(job, None)`` or ``(None, json_error)`` for a job_id/name reference.
+# │  作用：``(job, None)`` 或 ``(None, json_error)`` 用于 job_id/名称 reference.
 # │  参数：job_id: str
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────
@@ -1202,7 +1202,7 @@ def _resolve_job_or_error(job_id: str):
 
 
 # ┌── 函数 def cronjob()
-# │  作用：Unified cron job management tool.
+# │  作用：Unified cron job management 工具.
 # │  参数：action: str, job_id: Optional[str] = None, prompt: Optional[str] = None, schedule: Optional[str] = None, name: Optional[str] = None, repeat: Optional[int] = None, deliver: Optional[str] = None, include_disabled: bool = False  …共 30 个
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -1279,7 +1279,7 @@ def _script_description(home: str) -> str:
 
 
 # ┌── 函数 def _cronjob_schema_overrides()
-# │  作用：Rebuild the ``script`` path hint from the ACTIVE profile at every get_definitions(): the
+# │  作用：Rebuild ``script`` 路径 hint 从 ACTIVE 配置档在 每个 get_definitions():
 # │  参数：无
 # │  返回：dict
 # └──────────────────────────────────────────────────────────────
@@ -1389,7 +1389,7 @@ Jobs run in a fresh session with no current-chat context, so prompts must be sel
 
 
 # ┌── 函数 def check_cronjob_requirements()
-# │  作用：Available in interactive CLI mode and gateway/messaging platforms (the scheduler is
+# │  作用：Available 在 interactive CLI 模式且 gateway/messaging 平台 ( scheduler 是
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -1416,7 +1416,7 @@ _HANDLER_FORWARDED_ARGS = (
 
 
 # ┌── 函数 def _cronjob_handler()
-# │  作用：Model-tool dispatch: resolves the one model-facing ``monitor`` field into the stored
+# │  作用：模型-工具 dispatch: resolves one 模型-facing ``monitor`` 字段进入 stored
 # │  参数：args, **kw
 # │  返回：（未标注类型）
 # └──────────────────────────────────────────────────────────────

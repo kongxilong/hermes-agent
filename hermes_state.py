@@ -106,7 +106,7 @@ _MAX_SAFE_MESSAGES = 20_000  # resume/export guard default
 
 
 # ┌── 函数 def _configured_transcript_limit()
-# │  作用：``sessions.<key>`` from config.yaml (lazy import: circular at load), else *fallback*; 0 disables.
+# │  作用：来自 config.yaml 的 ``sessions.<key>``（惰性导入：加载时会循环依赖），否则取 *fallback*；为 0 表示禁用。
 # │  参数：key: str, fallback: int = _MAX_SAFE_MESSAGES
 # │  返回：int
 # └──────────────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ class SessionExportTooLargeError(ValueError):
 
 
 # ┌── 函数 def _compression_lock_holder_process_is_dead()
-# │  作用：True only when a ``pid=<n>`` lock holder's local PID is provably gone.
+# │  作用：仅当某个 ``pid=<n>`` 锁持有者的本地进程 ID 确凿地消失时才返回 True。
 # │  参数：holder: str
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -247,7 +247,7 @@ _READ_ONLY_IOERR_RETRY_ATTEMPTS, _READ_ONLY_IOERR_RETRY_BACKOFF_S = 3, 0.05
 
 
 # ┌── 函数 def _default_db_path()
-# │  作用：Default state DB path at CALL time: a re-pointed ``DEFAULT_DB_PATH`` wins, else
+# │  作用：在「调用时刻」确定的默认状态数据库路径：被重新指向的 ``DEFAULT_DB_PATH`` 优先，否则……
 # │  参数：无
 # │  返回：Path
 # └──────────────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ _STATE_DB_GUARD_EXTRA_DENY_ROOTS: Tuple[Path, ...] = ()
 
 
 # ┌── 函数 def _ensure_test_isolation()
-# │  作用：Raise before any connection/mkdir/pragma/byte probe when a pytest-context process
+# │  作用：当处于 pytest 上下文的进程……时，在任何连接/mkdir/pragma/字节探测之前就先抛出。
 # │  参数：db_path: Path
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -307,7 +307,7 @@ def _ensure_test_isolation(db_path: Path) -> None:
 
 
 # ┌── 函数 def _secure_state_db_files()
-# │  作用：Create/tighten a writable state database and its sidecars to 0600.
+# │  作用：创建或收紧一个可写状态数据库及其附属文件，权限设为 0600。
 # │  参数：db_path: Path, create_main: bool = ...
 # │  返回：None
 # └──────────────────────────────────────────────────────────────
@@ -380,7 +380,7 @@ _REVIEW_HARNESS_PREFIXES = (
 
 
 # ┌── 函数 def _is_background_review_harness_message()
-# │  作用：Persisted harness prompt (older builds wrote the forked curator's turns
+# │  作用：已持久化的测试框架提示词（旧版本会把分叉出的策展器轮次……）。
 # │  参数：msg: Dict[str, Any]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -396,7 +396,7 @@ def _is_background_review_harness_message(msg: Dict[str, Any]) -> bool:
 
 
 # ┌── 函数 def _strip_background_review_harness()
-# │  作用：Drop harness messages and the curator-mode assistant reply that immediately followed each.
+# │  作用：丢弃测试框架消息，以及紧随其后的策展器模式助手回复。
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -425,7 +425,7 @@ _STALE_TOOL_CALL_MARKER_RE = re.compile(r"^\[[A-Za-z_][A-Za-z0-9_.-]*\]$")
 
 
 # ┌── 函数 def _is_stale_tool_call_marker_message()
-# │  作用：Assistant tool-call turn whose content is a bare ``[marker]`` (an older
+# │  作用：内容为裸 ``[marker]`` 的助手工具调用轮次（一种较旧的……）。
 # │  参数：msg: Dict[str, Any]
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -441,7 +441,7 @@ def _is_stale_tool_call_marker_message(msg: Dict[str, Any]) -> bool:
 
 
 # ┌── 函数 def _strip_stale_tool_call_markers()
-# │  作用：Blank stale ``[marker]`` assistant content (replaying it teaches the model
+# │  作用：空白的、过期的 ``[marker]`` 助手内容（重放它会教模型……）。
 # │  参数：messages: List[Dict[str, Any]]
 # │  返回：List[Dict[str, Any]]
 # └──────────────────────────────────────────────────────────────
@@ -461,7 +461,7 @@ def _strip_stale_tool_call_markers(messages: List[Dict[str, Any]]) -> List[Dict[
 
 
 # ┌── 函数 def format_session_db_unavailable()
-# │  作用：User-facing message with the captured init cause (+ WAL-docs hint for NFS/SMB locking failures).
+# │  作用：面向用户的消息，附带捕获到的初始化原因（以及针对 NFS/SMB 锁失败的 WAL 文档提示）。
 # │  参数：prefix: str = 'Session database not available'
 # │  返回：str
 # └──────────────────────────────────────────────────────────────
@@ -487,7 +487,7 @@ _IS_WINDOWS = sys.platform == "win32"
 
 
 # ┌── 函数 def _close_time_checkpoint_configurable()
-# │  作用：Whether this runtime can switch off SQLite's close-time checkpoint (Python 3.12+ ``setconfig``).
+# │  作用：当前运行时能否关闭 SQLite 在关闭时的检查点（Python 3.12+ 的 ``setconfig``）。
 # │  参数：无
 # │  返回：bool
 # └──────────────────────────────────────────────────────────────
@@ -499,7 +499,7 @@ def _close_time_checkpoint_configurable() -> bool:
 
 
 # ┌── 函数 def divert_session_transcript_jsonl()
-# │  作用：Append pending messages to HERMES_HOME/sessions/<id>.jsonl (state.db was replaced under a
+# │  作用：把待处理消息追加到 HERMES_HOME/sessions/<id>.jsonl（在……期间 state.db 被替换了）。
 # │  参数：session_id: str, messages
 # │  返回：'Optional[Path]'
 # └──────────────────────────────────────────────────────────────
@@ -525,7 +525,7 @@ def divert_session_transcript_jsonl(session_id: str, messages) -> "Optional[Path
 # Process-wide shared SessionDB registry: long-lived in-process callers share ONE writer
 # connection per resolved path via hermes_state_registry.acquire(); one-shots use SessionDB() + close().
 # ┌── 函数 def _foreign_state_db_holders()
-# │  作用：Compatibility delegate to the state-holder authority.
+# │  作用：为兼容而设、转发给状态持有方权威实现的委托方法。
 # │  参数：db_path: Path
 # │  返回：List[Tuple[int, str]]
 # └──────────────────────────────────────────────────────────────
@@ -542,7 +542,7 @@ def _foreign_state_db_holders(db_path: Path) -> List[Tuple[int, str]]:
 
 
 # ┌── 类 class SessionDB（继承自：SessionSessionsMixin, SessionFtsSetupMixin, SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin, SessionTelegramTopicsMixin, SessionCompressionMixin, SessionGatewayMixin, SessionMaintenanceMixin, SessionUsageMixin, SessionTitlesMixin, SessionMessagesMixin, SessionRewindMixin）
-# │  说明：SQLite-backed session storage with FTS5 search; many reader threads, one writer (WAL).
+# │  说明：基于 SQLite 的会话存储，支持 FTS5 全文搜索；多个读线程、单个写线程（WAL 模式）。
 # │  【语法】Mixin 是一种「插件式父类」：本身不能单独用，靠多继承把一组方法拼进主类。看到 xxxMixin 就当成「这批方法从别的文件来」。
 # │  成员：共 51 个方法；对外可用 5 个；含魔术方法 __init__, __enter__, __exit__, __del__
 # └──────────────────────────────────────────────────────────────
@@ -644,7 +644,7 @@ class SessionDB(
         return data
 
     # ┌── 函数 def _close_connection_quietly()
-    # │  作用：Close a partially initialized connection without masking its error.
+    # │  作用：关闭一个只初始化了一半的连接，且不掩盖它原本的错误。
     # │  参数：conn: Optional[sqlite3.Connection]
     # │  返回：None
     # │  【语法】@staticmethod 表示这个方法不依赖实例（没有 self），相当于挂到类上的普通函数。
@@ -661,7 +661,7 @@ class SessionDB(
             logger.debug("Could not close a SessionDB connection", exc_info=True)
 
     # ┌── 函数 def _close_conn_logged()
-    # │  作用：Close *conn*; a failing close leaks a tracked fd: logged at WARNING, never swallowed.
+    # │  作用：关闭 *conn*；若关闭失败会泄漏一个被追踪的文件描述符：仅以 WARNING 记录，绝不吞掉。
     # │  参数：self, conn, label: str
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -760,7 +760,7 @@ class SessionDB(
                 self._close_connection_quietly(conn)
 
     # ┌── 函数 def _open_writer()
-    # │  作用：Writable open: preflight, zero-byte quarantine, connect + schema (one in-place repair of a
+    # │  作用：可写打开：预检、零字节隔离、连接 + 建表（对……做一次就地修复）。
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -813,7 +813,7 @@ class SessionDB(
             self._wal_lock_guard = _lockguard.hold(self.db_path)
 
     # ┌── 函数 def _open_read_only()
-    # │  作用：Read-only attach for cross-profile aggregation: no schema init, NO write
+    # │  作用：供跨配置档聚合用的只读挂载：不初始化表结构，禁止写入……
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -854,7 +854,7 @@ class SessionDB(
                 time.sleep(_READ_ONLY_IOERR_RETRY_BACKOFF_S)
 
     # ┌── 函数 def _connect_read_only()
-    # │  作用：``mode=ro`` tracked connection with Row factory. check_same_thread=False: pooled connections
+    # │  作用：``mode=ro`` 的、被追踪的连接，带 Row 工厂。check_same_thread=False：连接池里的连接……
     # │  参数：self, timeout: float
     # │  返回：sqlite3.Connection
     # └──────────────────────────────────────────────────────────────
@@ -870,7 +870,7 @@ class SessionDB(
         return conn
 
     # ┌── 函数 def _handle_quarantine_if_invalid()
-    # │  作用：Quarantine a zero-byte/headerless state.db so a fresh one can open; if quarantine failed,
+    # │  作用：把零字节/无表头的 state.db 隔离起来，以便新库能打开；若隔离失败，则……
     # │  参数：self, already_locked: bool = False
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -900,7 +900,7 @@ class SessionDB(
             raise sqlite3.DatabaseError(msg)
 
     # ┌── 函数 def _open_writer_conn()
-    # │  作用：Connect + WAL/pragma/tokenizer setup for a writer connection (no schema init). Short timeout:
+    # │  作用：为写连接做连接 + WAL/pragma/分词器设置（不初始化表结构）。超时很短：……
     # │  参数：self
     # │  返回：sqlite3.Connection
     # └──────────────────────────────────────────────────────────────
@@ -949,7 +949,7 @@ class SessionDB(
         self._init_schema()
 
     # ┌── 函数 def _connect_and_init_with_lock_patience()
-    # │  作用：Open + init, waiting out a sibling's write lock with jittered patience:
+    # │  作用：打开并初始化，用带抖动的耐心等待同级的写锁释放：
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -986,7 +986,7 @@ class SessionDB(
     # ── Read-path split ──
 
     # ┌── 函数 def _get_read_conn()
-    # │  作用：Open a fresh read-only connection, or None when unavailable (callers
+    # │  作用：打开一个全新的只读连接，不可用时返回 None（调用方……）。
     # │  参数：self
     # │  返回：Optional[sqlite3.Connection]
     # └──────────────────────────────────────────────────────────────
@@ -1038,7 +1038,7 @@ class SessionDB(
         return conn
 
     # ┌── 函数 def _evict_one_idle_read_conn()
-    # │  作用：Close one idle pooled connection (a peer on the same file wants its permit); never a live one.
+    # │  作用：关闭一条空闲的池化连接（同一文件上的对端想要它的许可）；绝不关闭活跃连接。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1055,7 +1055,7 @@ class SessionDB(
         return True
 
     # ┌── 函数 def _close_read_conn()
-    # │  作用：Close a pooled read connection and release its permit even when the close fails (withholding
+    # │  作用：关闭一条池化的读连接并释放其许可，即使关闭失败也照做（扣留……）。
     # │  参数：self, conn
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1069,7 +1069,7 @@ class SessionDB(
             self._read_budget.release()
 
     # ┌── 函数 def _checkout_read_conn()
-    # │  作用：Borrow a read connection, opening on a miss; None when the read path is unavailable.
+    # │  作用：借出一条读连接，未命中时则新开一条；读路径不可用时返回 None。
     # │  参数：self
     # │  返回：Optional[sqlite3.Connection]
     # └──────────────────────────────────────────────────────────────
@@ -1088,7 +1088,7 @@ class SessionDB(
             return self._get_read_conn()
 
     # ┌── 函数 def _read_ctx()
-    # │  作用：Yield a connection for read-only statements: a pooled read-only
+    # │  作用：为只读语句提供一个连接：一条池化的只读……
     # │  参数：self
     # │  返回：Iterator[sqlite3.Connection]
     # │  【语法】@contextmanager 把「有 yield 的函数」变成上下文管理器，调用方可以用 `with xxx() as v:` 自动做进入/清理。yield 之前是准备，yield 之后是收尾。
@@ -1127,7 +1127,7 @@ class SessionDB(
             yield cast(sqlite3.Connection, self._conn)
 
     # ┌── 函数 def _reopen_after_close_locked()
-    # │  作用：Reopen the writer after ``close()`` raced a live caller (a teardown owner
+    # │  作用：在 ``close()`` 与活跃调用方发生竞争后，重新打开写连接（一个拆解所有者……）。
     # │  参数：self, context: str = 'write'
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1170,7 +1170,7 @@ class SessionDB(
             self._wal_lock_guard = _lockguard.hold(self.db_path)
 
     # ┌── 函数 def _execute_write()
-    # │  作用：Run *fn(conn)* inside BEGIN IMMEDIATE with jittered lock retry; commit
+    # │  作用：在 BEGIN IMMEDIATE 事务内运行 *fn(conn)*，带抖动的锁重试；提交……
     # │  参数：self, fn: Callable[[sqlite3.Connection], T], patience_s: Optional[float] = None
     # │  返回：T
     # └──────────────────────────────────────────────────────────────
@@ -1296,7 +1296,7 @@ class SessionDB(
                 raise
 
     # ┌── 函数 def _write_sql()
-    # │  作用：Run one INSERT/UPDATE/DELETE through ``_execute_write``.
+    # │  作用：通过 ``_execute_write`` 运行一条 INSERT/UPDATE/DELETE。
     # │  参数：self, sql: str, params: Any = (), many: bool = ..., patience_s: Optional[float] = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1309,7 +1309,7 @@ class SessionDB(
         self._execute_write(_do, patience_s=patience_s)
 
     # ┌── 函数 def _write_rowcount()
-    # │  作用：Run one UPDATE/DELETE through ``_execute_write``; return rows changed
+    # │  作用：通过 ``_execute_write`` 运行一条 UPDATE/DELETE；返回受影响的行数……
     # │  参数：self, sql: str, params: Any = (), patience_s: Optional[float] = ...
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -1326,7 +1326,7 @@ class SessionDB(
         return self._execute_write(_do, patience_s=patience_s)
 
     # ┌── 函数 def _read_one()
-    # │  作用：``fetchone()`` of one read-only statement via ``_read_ctx``.
+    # │  作用：通过 ``_read_ctx`` 对一条只读语句做 ``fetchone()``。
     # │  参数：self, sql: str, params: Any = ()
     # │  返回：Optional[sqlite3.Row]
     # └──────────────────────────────────────────────────────────────
@@ -1336,7 +1336,7 @@ class SessionDB(
         return self._read_retrying_ioerr(lambda conn: conn.execute(sql, params).fetchone())
 
     # ┌── 函数 def _read_all()
-    # │  作用：``fetchall()`` of one read-only statement via ``_read_ctx``.
+    # │  作用：通过 ``_read_ctx`` 对一条只读语句做 ``fetchall()``。
     # │  参数：self, sql: str, params: Any = ()
     # │  返回：List[sqlite3.Row]
     # └──────────────────────────────────────────────────────────────
@@ -1346,7 +1346,7 @@ class SessionDB(
         return self._read_retrying_ioerr(lambda conn: conn.execute(sql, params).fetchall())
 
     # ┌── 函数 def _read_retrying_ioerr()
-    # │  作用：Run an idempotent SELECT through ``_read_ctx``, retrying a transient SQLITE_IOERR.
+    # │  作用：通过 ``_read_ctx`` 运行一条幂等的 SELECT，并对短暂的 SQLITE_IOERR 重试。
     # │  参数：self, fn: Callable[[sqlite3.Connection], T]
     # │  返回：T
     # └──────────────────────────────────────────────────────────────
@@ -1373,7 +1373,7 @@ class SessionDB(
                 time.sleep(_READ_ONLY_IOERR_RETRY_BACKOFF_S)
 
     # ┌── 函数 def _ensure_db_file_generation()
-    # │  作用：Mint a once-per-file generation stamp (state_meta + application_id). First opener wins (INSERT
+    # │  作用：为一个文件生成一次性的「代次戳记」（state_meta + application_id）。先打开者胜出（INSERT……）。
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1422,7 +1422,7 @@ class SessionDB(
             logger.debug("state.db generation stamp skipped: %s", exc)
 
     # ┌── 函数 def _record_db_file_identity()
-    # │  作用：Snapshot inode plus the on-disk generation header when present.
+    # │  作用：在存在时，快照化 inode 以及磁盘上的代次头。
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1443,7 +1443,7 @@ class SessionDB(
                 self._db_file_application_id = int(pragma_row[0])
 
     # ┌── 函数 def _db_file_was_replaced()
-    # │  作用：True when the path no longer names the file this instance opened.
+    # │  作用：当路径已经不再指向本实例打开的那个文件时返回 True。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1463,7 +1463,7 @@ class SessionDB(
         return bool(disk_app and disk_app != recorded_app)
 
     # ┌── 函数 def _wal_generation_was_lost()
-    # │  作用：True when the WAL/SHM generation this handle opened is gone. Recorded
+    # │  作用：当本句柄打开的 WAL/SHM 代次已经消失时返回 True。记录……
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1503,7 +1503,7 @@ class SessionDB(
         return False
 
     # ┌── 函数 def _halt_if_db_generation_changed()
-    # │  作用：Stop writes (logging once) when the file was replaced or its WAL/SHM generation
+    # │  作用：当文件被替换、或其 WAL/SHM 代次……时，停止写入（只记一次日志）。
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1536,7 +1536,7 @@ class SessionDB(
             raise DeletedWalGenerationError(_DELETED_WAL_GENERATION_MSG)
 
     # ┌── 函数 def _capture_retired_generation()
-    # │  作用：Durably capture the lost WAL generation this handle still holds open, once per handle.
+    # │  作用：持久地捕获本句柄仍打开着的、已丢失的 WAL 代次，每个句柄只做一次。
     # │  参数：self, trigger: str
     # │  返回：Path
     # └──────────────────────────────────────────────────────────────
@@ -1564,7 +1564,7 @@ class SessionDB(
         return artifact
 
     # ┌── 函数 def _raise_if_db_replaced()
-    # │  作用：Sticky-flag fast path (no log spam on every write), then the live probe.
+    # │  作用：粘性标志的快速路径（不在每次写入都刷日志），随后才是实时探测。
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1579,7 +1579,7 @@ class SessionDB(
         self._halt_if_db_generation_changed()
 
     # ┌── 函数 def _is_structural_corruption_error()
-    # │  作用：Bare SQLITE_CORRUPT/NOTADB with no FTS provenance: canonical B-tree/schema/freelist damage,
+    # │  作用：没有 FTS 来源的纯 SQLITE_CORRUPT/NOTADB：典型的 B 树/表结构/空闲链表损坏，……
     # │  参数：cls, exc: BaseException
     # │  返回：bool
     # │  【语法】@classmethod 第一个参数是 cls（类本身）而不是 self（实例）。
@@ -1597,7 +1597,7 @@ class SessionDB(
         )
 
     # ┌── 函数 def _corrupt_error()
-    # │  作用：Build the quarantine error for this handle (message assembled once).
+    # │  作用：为本句柄构造隔离错误信息（消息只组装一次）。
     # │  参数：self, prefix: str = ''
     # │  返回：'StateDbCorruptError'
     # └──────────────────────────────────────────────────────────────
@@ -1607,7 +1607,7 @@ class SessionDB(
         return StateDbCorruptError(f"{prefix}{_STATE_DB_CORRUPT_MSG} (cause: {self._db_corrupt_reason})")
 
     # ┌── 函数 def _halt_db_corrupt()
-    # │  作用：Quarantine this handle and raise; never run in-file repair here.
+    # │  作用：隔离本句柄并抛出；绝不在此处做文件内修复。
     # │  参数：self, exc: BaseException
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1631,7 +1631,7 @@ class SessionDB(
         raise err from exc
 
     # ┌── 函数 def _disable_close_time_checkpoint()
-    # │  作用：Best-effort SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE (Python 3.12+): sqlite3's
+    # │  作用：尽最大努力设置 SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE（Python 3.12+）：sqlite3 的……
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1670,7 +1670,7 @@ class SessionDB(
         return True
 
     # ┌── 函数 def _pin_connection()
-    # │  作用：Retain the exact quarantined connection past GC and interpreter teardown (once per handle).
+    # │  作用：在 GC 和解释器拆解之后仍保留确切的被隔离连接（每个句柄一次）。
     # │  参数：self, conn
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1684,7 +1684,7 @@ class SessionDB(
             self._connection_pinned = True
 
     # ┌── 函数 def _settle_lost_generation_locked()
-    # │  作用：Capture the retired generation; return whether the handle must be retired unclosed.
+    # │  作用：捕获已退役的代次；返回该句柄是否必须以「未关闭」状态退役。
     # │  参数：self
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1736,7 +1736,7 @@ class SessionDB(
             raise self._corrupt_error()
 
     # ┌── 函数 def _sleep_before_write_retry()
-    # │  作用：Sleep one jitter interval if the budget allows; True = retry, False = deadline passed. Small
+    # │  作用：若预算允许则睡眠一个抖动间隔；True = 重试，False = 已超过截止时间。小的……
     # │  参数：self, deadline: float, patience_s: float
     # │  返回：bool
     # └──────────────────────────────────────────────────────────────
@@ -1757,7 +1757,7 @@ class SessionDB(
         return True
 
     # ┌── 函数 def _foreign_state_db_holders()
-    # │  作用：Foreign processes holding this DB or its WAL sidecars (see hermes_state_holders).
+    # │  作用：持有本数据库或其 WAL 附属文件的外来进程（参见 hermes_state_holders）。
     # │  参数：self
     # │  返回：List[Tuple[int, str]]
     # └──────────────────────────────────────────────────────────────
@@ -1767,7 +1767,7 @@ class SessionDB(
         return _foreign_state_db_holders(self.db_path)
 
     # ┌── 函数 def _quarantine_reason()
-    # │  作用：Why this handle must not checkpoint or run in-file repair, or None. A corrupted image has
+    # │  作用：本句柄为何不能做检查点或文件内修复，或 None。一个损坏的镜像……
     # │  参数：self
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -1791,7 +1791,7 @@ class SessionDB(
         return None
 
     # ┌── 函数 def _try_wal_checkpoint()
-    # │  作用：Best-effort PASSIVE WAL checkpoint; never raises. PASSIVE never blocks writers;
+    # │  作用：尽最大努力的 PASSIVE WAL 检查点；绝不抛出。PASSIVE 不会阻塞写入者；
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1818,7 +1818,7 @@ class SessionDB(
             logger.warning("WAL checkpoint (PASSIVE) failed: %s", exc)
 
     # ┌── 函数 def __enter__()
-    # │  作用：``with SessionDB(path) as db:`` closes on exit; owners must release deterministically.
+    # │  作用：``with SessionDB(path) as db:`` 在退出时关闭；所有者必须确定性地释放。
     # │  参数：self
     # │  返回：'SessionDB'
     # └──────────────────────────────────────────────────────────────
@@ -1847,7 +1847,7 @@ class SessionDB(
         return False  # never suppress the caller's exception
 
     # ┌── 函数 def close()
-    # │  作用：Drain queued token deltas, then a PASSIVE checkpoint on writable handles
+    # │  作用：排空排队的 token 增量，然后对一个可写句柄做 PASSIVE 检查点……
     # │  参数：self
     # │  返回：（未标注类型）
     # └──────────────────────────────────────────────────────────────
@@ -1917,7 +1917,7 @@ class SessionDB(
                     self._db_sidecar_identity = {}
 
     # ┌── 函数 def __del__()
-    # │  作用：Safety net: close() if the caller forgot. Attribute access stays
+    # │  作用：兜底网：若调用方忘记则自动 close()。属性访问仍保持……
     # │  参数：self
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -1976,7 +1976,7 @@ class SessionDB(
     # ── Meta key/value (scheduler bookkeeping) ──
 
     # ┌── 函数 def get_meta()
-    # │  作用：Read state_meta[key] on self._lock (not _read_ctx): fts_rebuild_step reads progress before its
+    # │  作用：在 self._lock（而非 _read_ctx）上读取 state_meta[key]：fts_rebuild_step 在……之前先读进度。
     # │  参数：self, key: str
     # │  返回：Optional[str]
     # └──────────────────────────────────────────────────────────────
@@ -1989,7 +1989,7 @@ class SessionDB(
         return None if row is None else row[0]
 
     # ┌── 函数 def set_meta()
-    # │  作用：Upsert state_meta[key]; with ``cursor`` the write is inline (the caller already holds a
+    # │  作用：upsert state_meta[key]；传了 ``cursor`` 时写入是内联的（调用方已持有一个……）。
     # │  参数：self, key: str, value: str, cursor: Optional[sqlite3.Cursor] = ...
     # │  返回：None
     # └──────────────────────────────────────────────────────────────
@@ -2006,7 +2006,7 @@ class SessionDB(
             self._write_sql(sql, (key, value))
 
     # ┌── 函数 def retag_kanban_worker_sessions()
-    # │  作用：Retag legacy kanban worker rows from ``cli`` to ``kanban`` by cwd under the board's workspaces
+    # │  作用：按看板工作区下的当前目录，把旧式的 kanban worker 行从 ``cli`` 重新标记为 ``kanban``……
     # │  参数：self, workspaces_root: str
     # │  返回：int
     # └──────────────────────────────────────────────────────────────
@@ -2036,7 +2036,7 @@ class SessionDB(
         return self._execute_write(_do)
 
     # ┌── 函数 def list_meta_prefix()
-    # │  作用：``[(key, value), ...]`` for state_meta keys starting with the literal
+    # │  作用：为所有以字面量……开头的 state_meta 键返回 ``[(key, value), ...]``。
     # │  参数：self, prefix: str
     # │  返回：List[Tuple[str, str]]
     # └──────────────────────────────────────────────────────────────
@@ -2054,7 +2054,7 @@ class SessionDB(
 
 
 # ┌── 类 class AsyncSessionDB
-# │  说明：Async door onto SessionDB: every call runs via asyncio.to_thread so a blocking SQLite call
+# │  说明：通往 SessionDB 的异步入口：每次调用都经由 asyncio.to_thread，使得阻塞的 SQLite 调用……
 # │  成员：共 2 个方法；全部是下划线开头的内部方法；含魔术方法 __init__, __getattr__
 # └──────────────────────────────────────────────────────────────
 class AsyncSessionDB:
